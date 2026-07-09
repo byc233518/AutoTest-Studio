@@ -5,13 +5,14 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { createApp } from '../../../server/app.mjs';
 
-export async function createTestContext(t) {
+export async function createTestContext(t, options = {}) {
   const rootDir = await mkdtemp(path.join(tmpdir(), 'jmom-platform-'));
   const app = await createApp({
     dataDir: rootDir,
     databasePath: ':memory:',
     runMode: 'mock',
-    silent: true
+    silent: true,
+    ...options
   });
   const server = createServer(app);
   server.listen(0, '127.0.0.1');
@@ -84,5 +85,20 @@ export async function createTestContext(t) {
     return response.json();
   }
 
-  return { app, baseURL, fetch: doFetch, loginCookie, waitForRun, uploadCustomerDataset, createRun };
+  async function waitForRunProcess(runId, predicate = () => true) {
+    const cookie = await loginCookie('tester', 'Tester123!');
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const response = await doFetch(`/api/runs/${runId}/process`, { headers: { cookie } });
+      if (response.status === 200) {
+        const body = await response.json();
+        if (predicate(body)) {
+          return body;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`执行过程未就绪: ${runId}`);
+  }
+
+  return { app, baseURL, fetch: doFetch, loginCookie, waitForRun, waitForRunProcess, uploadCustomerDataset, createRun };
 }

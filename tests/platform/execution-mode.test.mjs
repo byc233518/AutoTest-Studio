@@ -12,9 +12,9 @@ test('有头模式会转换为 Playwright headed 参数', () => {
   assert.deepEqual(buildPlaywrightCliArgs('headed'), ['--headed']);
 });
 
-test('UI 模式会转换为 Playwright UI 参数', () => {
+test('UI 模式会转换为可实时观察的 headed 参数', () => {
   assert.equal(normalizeExecutionMode('ui'), 'ui');
-  assert.deepEqual(buildPlaywrightCliArgs('ui'), ['--ui']);
+  assert.deepEqual(buildPlaywrightCliArgs('ui'), ['--headed']);
 });
 
 test('未知执行模式会被拒绝', () => {

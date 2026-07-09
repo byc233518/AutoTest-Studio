@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+
+const require = createRequire(import.meta.url);
+const { recordProcessStep } = require('../support/jmom-ui.js');
+
+test('Playwright 支持函数会写入实时过程截图和步骤状态', async (t) => {
+  const rootDir = await mkdtemp(path.join(tmpdir(), 'jmom-process-'));
+  t.after(async () => {
+    delete process.env.JMOM_PROCESS_FILE;
+    delete process.env.JMOM_RESULT_DIR;
+    delete process.env.JMOM_RUN_ID;
+    await rm(rootDir, { recursive: true, force: true });
+  });
+
+  const processFile = path.resolve(rootDir, 'process.json');
+  process.env.JMOM_PROCESS_FILE = processFile;
+  process.env.JMOM_RESULT_DIR = rootDir;
+  process.env.JMOM_RUN_ID = 'RUN-TEST';
+  await writeFile(processFile, JSON.stringify({
+    status: 'running',
+    steps: [
+      { id: 'browser', title: '启动浏览器并打开测试环境', status: 'pending' }
+    ]
+  }), 'utf8');
+
+  const page = {
+    screenshot: async (options) => {
+      await writeFile(options.path, 'fake-png', 'utf8');
+    }
+  };
+
+  await recordProcessStep(page, '打开测试环境', { stepId: 'browser' });
+
+  const body = JSON.parse(await readFile(processFile, 'utf8'));
+  assert.equal(body.currentStep, '打开测试环境');
+  assert.equal(body.latestScreenshotUrl, '/api/runs/RUN-TEST/report-file/live-latest.png');
+  assert.equal(body.steps[0].status, 'running');
+  assert.equal(existsSync(path.resolve(rootDir, 'live-latest.png')), true);
+});
+
+test('Playwright 配置会为成功和失败执行都保留截图和录像', () => {
+  const config = require('../../playwright.config.js');
+
+  assert.equal(config.use.screenshot, 'on');
+  assert.equal(config.use.video, 'on');
+});

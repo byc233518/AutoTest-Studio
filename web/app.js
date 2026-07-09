@@ -15,6 +15,20 @@ const state = {
   appFilter: '',
   moduleFilter: '',
   executionMode: 'headless',
+  runScenarioFilter: '',
+  runDialog: {
+    open: false,
+    scenario: null,
+    source: 'history',
+    datasetId: '',
+    dataName: '',
+    manualCsv: '',
+    executionMode: 'headless',
+    message: ''
+  },
+  activeRunId: '',
+  activeRunProcess: null,
+  runRefreshTimer: null,
   message: '',
   sampleRows: []
 };
@@ -31,6 +45,10 @@ async function api(path, options = {}) {
     }
   });
   const text = await response.text();
+  const contentType = response.headers.get('content-type') || '';
+  if (text && !contentType.includes('application/json')) {
+    throw new Error(`接口返回了非 JSON 内容：${path}`);
+  }
   const body = text ? JSON.parse(text) : {};
   if (!response.ok) throw new Error(body.message || '请求失败');
   return body;
@@ -43,6 +61,7 @@ function statusTag(status) {
     queued: ['排队中', 'warning'],
     running: ['执行中', 'warning'],
     passed: ['通过', 'success'],
+    skipped: ['已跳过', 'warning'],
     failed: ['失败', 'danger'],
     valid: ['有效', 'success']
   };
@@ -68,6 +87,37 @@ function executionModeLabel(mode) {
     headed: '有头模式',
     ui: 'UI 模式'
   }[mode] || mode || '无头模式';
+}
+
+function scenarioByKey(key) {
+  return state.scenarios.find((item) => item.key === key);
+}
+
+function scenarioById(id) {
+  return state.scenarios.find((item) => item.id === id);
+}
+
+function scenarioNameForRun(run) {
+  return scenarioById(run.scenarioId)?.name || run.scenarioId || '-';
+}
+
+function filteredRuns() {
+  return state.runScenarioFilter
+    ? state.runs.filter((run) => run.scenarioId === state.runScenarioFilter)
+    : state.runs;
+}
+
+function runScenarioFilterLabel() {
+  if (!state.runScenarioFilter) return '全部场景';
+  return scenarioById(state.runScenarioFilter)?.name || state.runScenarioFilter;
+}
+
+function syncActiveRunWithRunFilter() {
+  const runs = filteredRuns();
+  if (runs.some((run) => run.runId === state.activeRunId)) return false;
+  state.activeRunId = runs[0]?.runId || '';
+  state.activeRunProcess = null;
+  return true;
 }
 
 async function bootstrap() {
@@ -100,6 +150,66 @@ async function loadDatasets(key) {
 
 async function loadRuns() {
   state.runs = await api('/api/runs');
+  state.activeRunId ||= state.runs[0]?.runId || '';
+}
+
+async function loadRunProcess(runId = state.activeRunId) {
+  if (!runId) {
+    state.activeRunProcess = null;
+    return null;
+  }
+  try {
+    state.activeRunProcess = await api(`/api/runs/${runId}/process`);
+    return state.activeRunProcess;
+  } catch (error) {
+    return failedRunProcess(error, runId);
+  }
+}
+
+function failedRunProcess(error, runId = state.activeRunId) {
+  const run = state.runs.find((item) => item.runId === runId);
+  state.activeRunProcess = {
+    runId,
+    scenarioName: run?.scenarioId || '执行记录',
+    datasetName: run?.datasetId || '-',
+    executionMode: run?.executionMode || 'headless',
+    status: run?.status || 'failed',
+    canWatchLive: false,
+    livePreviewUrl: null,
+    latestScreenshotUrl: null,
+    videoReplayUrl: null,
+    videoFileUrl: null,
+    currentStep: '过程信息加载失败',
+    error: error.message,
+    steps: [],
+    summary: run?.summary || {},
+    resultTests: [],
+    evidence: {},
+    artifacts: run?.processArtifacts || []
+  };
+  return state.activeRunProcess;
+}
+
+function stopRunRefreshTimer() {
+  if (state.runRefreshTimer) {
+    clearInterval(state.runRefreshTimer);
+    state.runRefreshTimer = null;
+  }
+}
+
+function startRunRefreshTimer() {
+  stopRunRefreshTimer();
+  const process = state.activeRunProcess;
+  if (!process || !['queued', 'running'].includes(process.status)) return;
+  state.runRefreshTimer = setInterval(async () => {
+    if (state.view !== 'runs' || !state.activeRunId) {
+      stopRunRefreshTimer();
+      return;
+    }
+    await loadRuns();
+    await loadRunProcess();
+    renderRuns();
+  }, 2000);
 }
 
 function renderLogin() {
@@ -138,13 +248,31 @@ function navButton(id, label) {
   return `<button class="${state.view === id ? 'active' : ''}" data-view="${id}">${label}</button>`;
 }
 
+function renderPageTabs() {
+  const tabs = [
+    ['apps', '应用管理'],
+    ['modules', '模块管理'],
+    ['scenarios', '测试场景'],
+    ['runs', '执行与报告'],
+    ['settings', 'AI 设置']
+  ];
+  return tabs.map(([id, label]) => `
+    <button class="page-tab ${state.view === id ? 'active' : ''}" data-view="${id}">
+      <span>${label}</span>
+    </button>
+  `).join('');
+}
+
 function renderShell(content) {
   app.innerHTML = `
     <section class="app-shell">
       <aside class="sidebar">
         <div class="brand">
           <div class="brand-mark">J</div>
-          <div><strong>JMOM 测试平台</strong><div class="muted">${roleName(state.user.role)}</div></div>
+          <span class="brand-copy">
+            <strong>JMOM</strong>
+            <small>测试平台</small>
+          </span>
         </div>
         <nav class="nav">
           ${navButton('apps', '应用管理')}
@@ -154,20 +282,35 @@ function renderShell(content) {
           ${navButton('settings', 'AI 设置')}
         </nav>
       </aside>
-      <section class="content">
+      <main class="workspace">
         <header class="topbar">
-          <div><h1>${state.project?.name || 'JMOM'} 自动化测试</h1><div class="muted">集中 Runner：Playwright / 测试环境</div></div>
-          <button class="secondary" id="logoutBtn">退出</button>
+          <div>
+            <h1>${state.project?.name || 'JMOM'} 自动化测试</h1>
+            <div class="muted">集中 Runner：Playwright / 测试环境 · ${roleName(state.user.role)}</div>
+          </div>
+          <div class="topbar-actions">
+            <button class="user-chip" type="button">${state.user.displayName || state.user.username}</button>
+            <button class="secondary" id="logoutBtn">退出</button>
+          </div>
         </header>
-        ${content}
-      </section>
+        <section class="tabs-bar" aria-label="多页签导航">
+          ${renderPageTabs()}
+        </section>
+        <section class="content-area">
+          ${content}
+        </section>
+      </main>
     </section>
   `;
   document.querySelectorAll('[data-view]').forEach((button) => {
     button.addEventListener('click', async () => {
       state.view = button.dataset.view;
       state.message = '';
-      if (state.view === 'runs') await loadRuns();
+      if (state.view === 'runs') {
+        await loadRuns();
+        syncActiveRunWithRunFilter();
+        await loadRunProcess();
+      }
       if (state.view === 'settings') await loadLlmSetting();
       render();
     });
@@ -180,6 +323,7 @@ function renderShell(content) {
 }
 
 function render() {
+  stopRunRefreshTimer();
   if (!state.user) return renderLogin();
   if (state.view === 'apps') return renderApps();
   if (state.view === 'modules') return renderModules();
@@ -188,12 +332,14 @@ function render() {
   return renderScenarios();
 }
 
-function table(headers, rows) {
+function table(headers, rows, options = {}) {
   return `
-    <table class="table">
-      <thead><tr>${headers.map((header) => `<th>${header}</th>`).join('')}</tr></thead>
-      <tbody>${rows.join('')}</tbody>
-    </table>
+    <div class="table-scroll ${options.className || ''}">
+      <table class="table">
+        <thead><tr>${headers.map((header) => `<th>${header}</th>`).join('')}</tr></thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>
+    </div>
   `;
 }
 
@@ -209,7 +355,7 @@ function renderApps() {
           <td>${state.modules.filter((module) => module.appId === item.id).length}</td>
           <td>${state.scenarios.filter((scenario) => scenario.appId === item.id).length}</td>
         </tr>
-      `))}
+      `), { className: 'apps-table-scroll' })}
     </section>
   `);
 }
@@ -233,7 +379,7 @@ function renderModules() {
             <td>${item.prefix}</td>
             <td>${state.scenarios.filter((scenario) => scenario.moduleId === item.id).length}</td>
           </tr>
-        `))}
+        `), { className: 'modules-table-scroll' })}
     </section>
   `);
   document.querySelector('#appFilterForModules').addEventListener('change', (event) => {
@@ -313,7 +459,13 @@ function renderScenarios() {
       <td>${item.priority}</td>
       <td>${statusTag(item.status)}</td>
       <td>${item.version}</td>
-      <td><button class="secondary" data-select="${item.key}">选择</button></td>
+      <td>
+        <div class="row-actions">
+          <button class="secondary" data-select="${item.key}">选择</button>
+          <button data-open-run-dialog="${item.key}">执行</button>
+          <button class="secondary" data-open-history="${item.key}">历史</button>
+        </div>
+      </td>
     </tr>
   `) : ['<tr><td colspan="7"><span class="muted">当前分类下暂无测试场景</span></td></tr>'];
   renderShell(`
@@ -335,10 +487,11 @@ function renderScenarios() {
         <div class="toolbar">
           <input id="filterInput" placeholder="搜索场景、模块、编号" value="${state.filter}" />
         </div>
-        ${table(['场景', '应用', '模块', '优先级', '状态', '版本', '操作'], scenarioRows)}
+        ${table(['场景', '应用', '模块', '优先级', '状态', '版本', '操作'], scenarioRows, { className: 'scenarios-table-scroll' })}
       </section>
       <aside class="side-stack">${scenario ? renderScenarioDetails(scenario) : '<section class="panel">请选择场景</section>'}</aside>
     </div>
+    ${renderRunDialog()}
   `);
   document.querySelector('#filterInput').addEventListener('input', async (event) => {
     state.filter = event.target.value;
@@ -375,7 +528,225 @@ function renderScenarios() {
       renderScenarios();
     });
   });
+  document.querySelectorAll('[data-open-run-dialog]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const scenario = scenarioByKey(button.dataset.openRunDialog);
+      if (scenario) await openRunDialog(scenario);
+    });
+  });
+  document.querySelectorAll('[data-open-history]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const scenario = scenarioByKey(button.dataset.openHistory);
+      if (scenario) await openScenarioHistory(scenario);
+    });
+  });
   wireScenarioForm();
+  wireRunDialog();
+}
+
+async function openRunDialog(scenario) {
+  state.selectedScenario = scenario;
+  state.sampleRows = [];
+  await loadDatasets(scenario.key);
+  state.runDialog = {
+    open: true,
+    scenario,
+    source: state.datasets.length ? 'history' : 'upload',
+    datasetId: state.datasets[0]?.id || '',
+    dataName: `${scenario.name}样本`,
+    manualCsv: '',
+    executionMode: state.executionMode,
+    message: ''
+  };
+  renderScenarios();
+}
+
+async function openScenarioHistory(scenario) {
+  state.runScenarioFilter = scenario.id;
+  await loadRuns();
+  syncActiveRunWithRunFilter();
+  await loadRunProcess();
+  state.view = 'runs';
+  render();
+}
+
+function closeRunDialog() {
+  state.runDialog.open = false;
+  state.runDialog.message = '';
+  renderScenarios();
+}
+
+function renderRunDialog() {
+  if (!state.runDialog.open || !state.runDialog.scenario) return '';
+  const scenario = state.runDialog.scenario;
+  const source = state.runDialog.source;
+  const datasets = state.datasets;
+
+  return `
+    <div class="modal-backdrop" role="presentation">
+      <section class="modal run-dialog" role="dialog" aria-modal="true" aria-labelledby="runDialogTitle">
+        <div class="section-heading">
+          <div>
+            <h2 id="runDialogTitle">执行场景</h2>
+            <div class="muted">${scenario.name} · 选择或准备本次测试数据</div>
+          </div>
+          <button class="secondary icon-button" id="closeRunDialog" type="button" aria-label="关闭">×</button>
+        </div>
+        <form id="runDialogForm" class="run-dialog-form">
+          <div class="run-source-tabs" role="tablist" aria-label="数据来源">
+            ${[
+              ['history', '选择历史数据'],
+              ['upload', '上传文件'],
+              ['manual', '填写CSV']
+            ].map(([value, label]) => `
+              <button type="button" class="source-tab ${source === value ? 'active' : ''}" data-run-source="${value}">
+                ${label}
+              </button>
+            `).join('')}
+          </div>
+          <div class="run-source-panel">
+            ${source === 'history' ? `
+              <div class="field">
+                <label>历史测试数据</label>
+                <select name="datasetId" ${datasets.length ? '' : 'disabled'}>
+                  ${datasets.length
+                    ? datasets.map((dataset) => `<option value="${dataset.id}" ${state.runDialog.datasetId === dataset.id ? 'selected' : ''}>${dataset.name} · ${dataset.rowCount} 行 · ${dataset.fileName}</option>`).join('')
+                    : '<option value="">暂无历史数据，请上传或填写</option>'}
+                </select>
+              </div>
+            ` : ''}
+            ${source === 'upload' ? `
+              <div class="split">
+                <div class="field">
+                  <label>数据集名称</label>
+                  <input name="dataName" value="${state.runDialog.dataName}" placeholder="例如：客户主数据回归样本" />
+                </div>
+                <div class="field">
+                  <label>CSV / Excel 文件</label>
+                  <input name="file" type="file" accept=".csv,.xlsx" />
+                </div>
+              </div>
+            ` : ''}
+            ${source === 'manual' ? `
+              <div class="field">
+                <label>数据集名称</label>
+                <input name="dataName" value="${state.runDialog.dataName}" placeholder="例如：手工填写样本" />
+              </div>
+              <div class="field">
+                <label>CSV 数据</label>
+                <textarea name="manualCsv" placeholder="粘贴或填写 CSV，首行为字段名">${state.runDialog.manualCsv}</textarea>
+              </div>
+              <button class="secondary" id="fillSampleCsv" type="button">生成样例数据</button>
+            ` : ''}
+          </div>
+          <div class="run-dialog-footer">
+            <div class="field compact-field">
+              <label>执行模式</label>
+              <select name="executionMode">
+                ${['headless', 'headed', 'ui'].map((mode) => `
+                  <option value="${mode}" ${state.runDialog.executionMode === mode ? 'selected' : ''}>${executionModeLabel(mode)}</option>
+                `).join('')}
+              </select>
+            </div>
+            <div class="button-row">
+              <button class="secondary" id="cancelRunDialog" type="button">取消</button>
+              <button type="submit">执行</button>
+            </div>
+          </div>
+          <p class="message">${state.runDialog.message || ''}</p>
+        </form>
+      </section>
+    </div>
+  `;
+}
+
+function preserveRunDialogForm(form) {
+  if (!form) return;
+  const data = new FormData(form);
+  state.runDialog.datasetId = data.get('datasetId') || state.runDialog.datasetId || '';
+  state.runDialog.dataName = data.get('dataName') || state.runDialog.dataName || '';
+  state.runDialog.manualCsv = data.get('manualCsv') || state.runDialog.manualCsv || '';
+  state.runDialog.executionMode = data.get('executionMode') || state.runDialog.executionMode;
+}
+
+async function createDatasetFromDialog(form, scenario) {
+  const data = new FormData(form);
+  if (state.runDialog.source === 'history') {
+    const datasetId = data.get('datasetId');
+    if (!datasetId) throw new Error('请选择历史测试数据');
+    return datasetId;
+  }
+
+  const upload = new FormData();
+  upload.append('name', data.get('dataName') || `${scenario.name}样本`);
+  if (state.runDialog.source === 'upload') {
+    const file = data.get('file');
+    if (!file || !file.name) throw new Error('请上传 CSV 或 Excel 样本文件');
+    upload.append('file', file);
+  } else {
+    const csv = String(data.get('manualCsv') || '').trim();
+    if (!csv) throw new Error('请填写 CSV 样本数据');
+    upload.append('file', new Blob([`${csv}\n`], { type: 'text/csv;charset=utf-8' }), 'manual-sample.csv');
+  }
+
+  const dataset = await api(`/api/scenarios/${scenario.key}/datasets`, { method: 'POST', body: upload });
+  await loadDatasets(scenario.key);
+  return dataset.id;
+}
+
+async function runScenarioWithDataset(scenario, datasetId, executionMode) {
+  state.executionMode = executionMode;
+  const run = await api('/api/runs', {
+    method: 'POST',
+    body: JSON.stringify({
+      scenarioId: scenario.id,
+      datasetId,
+      environment: 'test',
+      executionMode
+    })
+  });
+  state.activeRunId = run.runId;
+  state.runScenarioFilter = scenario.id;
+  state.runDialog.open = false;
+  await loadRuns();
+  await loadRunProcess();
+  state.view = 'runs';
+  render();
+}
+
+function wireRunDialog() {
+  if (!state.runDialog.open) return;
+  const form = document.querySelector('#runDialogForm');
+  document.querySelector('#closeRunDialog')?.addEventListener('click', closeRunDialog);
+  document.querySelector('#cancelRunDialog')?.addEventListener('click', closeRunDialog);
+  document.querySelectorAll('[data-run-source]').forEach((button) => {
+    button.addEventListener('click', () => {
+      preserveRunDialogForm(form);
+      state.runDialog.source = button.dataset.runSource;
+      state.runDialog.message = '';
+      renderScenarios();
+    });
+  });
+  document.querySelector('#fillSampleCsv')?.addEventListener('click', async () => {
+    preserveRunDialogForm(form);
+    const sample = await api(`/api/scenarios/${state.runDialog.scenario.key}/sample-data`, { method: 'POST', body: JSON.stringify({ count: 3 }) });
+    state.runDialog.source = 'manual';
+    state.runDialog.manualCsv = sample.csv;
+    state.runDialog.message = '已生成样例 CSV，可直接调整后执行';
+    renderScenarios();
+  });
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    preserveRunDialogForm(form);
+    const scenario = state.runDialog.scenario;
+    try {
+      const datasetId = await createDatasetFromDialog(form, scenario);
+      await runScenarioWithDataset(scenario, datasetId, state.runDialog.executionMode);
+    } catch (error) {
+      state.runDialog.message = error.message;
+      renderScenarios();
+    }
+  });
 }
 
 function renderScenarioDetails(scenario) {
@@ -401,24 +772,31 @@ function renderScenarioDetails(scenario) {
     </section>
     <section class="panel">
       <h2>数据集列表</h2>
-      <div class="execution-mode-picker" role="group" aria-label="执行模式">
-        ${['headless', 'headed', 'ui'].map((mode) => `
-          <button class="mode-button ${state.executionMode === mode ? 'active' : ''}" data-execution-mode="${mode}" type="button">
-            ${executionModeLabel(mode)}
-          </button>
-        `).join('')}
-      </div>
       ${table(['名称', '文件', '行数', '状态', '操作'], state.datasets.map((dataset) => `
         <tr>
           <td>${dataset.name}</td>
           <td>${dataset.fileName}</td>
           <td>${dataset.rowCount}</td>
           <td>${statusTag(dataset.validationStatus)}</td>
-          <td><button data-run="${dataset.id}">执行</button></td>
+          <td>
+            <div class="run-action-group">
+              <select class="run-mode-select" data-run-mode="${dataset.id}" aria-label="执行模式">
+                ${['headless', 'headed', 'ui'].map((mode) => `
+                  <option value="${mode}" ${state.executionMode === mode ? 'selected' : ''}>${executionModeLabel(mode)}</option>
+                `).join('')}
+              </select>
+              <button data-run="${dataset.id}">执行</button>
+            </div>
+          </td>
         </tr>
-      `))}
+      `), { className: 'datasets-table-scroll' })}
     </section>
   `;
+}
+
+function selectedRunMode(datasetId) {
+  const modeSelect = document.querySelector(`[data-run-mode="${datasetId}"]`);
+  return modeSelect?.value || state.executionMode;
 }
 
 function wireScenarioForm() {
@@ -442,15 +820,10 @@ function wireScenarioForm() {
       renderScenarios();
     });
   }
-  document.querySelectorAll('[data-execution-mode]').forEach((button) => {
-    button.addEventListener('click', () => {
-      state.executionMode = button.dataset.executionMode;
-      renderScenarios();
-    });
-  });
   document.querySelectorAll('[data-run]').forEach((button) => {
     button.addEventListener('click', async () => {
-      await api('/api/runs', {
+      state.executionMode = selectedRunMode(button.dataset.run);
+      const run = await api('/api/runs', {
         method: 'POST',
         body: JSON.stringify({
           scenarioId: state.selectedScenario.id,
@@ -459,7 +832,10 @@ function wireScenarioForm() {
           executionMode: state.executionMode
         })
       });
+      state.activeRunId = run.runId;
+      state.runScenarioFilter = state.selectedScenario.id;
       await loadRuns();
+      await loadRunProcess();
       state.view = 'runs';
       render();
     });
@@ -471,26 +847,186 @@ function artifactLinks(run) {
   return run.processArtifacts.map((artifact) => `<a href="${artifact.url}" target="_blank">${artifact.label}</a>`).join(' / ');
 }
 
-function renderRuns() {
-  renderShell(`
-    <section class="panel">
-      <h2>执行与报告</h2>
-      <div class="toolbar"><button id="refreshRuns">刷新执行记录</button></div>
-      ${table(['执行编号', '状态', '环境', '执行模式', '开始时间', '结束时间', '结果', '过程查看'], state.runs.map((run) => `
-        <tr>
-          <td>${run.runId}</td>
-          <td>${statusTag(run.status)}</td>
-          <td>${run.environment}</td>
-          <td>${executionModeLabel(run.executionMode)}</td>
-          <td>${run.startedAt || '-'}</td>
-          <td>${run.finishedAt || '-'}</td>
-          <td>${run.summary?.passed ?? 0}/${run.summary?.total ?? 0}</td>
-          <td>${artifactLinks(run)}</td>
-        </tr>
-      `))}
+function runRow(run) {
+  return `
+    <tr class="${state.activeRunId === run.runId ? 'active-row' : ''}">
+      <td><button class="text-button" data-open-run="${run.runId}">${run.runId}</button></td>
+      <td>${scenarioNameForRun(run)}</td>
+      <td>${statusTag(run.status)}</td>
+      <td>${run.environment}</td>
+      <td>${executionModeLabel(run.executionMode)}</td>
+      <td>${run.startedAt || '-'}</td>
+      <td>${run.finishedAt || '-'}</td>
+      <td>${run.summary?.passed ?? 0}/${run.summary?.total ?? 0}</td>
+      <td>${artifactLinks(run)}</td>
+    </tr>
+  `;
+}
+
+function renderProcessSteps(process) {
+  if (!process?.steps?.length) {
+    return '<div class="muted">暂无步骤状态</div>';
+  }
+  return `
+    <ol class="process-steps">
+      ${process.steps.map((step) => `
+        <li class="${step.status}">
+          <span class="step-dot"></span>
+          <div>
+            <strong>${step.title}</strong>
+            <small>${step.status}</small>
+          </div>
+        </li>
+      `).join('')}
+    </ol>
+  `;
+}
+
+function renderResultSummaryPreview(process) {
+  const summary = process?.summary || {};
+  const tests = process?.resultTests || [];
+  return `
+    <div class="result-summary-preview">
+      <strong>执行结果摘要</strong>
+      <div class="result-metrics">
+        <span>总数 <b>${summary.total ?? 0}</b></span>
+        <span>通过 <b>${summary.passed ?? 0}</b></span>
+        <span>失败 <b>${summary.failed ?? 0}</b></span>
+        <span>跳过 <b>${summary.skipped ?? 0}</b></span>
+      </div>
+      ${tests.length ? `<ol>${tests.slice(0, 6).map((item) => `<li><span>${item.status || '-'}</span>${item.title || '-'}</li>`).join('')}</ol>` : '<p>暂无测试明细</p>'}
+    </div>
+  `;
+}
+
+function renderEvidenceNotice(process) {
+  if (!process) return '';
+  const evidence = process.evidence || {};
+  const messages = [];
+  if (evidence.skippedOnly) messages.push('本次用例全部跳过，所以不会产生真实浏览器录像。');
+  if (!evidence.hasVideoFile) messages.push('未生成 video.webm，可查看截图、步骤和 HTML 报告。');
+  if (!evidence.hasScreenshot) messages.push('未采集到真实截图，平台已生成执行摘要占位图。');
+  if (!messages.length) return '';
+  return `<div class="evidence-notice">${messages.join(' ')}</div>`;
+}
+
+function renderResultTests(process) {
+  const tests = process?.resultTests || [];
+  if (!tests.length) return '';
+  return `
+    <div class="result-tests">
+      <strong>测试步骤明细</strong>
+      ${tests.slice(0, 8).map((item) => `
+        <div class="result-test ${item.status || ''}">
+          <span>${item.status || '-'}</span>
+          <p>${item.title || '-'}</p>
+          ${item.error ? `<small>${item.error}</small>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderMediaPreview(process) {
+  if (!process) {
+    return '<div class="empty-preview">请选择一条执行记录</div>';
+  }
+  if (process.status === 'running' && process.livePreviewUrl) {
+    return `<iframe class="live-preview-frame" title="实时执行过程" src="${process.livePreviewUrl}"></iframe>`;
+  }
+  if (process.videoFileUrl) {
+    return `<video class="video-preview" controls src="${process.videoFileUrl}"></video>`;
+  }
+  if (process.latestScreenshotUrl) {
+    return `<img class="screenshot-preview" src="${process.latestScreenshotUrl}" alt="过程截图" />`;
+  }
+  if (process.videoReplayUrl) {
+    return `<iframe class="live-preview-frame" title="录像回放" src="${process.videoReplayUrl}"></iframe>`;
+  }
+  if (process.summary || process.resultTests?.length) {
+    return renderResultSummaryPreview(process);
+  }
+  return '<div class="empty-preview">暂无截图或录像</div>';
+}
+
+function renderProcessPanel() {
+  const process = state.activeRunProcess;
+  return `
+    <section class="panel run-process-panel">
+      <div class="section-heading">
+        <div>
+          <h2>过程查看</h2>
+          <div class="muted">${process ? `${process.scenarioName} · ${executionModeLabel(process.executionMode)}` : '选择执行记录查看过程'}</div>
+        </div>
+        ${process?.canWatchLive && ['queued', 'running'].includes(process.status) ? `<a href="${process.livePreviewUrl}" target="_blank"><button>实时查看</button></a>` : ''}
+      </div>
+      <div class="run-process-layout">
+        <div class="process-main">
+          ${renderMediaPreview(process)}
+        </div>
+        <aside class="process-side">
+          <div class="process-status-card">
+            <span class="muted">当前状态</span>
+            <strong>${process ? statusTag(process.status) : '-'}</strong>
+            <p>${process?.currentStep || '暂无过程信息'}</p>
+          </div>
+          ${renderEvidenceNotice(process)}
+          ${renderProcessSteps(process)}
+          ${renderResultTests(process)}
+          <div class="button-row">
+            ${process?.latestScreenshotUrl ? `<a href="${process.latestScreenshotUrl}" target="_blank"><button class="secondary">查看截图</button></a>` : ''}
+            ${process?.videoReplayUrl ? `<a href="${process.videoReplayUrl}" target="_blank"><button class="secondary">录像回放</button></a>` : ''}
+            ${process?.artifacts?.find((artifact) => artifact.type === 'html-report') ? `<a href="${process.artifacts.find((artifact) => artifact.type === 'html-report').url}" target="_blank"><button class="secondary">HTML 报告</button></a>` : ''}
+          </div>
+        </aside>
+      </div>
     </section>
+  `;
+}
+
+function renderRuns() {
+  syncActiveRunWithRunFilter();
+  renderShell(`
+    <div class="grid runs-workspace">
+      <section class="panel runs-list-panel">
+        <div class="section-heading">
+          <div>
+            <h2>执行与报告</h2>
+            <div class="muted">${runScenarioFilterLabel()} · 运行中可看实时过程，完成后可回看截图和录像。</div>
+          </div>
+          <button id="refreshRuns">刷新</button>
+        </div>
+        <div class="toolbar">
+          <select id="runScenarioFilter">
+            <option value="">全部场景</option>
+            ${state.scenarios.map((scenario) => `<option value="${scenario.id}" ${state.runScenarioFilter === scenario.id ? 'selected' : ''}>${scenario.name}</option>`).join('')}
+          </select>
+        </div>
+        ${table(['执行编号', '场景', '状态', '环境', '执行模式', '开始时间', '结束时间', '结果', '过程查看'], filteredRuns().map(runRow), { className: 'runs-table-scroll' })}
+      </section>
+      ${renderProcessPanel()}
+    </div>
   `);
-  document.querySelector('#refreshRuns').addEventListener('click', async () => { await loadRuns(); renderRuns(); });
+  document.querySelector('#refreshRuns').addEventListener('click', async () => {
+    await loadRuns();
+    syncActiveRunWithRunFilter();
+    await loadRunProcess();
+    renderRuns();
+  });
+  document.querySelector('#runScenarioFilter').addEventListener('change', async (event) => {
+    state.runScenarioFilter = event.target.value;
+    syncActiveRunWithRunFilter();
+    await loadRunProcess();
+    renderRuns();
+  });
+  document.querySelectorAll('[data-open-run]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      state.activeRunId = button.dataset.openRun;
+      await loadRunProcess();
+      renderRuns();
+    });
+  });
+  startRunRefreshTimer();
 }
 
 async function loadLlmSetting() {

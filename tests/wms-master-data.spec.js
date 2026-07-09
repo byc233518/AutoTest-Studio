@@ -38,7 +38,7 @@ const partRows = rowsFor('wms-part-create', (runTag) => ({
   库存单位: 'PCS'
 }));
 
-test.skip(!shouldRun('wms-customer-create'), '平台本次未选择客户主数据场景');
+if (shouldRun('wms-customer-create')) {
 for (const row of customerRows) {
   test(`WMS - 客户主数据录入 - ${row.客户编号}`, async ({ page }) => {
     await gotoBusinessPage(page, '/ImsCustomer/Index', '客户档案');
@@ -52,8 +52,9 @@ for (const row of customerRows) {
     await searchByPlaceholder(page, '请输入客户编号', row.客户编号);
   });
 }
+}
 
-test.skip(!shouldRun('wms-vendor-create'), '平台本次未选择供应商主数据场景');
+if (shouldRun('wms-vendor-create')) {
 for (const row of vendorRows) {
   test(`WMS - 供应商主数据录入 - ${row.供应商编号}`, async ({ page }) => {
     await gotoBusinessPage(page, '/ImsVendor/Index', '供应商');
@@ -68,8 +69,9 @@ for (const row of vendorRows) {
     await searchByPlaceholder(page, '请输入供应商编号', row.供应商编号);
   });
 }
+}
 
-test.skip(!shouldRun('wms-part-create'), '平台本次未选择物料主数据场景');
+if (shouldRun('wms-part-create')) {
 for (const row of partRows) {
   test(`WMS - 物料主数据录入 - ${row.物料编码}`, async ({ page }) => {
     await gotoBusinessPage(page, '/ImsPart/Index', '料号管理');
@@ -81,4 +83,5 @@ for (const row of partRows) {
     });
     await searchByPlaceholder(page, '请输入料号', row.物料编码);
   });
+}
 }

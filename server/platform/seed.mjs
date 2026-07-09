@@ -92,6 +92,95 @@ const scenarios = [
         库存单位: 'PCS'
       }
     }
+  },
+  {
+    id: 'SCN-MES-WORKORDER',
+    key: 'mes-workorder-create',
+    appId: 'APP-MES',
+    moduleId: 'MOD-MES-WORKORDER',
+    module: 'MES / ProductConfiguration / Wo',
+    name: '生产工单创建',
+    description: '通过 MES 生产工单页面创建虚拟工单，并按工单号或客户订单号查询验证。',
+    priority: 'P1',
+    status: 'published',
+    version: '1.0.0',
+    owner: '自动化负责人',
+    scriptEntry: 'tests/mes-production.spec.js',
+    dataSchema: {
+      columns: ['物料编码', '工单类型', '工单状态', '目标量', '车间名称', '客户订单号', '客户料号', '客户品名', '客户规格', '开始日期', '完工日期', '客户交期'],
+      required: ['物料编码', '工单类型', '工单状态', '目标量', '开始日期', '完工日期'],
+      example: {
+        物料编码: 'AT-PART-001',
+        工单类型: '正常',
+        工单状态: '已创建',
+        目标量: '10',
+        车间名称: '自动化车间001',
+        客户订单号: 'AT-CO-001',
+        客户料号: 'AT-OEM-001',
+        客户品名: '自动化客户品名001',
+        客户规格: '自动化客户规格',
+        开始日期: '2026-07-08',
+        完工日期: '2026-07-09',
+        客户交期: '2026-07-15'
+      }
+    }
+  },
+  {
+    id: 'SCN-MES-WORKSHOP-LINE',
+    key: 'mes-workshop-line-create',
+    appId: 'APP-MES',
+    moduleId: 'MOD-MES-WORKSHOP-LINE',
+    module: 'MES / SfcsFactoryModeling',
+    name: '车间/线体创建',
+    description: '通过 MES 工厂建模页面创建车间和线体，并验证树形结构及列表数据。',
+    priority: 'P1',
+    status: 'published',
+    version: '1.0.0',
+    owner: '自动化负责人',
+    scriptEntry: 'tests/mes-production.spec.js',
+    dataSchema: {
+      columns: ['车间编码', '车间名称', '线体编码', '线体名称', '工段', '所属工序', '区域序号'],
+      required: ['车间名称', '线体名称'],
+      example: {
+        车间编码: 'AT-WS-001',
+        车间名称: '自动化车间001',
+        线体编码: 'AT-LINE-001',
+        线体名称: '自动化线体001',
+        工段: '总装',
+        所属工序: '总装',
+        区域序号: '1'
+      }
+    }
+  },
+  {
+    id: 'SCN-MES-BARCODE-PASS',
+    key: 'mes-barcode-pass',
+    appId: 'APP-MES',
+    moduleId: 'MOD-MES-BARCODE-PASS',
+    module: 'MES / ProductProcessing',
+    name: '条码过站',
+    description: '通过 MES 生产作业看板录入条码并提交过站，验证处理结果。',
+    priority: 'P1',
+    status: 'published',
+    version: '1.0.0',
+    owner: '自动化负责人',
+    scriptEntry: 'tests/mes-production.spec.js',
+    dataSchema: {
+      columns: ['作业看板编码', '工单号', '线体ID', '车间名称', '线体名称', '工序名称', '条码', '良品数', '次品数', '是否扫码提交'],
+      required: ['作业看板编码', '工单号', '条码'],
+      example: {
+        作业看板编码: 'DesktopReportWork',
+        工单号: 'AT-WO-001',
+        线体ID: '',
+        车间名称: '自动化车间001',
+        线体名称: '自动化线体001',
+        工序名称: '总装',
+        条码: 'AT-SN-001',
+        良品数: '1',
+        次品数: '0',
+        是否扫码提交: '是'
+      }
+    }
   }
 ];
 
@@ -108,7 +197,9 @@ const modules = [
   { id: 'MOD-WMS-PART', appId: 'APP-WMS', name: '物料管理', prefix: 'ImsPart', sort: 2 },
   { id: 'MOD-WMS-VENDOR', appId: 'APP-WMS', name: '供应商管理', prefix: 'ImsVendor', sort: 3 },
   { id: 'MOD-WMS-LOCATOR', appId: 'APP-WMS', name: '库位维护', prefix: 'ImsLocator', sort: 4 },
-  { id: 'MOD-MES-WORKORDER', appId: 'APP-MES', name: '生产工单', prefix: 'ProductionMangement', sort: 1 }
+  { id: 'MOD-MES-WORKORDER', appId: 'APP-MES', name: '生产工单', prefix: 'ProductionMangement', sort: 1 },
+  { id: 'MOD-MES-WORKSHOP-LINE', appId: 'APP-MES', name: '车间/线体建模', prefix: 'SfcsFactoryModeling', sort: 2 },
+  { id: 'MOD-MES-BARCODE-PASS', appId: 'APP-MES', name: '条码过站', prefix: 'ProductProcessing', sort: 3 }
 ];
 
 export function seedPlatform(database) {

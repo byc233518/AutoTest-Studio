@@ -234,6 +234,9 @@ export function createPlatformDatabase(filename) {
             WHEN 'wms-customer-create' THEN 1
             WHEN 'wms-vendor-create' THEN 2
             WHEN 'wms-part-create' THEN 3
+            WHEN 'mes-workorder-create' THEN 4
+            WHEN 'mes-workshop-line-create' THEN 5
+            WHEN 'mes-barcode-pass' THEN 6
             ELSE 99
           END,
           priority,

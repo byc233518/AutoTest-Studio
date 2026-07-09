@@ -24,9 +24,9 @@ module.exports = defineConfig({
     baseURL,
     actionTimeout: 20_000,
     navigationTimeout: 45_000,
-    screenshot: 'only-on-failure',
+    screenshot: 'on',
     trace: 'retain-on-failure',
-    video: 'retain-on-failure',
+    video: 'on',
     viewport: { width: 1440, height: 900 }
   },
   projects: [
@@ -36,4 +36,3 @@ module.exports = defineConfig({
     }
   ]
 });
-

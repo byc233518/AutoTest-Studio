@@ -11,6 +11,6 @@ export function normalizeExecutionMode(mode = 'headless') {
 export function buildPlaywrightCliArgs(mode = 'headless') {
   const normalized = normalizeExecutionMode(mode);
   if (normalized === 'headed') return ['--headed'];
-  if (normalized === 'ui') return ['--ui'];
+  if (normalized === 'ui') return ['--headed'];
   return [];
 }

@@ -7,7 +7,7 @@ import { createReadStream, existsSync } from 'node:fs';
 import { createPlatformDatabase } from './platform/database.mjs';
 import { seedPlatform } from './platform/seed.mjs';
 import { parseDatasetFile, validateRows } from './platform/datasets.mjs';
-import { createRun, executeRun } from './platform/runner.mjs';
+import { createRun, ensureProcessFallbackScreenshot, executeRun, isSkippedOnly } from './platform/runner.mjs';
 import { generateSampleRows, rowsToCsv } from './platform/sample-data.mjs';
 import { publicLlmSetting } from './platform/settings.mjs';
 import { normalizeExecutionMode } from './platform/execution-mode.mjs';
@@ -79,17 +79,18 @@ function toPublicDataset(row) {
 }
 
 function toPublicRun(row) {
+  const summary = JSON.parse(row.summary || '{}');
   return {
     runId: row.id,
     scenarioId: row.scenario_id,
     datasetId: row.dataset_id,
     environment: row.environment,
     executionMode: row.execution_mode || 'headless',
-    status: row.status,
+    status: isSkippedOnly(summary) ? 'skipped' : row.status,
     triggeredBy: row.triggered_by,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
-    summary: JSON.parse(row.summary || '{}'),
+    summary,
     reportPath: row.report_path,
     error: row.error,
     processArtifacts: row.processArtifacts || []
@@ -125,8 +126,120 @@ function runWithArtifacts(database, run) {
       label: artifact.label,
       fileName: artifact.file_name,
       url: artifact.url,
+      previewUrl: artifact.url,
       createdAt: artifact.created_at
     }))
+  };
+}
+
+function reportFileUrl(runId, fileName) {
+  return `/api/runs/${runId}/report-file/${encodeURIComponent(fileName)}`;
+}
+
+async function readReportSummary(reportPath, run) {
+  const fileSummary = await readFile(path.resolve(reportPath, 'summary.json'), 'utf8')
+    .then((body) => JSON.parse(body))
+    .catch(() => null);
+  if (fileSummary) return fileSummary;
+  try {
+    return JSON.parse(run.summary || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function fileArtifact(runId, reportPath, artifact) {
+  return {
+    id: `${runId}:${artifact.type}`,
+    type: artifact.type,
+    label: artifact.label,
+    fileName: artifact.fileName,
+    url: reportFileUrl(runId, artifact.fileName),
+    previewUrl: reportFileUrl(runId, artifact.fileName),
+    createdAt: null
+  };
+}
+
+async function processArtifacts(database, run, reportPath, summary, processState) {
+  if (existsSync(reportPath)) {
+    await ensureProcessFallbackScreenshot(reportPath, summary, processState);
+  }
+
+  const artifacts = runWithArtifacts(database, run).processArtifacts;
+  const created = new Set(artifacts.map((artifact) => artifact.type));
+  const candidates = [
+    { type: 'html-report', label: 'HTML 报告', fileName: 'index.html' },
+    { type: 'screenshot', label: '过程截图', fileName: 'screenshot.png' },
+    { type: 'screenshot', label: '过程截图', fileName: 'screenshot.svg' },
+    { type: 'video', label: '录像回放', fileName: 'replay.html' },
+    { type: 'video-file', label: '录像文件', fileName: 'video.webm' },
+    { type: 'trace', label: 'Trace 调试包', fileName: 'trace.zip' }
+  ];
+
+  for (const candidate of candidates) {
+    if (created.has(candidate.type) || !existsSync(path.resolve(reportPath, candidate.fileName))) continue;
+    created.add(candidate.type);
+    artifacts.push(fileArtifact(run.id, reportPath, candidate));
+  }
+
+  return artifacts;
+}
+
+function evidenceStatus(summary, artifacts) {
+  return {
+    hasScreenshot: artifacts.some((artifact) => artifact.type === 'screenshot'),
+    hasVideoReplay: artifacts.some((artifact) => artifact.type === 'video'),
+    hasVideoFile: artifacts.some((artifact) => artifact.type === 'video-file'),
+    hasTrace: artifacts.some((artifact) => artifact.type === 'trace'),
+    hasHtmlReport: artifacts.some((artifact) => artifact.type === 'html-report'),
+    skippedOnly: isSkippedOnly(summary)
+  };
+}
+
+async function runProcessPayload(app, run) {
+  const database = app.locals.database;
+  const scenario = database.getScenarioById(run.scenario_id);
+  const dataset = database.getDatasetById(run.dataset_id);
+  const reportPath = run.report_path || path.resolve(app.locals.paths.reportsDir, run.id);
+  const processPath = path.resolve(reportPath, 'process.json');
+  let processState = {};
+  try {
+    processState = JSON.parse(await readFile(processPath, 'utf8'));
+  } catch {
+    processState = {};
+  }
+
+  const summary = await readReportSummary(reportPath, run);
+  const artifacts = await processArtifacts(database, run, reportPath, summary, processState);
+  const screenshot = artifacts.find((artifact) => artifact.type === 'screenshot');
+  const replay = artifacts.find((artifact) => artifact.type === 'video');
+  const videoFile = artifacts.find((artifact) => artifact.type === 'video-file');
+  const evidence = evidenceStatus(summary, artifacts);
+  const skippedOnly = evidence.skippedOnly;
+
+  return {
+    runId: run.id,
+    scenarioId: run.scenario_id,
+    datasetId: run.dataset_id,
+    scenarioName: processState.scenarioName || scenario?.name || run.scenario_id,
+    datasetName: processState.datasetName || dataset?.name || run.dataset_id,
+    executionMode: run.execution_mode || 'headless',
+    status: skippedOnly ? 'skipped' : processState.status || run.status,
+    canWatchLive: (run.execution_mode || 'headless') === 'ui',
+    livePreviewUrl: (run.execution_mode || 'headless') === 'ui' ? `/api/runs/${run.id}/live` : null,
+    latestScreenshotUrl: processState.latestScreenshotUrl || screenshot?.previewUrl || null,
+    videoReplayUrl: processState.videoReplayUrl || replay?.previewUrl || null,
+    videoFileUrl: processState.videoFileUrl || videoFile?.previewUrl || null,
+    currentStep: skippedOnly ? '本次用例全部跳过，未产生浏览器画面' : processState.currentStep || (run.status === 'queued' ? '等待 Runner 调度' : ''),
+    startedAt: processState.startedAt || run.started_at,
+    finishedAt: processState.finishedAt || run.finished_at,
+    updatedAt: processState.updatedAt || run.finished_at || run.started_at || run.created_at,
+    error: processState.error || run.error,
+    steps: processState.steps || [],
+    summary,
+    resultTests: Array.isArray(summary.tests) ? summary.tests : [],
+    evidence,
+    artifacts
   };
 }
 
@@ -147,6 +260,7 @@ export async function createApp(options = {}) {
   app.locals.paths = { dataDir, uploadsDir, reportsDir, workspaceRoot };
   app.locals.runMode = options.runMode || process.env.JMOM_RUN_MODE || 'playwright';
   app.locals.silent = options.silent || false;
+  app.locals.mockRunStepDelayMs = options.mockRunStepDelayMs || 0;
 
   app.use(express.json({ limit: '2mb' }));
   app.use('/reports', express.static(reportsDir));
@@ -329,6 +443,18 @@ export async function createApp(options = {}) {
     response.json(toPublicRun(runWithArtifacts(database, run)));
   });
 
+  app.get('/api/runs/:runId/process', requireAuth, async (request, response, next) => {
+    try {
+      const run = database.getRunById(request.params.runId);
+      if (!run) {
+        return jsonError(response, 404, '执行记录不存在');
+      }
+      response.json(await runProcessPayload(app, run));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/settings/llm', requireAuth, requireRole('admin', 'maintainer'), (request, response) => {
     response.json(publicLlmSetting(database.getSetting('llm')));
   });
@@ -353,6 +479,37 @@ export async function createApp(options = {}) {
     }
     response.type(path.extname(filePath));
     createReadStream(filePath).pipe(response);
+  });
+
+  app.get('/api/runs/:runId/live', requireAuth, async (request, response, next) => {
+    try {
+      const run = database.getRunById(request.params.runId);
+      if (!run) {
+        return jsonError(response, 404, '执行记录不存在');
+      }
+      const process = await runProcessPayload(app, run);
+      response.type('html').send(`<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="2">
+<title>${process.scenarioName} - 实时执行过程</title>
+<body style="margin:0;background:#101828;color:#fff;font-family:Arial,'Microsoft YaHei',sans-serif">
+  <main style="padding:18px">
+    <h1 style="margin:0 0 8px;font-size:20px">实时执行过程</h1>
+    <p style="margin:0 0 16px;color:#d0d5dd">${process.scenarioName} · ${process.currentStep || process.status}</p>
+    ${process.latestScreenshotUrl
+      ? `<img src="${process.latestScreenshotUrl}" alt="实时执行截图" style="width:100%;max-height:72vh;object-fit:contain;border-radius:10px;background:#fff" />`
+      : '<div style="display:grid;min-height:320px;place-items:center;border:1px solid #344054;border-radius:10px;color:#98a2b3">等待浏览器画面...</div>'}
+  </main>
+</body>
+</html>`);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.use('/api', (request, response) => {
+    return jsonError(response, 404, '接口不存在');
   });
 
   app.use(express.static(publicDir));
