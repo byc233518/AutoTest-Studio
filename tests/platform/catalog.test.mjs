@@ -19,9 +19,14 @@ test('平台种子数据包含 JMOM 项目和第一批发布场景', async (t) =
       'wms-customer-create',
       'wms-vendor-create',
       'wms-part-create',
+      'wms-locator-create',
+      'wms-po-create',
+      'wms-so-create',
       'mes-workorder-create',
       'mes-workshop-line-create',
-      'mes-barcode-pass'
+      'mes-barcode-pass',
+      'mes-barcode-report',
+      'base-excel-import'
     ]
   );
   assert.equal(body.scenarios.every((scenario) => scenario.status === 'published'), true);

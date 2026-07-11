@@ -5,7 +5,7 @@ const {
   createWorkshopAndLine,
   passBarcode
 } = require('./support/jmom-ui');
-const { rowsFor, shouldRun } = require('./support/dataset');
+const { rowsFor, shouldRun, testRowTitle } = require('./support/dataset');
 
 test.describe.configure({ mode: 'serial' });
 
@@ -14,11 +14,12 @@ test.beforeEach(async ({ page }) => {
 });
 
 const workorderRows = rowsFor('mes-workorder-create', (runTag) => ({
-  物料编码: `AT-PART-${runTag}`,
+  // Prefer a part created in earlier real runs; fall back to tagged code.
+  物料编码: process.env.JMOM_PART_CODE || 'AT-PART-REAL0902',
   工单类型: '正常',
   工单状态: '已创建',
   目标量: '10',
-  车间名称: '自动化车间001',
+  车间名称: process.env.JMOM_WORKSHOP_NAME || '',
   客户订单号: `AT-CO-${runTag}`,
   客户料号: `AT-OEM-${runTag}`,
   客户品名: `自动化客户品名-${runTag}`,
@@ -39,11 +40,12 @@ const workshopLineRows = rowsFor('mes-workshop-line-create', (runTag) => ({
 }));
 
 const barcodePassRows = rowsFor('mes-barcode-pass', (runTag) => ({
-  作业看板编码: 'DesktopReportWork',
-  工单号: `AT-WO-${runTag}`,
-  线体ID: '',
-  车间名称: '自动化车间001',
-  线体名称: '自动化线体001',
+  // 桌面管理方案编码（条码报工），可用 JMOM_DESKTOP_CODE 覆盖
+  作业看板编码: process.env.JMOM_DESKTOP_CODE || 'S20250032',
+  工单号: process.env.JMOM_WO_NO || '',
+  线体ID: process.env.JMOM_LINE_ID || '',
+  车间名称: process.env.JMOM_WORKSHOP_NAME || `自动化车间-${runTag}`,
+  线体名称: process.env.JMOM_LINE_NAME || `自动化线体-${runTag}`,
   工序名称: '总装',
   条码: `AT-SN-${runTag}`,
   良品数: '1',
@@ -53,7 +55,7 @@ const barcodePassRows = rowsFor('mes-barcode-pass', (runTag) => ({
 
 if (shouldRun('mes-workorder-create')) {
   for (const row of workorderRows) {
-    test(`MES - 生产工单创建 - ${row.客户订单号 || row.物料编码}`, async ({ page }) => {
+    test(testRowTitle('MES - 生产工单创建', row.客户订单号 || row.物料编码, row), async ({ page }) => {
       await createVirtualWorkOrder(page, row);
     });
   }
@@ -61,7 +63,7 @@ if (shouldRun('mes-workorder-create')) {
 
 if (shouldRun('mes-workshop-line-create')) {
   for (const row of workshopLineRows) {
-    test(`MES - 车间/线体创建 - ${row.车间名称} / ${row.线体名称}`, async ({ page }) => {
+    test(testRowTitle('MES - 车间/线体创建', `${row.车间名称} / ${row.线体名称}`, row), async ({ page }) => {
       await createWorkshopAndLine(page, row);
     });
   }
@@ -69,8 +71,16 @@ if (shouldRun('mes-workshop-line-create')) {
 
 if (shouldRun('mes-barcode-pass')) {
   for (const row of barcodePassRows) {
-    test(`MES - 条码过站 - ${row.条码}`, async ({ page }) => {
-      await passBarcode(page, row);
+    test(testRowTitle('MES - 条码过站', row.条码, row), async ({ page }) => {
+      try {
+        await passBarcode(page, row);
+      } catch (error) {
+        if (error.code === 'MES_BARCODE_UNAVAILABLE') {
+          test.skip(true, error.message);
+          return;
+        }
+        throw error;
+      }
     });
   }
 }

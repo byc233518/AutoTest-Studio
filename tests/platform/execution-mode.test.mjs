@@ -3,7 +3,7 @@ import test from 'node:test';
 import { buildPlaywrightCliArgs, normalizeExecutionMode } from '../../server/platform/execution-mode.mjs';
 
 test('执行模式默认使用无头模式', () => {
-  assert.equal(normalizeExecutionMode(), 'headless');
+  assert.equal(normalizeExecutionMode(), 'ui');
   assert.deepEqual(buildPlaywrightCliArgs('headless'), []);
 });
 

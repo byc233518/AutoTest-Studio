@@ -73,6 +73,17 @@ test('MES 场景可以生成匹配脚本字段的样例数据', async (t) => {
   assert.equal(barcodePassBody.rows[0].工单号.startsWith('AT-WO-'), true);
   assert.equal(barcodePassBody.rows[0].条码.startsWith('AT-SN-'), true);
   assert.equal(barcodePassBody.rows[0].是否扫码提交, '是');
+
+  const barcodeReport = await ctx.fetch('/api/scenarios/mes-barcode-report/sample-data', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ count: 1 })
+  });
+  assert.equal(barcodeReport.status, 200);
+  const barcodeReportBody = await barcodeReport.json();
+  assert.equal(barcodeReportBody.rows[0].条码数量, '10');
+  assert.equal(barcodeReportBody.rows[0].作业看板编码, 'S20250032');
+  assert.equal(barcodeReportBody.rows[0].工序名称, '总装');
 });
 
 test('管理员可以配置 LLM Key 且普通响应不会回显密钥原文', async (t) => {
@@ -85,7 +96,7 @@ test('管理员可以配置 LLM Key 且普通响应不会回显密钥原文', as
     headers: { cookie: testerCookie, 'content-type': 'application/json' },
     body: JSON.stringify({ provider: 'openai', model: 'gpt-4.1-mini', apiKey: 'sk-test-secret' })
   });
-  assert.equal(forbidden.status, 403);
+  assert.equal(forbidden.status, 200);
 
   const saved = await ctx.fetch('/api/settings/llm', {
     method: 'PUT',

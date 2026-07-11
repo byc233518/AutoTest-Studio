@@ -9,11 +9,14 @@ function makeRunId() {
 
 const cwd = process.cwd();
 const resultDir = process.env.JMOM_RESULT_DIR || path.resolve(cwd, 'test-results', 'runs', makeRunId());
+const dataTag = process.env.JMOM_DATA_TAG || makeRunId().replace(/\D/g, '').slice(2, 14);
 const command = process.execPath;
 const args = [path.resolve(cwd, 'node_modules', 'playwright', 'cli.js'), 'test', ...process.argv.slice(2)];
 const env = {
   ...process.env,
-  JMOM_RESULT_DIR: resultDir
+  JMOM_RESULT_DIR: resultDir,
+  // Keep titles stable across Playwright main/worker processes.
+  JMOM_DATA_TAG: dataTag
 };
 
 fs.mkdirSync(resultDir, { recursive: true });

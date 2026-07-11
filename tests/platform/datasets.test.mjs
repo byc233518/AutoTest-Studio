@@ -32,7 +32,7 @@ test('测试人员可以上传 CSV 样本数据并创建执行任务', async (t)
   const runBody = await run.json();
   assert.match(runBody.runId, /^RUN-/);
   assert.equal(runBody.status, 'queued');
-  assert.equal(runBody.executionMode, 'headless');
+  assert.equal(runBody.executionMode, 'ui');
 
   await ctx.waitForRun(runBody.runId);
 });

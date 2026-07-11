@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
 function now() {
   return new Date().toISOString();
@@ -9,12 +9,18 @@ function hashPassword(password, salt) {
   return createHash('sha256').update(`${salt}:${password}`).digest('hex');
 }
 
-export function createPasswordHash(password, salt = randomBytes(8).toString('hex')) {
-  return `${salt}:${hashPassword(password, salt)}`;
+export function createPasswordHash(password, salt = randomBytes(16).toString('hex')) {
+  return 'scrypt:' + salt + ':' + scryptSync(password, salt, 64).toString('hex');
 }
 
 function verifyPassword(password, stored) {
-  const [salt, hash] = stored.split(':');
+  const parts = stored.split(':');
+  if (parts[0] === 'scrypt') {
+    const actual = scryptSync(password, parts[1], 64);
+    const expected = Buffer.from(parts[2], 'hex');
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  }
+  const [salt, hash] = parts;
   return hashPassword(password, salt) === hash;
 }
 
@@ -68,6 +74,19 @@ export function createPlatformDatabase(filename) {
       owner TEXT NOT NULL,
       script_entry TEXT NOT NULL,
       data_schema TEXT NOT NULL,
+      depends_on TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS environments (
+      id TEXT PRIMARY KEY,
+      key TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      base_url TEXT NOT NULL,
+      username TEXT NOT NULL,
+      password TEXT NOT NULL,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      sort INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -114,6 +133,14 @@ export function createPlatformDatabase(filename) {
       file_path TEXT NOT NULL,
       url TEXT NOT NULL,
       created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS platform_entities (
+      id TEXT PRIMARY KEY, type TEXT NOT NULL, name TEXT NOT NULL, payload TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1, created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id TEXT PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, target_type TEXT NOT NULL,
+      target_id TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL
     );
   `);
   migrateLegacySchema(db);
@@ -172,11 +199,13 @@ export function createPlatformDatabase(filename) {
         .run(module.id, module.appId, module.name, module.prefix, module.sort ?? 0);
     },
     ensureScenario(scenario) {
+      const dependsOn = JSON.stringify(scenario.dependsOn || []);
       const existing = this.getScenarioById(scenario.id);
       if (existing) {
         db.prepare(`
           UPDATE scenarios
-          SET app_id = ?, module_id = ?, module = ?, name = ?, description = ?, data_schema = ?, updated_at = ?
+          SET app_id = ?, module_id = ?, module = ?, name = ?, description = ?,
+              priority = ?, status = ?, script_entry = ?, data_schema = ?, depends_on = ?, updated_at = ?
           WHERE id = ?
         `).run(
           scenario.appId,
@@ -184,7 +213,11 @@ export function createPlatformDatabase(filename) {
           scenario.module,
           scenario.name,
           scenario.description,
+          scenario.priority,
+          scenario.status,
+          scenario.scriptEntry,
           JSON.stringify(scenario.dataSchema),
+          dependsOn,
           now(),
           scenario.id
         );
@@ -192,8 +225,8 @@ export function createPlatformDatabase(filename) {
       }
       db.prepare(`
         INSERT OR IGNORE INTO scenarios
-        (id, key, project_id, app_id, module_id, module, name, description, priority, status, version, owner, script_entry, data_schema, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, key, project_id, app_id, module_id, module, name, description, priority, status, version, owner, script_entry, data_schema, depends_on, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         scenario.id,
         scenario.key,
@@ -209,9 +242,76 @@ export function createPlatformDatabase(filename) {
         scenario.owner,
         scenario.scriptEntry,
         JSON.stringify(scenario.dataSchema),
+        dependsOn,
         now(),
         now()
       );
+    },
+    createScenario(scenario) {
+      const id = scenario.id || this.nextId('SCN');
+      const project = this.getDefaultProject();
+      db.prepare(`
+        INSERT INTO scenarios
+        (id, key, project_id, app_id, module_id, module, name, description, priority, status, version, owner, script_entry, data_schema, depends_on, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        scenario.key,
+        scenario.projectId || project?.id || 'PRJ-JMOM',
+        scenario.appId || '',
+        scenario.moduleId || '',
+        scenario.module || '',
+        scenario.name,
+        scenario.description || '',
+        scenario.priority || 'P2',
+        scenario.status || 'draft',
+        scenario.version || '0.1.0',
+        scenario.owner || '',
+        scenario.scriptEntry || '',
+        JSON.stringify(scenario.dataSchema || { columns: [], required: [], example: {} }),
+        JSON.stringify(scenario.dependsOn || []),
+        now(),
+        now()
+      );
+      return this.getScenarioById(id);
+    },
+    updateScenario(key, patch) {
+      const current = this.getScenarioByKey(key);
+      if (!current) return null;
+      const next = {
+        name: patch.name ?? current.name,
+        description: patch.description ?? current.description,
+        module: patch.module ?? current.module,
+        app_id: patch.appId ?? current.app_id,
+        module_id: patch.moduleId ?? current.module_id,
+        priority: patch.priority ?? current.priority,
+        script_entry: patch.scriptEntry ?? current.script_entry,
+        data_schema: patch.dataSchema !== undefined ? JSON.stringify(patch.dataSchema) : current.data_schema,
+        depends_on: patch.dependsOn !== undefined ? JSON.stringify(patch.dependsOn) : current.depends_on,
+        owner: patch.owner ?? current.owner,
+        version: patch.version ?? current.version
+      };
+      db.prepare(`
+        UPDATE scenarios
+        SET name = ?, description = ?, module = ?, app_id = ?, module_id = ?, priority = ?,
+            script_entry = ?, data_schema = ?, depends_on = ?, owner = ?, version = ?, updated_at = ?
+        WHERE key = ?
+      `).run(
+        next.name,
+        next.description,
+        next.module,
+        next.app_id,
+        next.module_id,
+        next.priority,
+        next.script_entry,
+        next.data_schema,
+        next.depends_on,
+        next.owner,
+        next.version,
+        now(),
+        key
+      );
+      return this.getScenarioByKey(key);
     },
     listApps() {
       return db.prepare('SELECT * FROM apps ORDER BY sort, name').all();
@@ -234,9 +334,14 @@ export function createPlatformDatabase(filename) {
             WHEN 'wms-customer-create' THEN 1
             WHEN 'wms-vendor-create' THEN 2
             WHEN 'wms-part-create' THEN 3
-            WHEN 'mes-workorder-create' THEN 4
-            WHEN 'mes-workshop-line-create' THEN 5
-            WHEN 'mes-barcode-pass' THEN 6
+            WHEN 'wms-locator-create' THEN 4
+            WHEN 'wms-po-create' THEN 5
+            WHEN 'wms-so-create' THEN 6
+            WHEN 'mes-workorder-create' THEN 7
+            WHEN 'mes-workshop-line-create' THEN 8
+            WHEN 'mes-barcode-pass' THEN 9
+            WHEN 'mes-barcode-report' THEN 10
+            WHEN 'base-excel-import' THEN 11
             ELSE 99
           END,
           priority,
@@ -252,6 +357,94 @@ export function createPlatformDatabase(filename) {
     updateScenarioStatus(id, status) {
       db.prepare('UPDATE scenarios SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), id);
       return this.getScenarioById(id);
+    },
+    listEnvironments() {
+      return db.prepare('SELECT * FROM environments ORDER BY sort, name').all();
+    },
+    getEnvironmentByKey(key) {
+      return db.prepare('SELECT * FROM environments WHERE key = ?').get(key);
+    },
+    getEnvironmentById(id) {
+      return db.prepare('SELECT * FROM environments WHERE id = ?').get(id);
+    },
+    getDefaultEnvironment() {
+      return db.prepare('SELECT * FROM environments WHERE is_default = 1 ORDER BY sort LIMIT 1').get()
+        || db.prepare('SELECT * FROM environments ORDER BY sort, name LIMIT 1').get();
+    },
+    ensureEnvironment(env) {
+      const existing = this.getEnvironmentById(env.id) || this.getEnvironmentByKey(env.key);
+      if (existing) {
+        db.prepare(`
+          UPDATE environments
+          SET key = ?, name = ?, base_url = ?, username = ?, password = ?, is_default = ?, sort = ?, updated_at = ?
+          WHERE id = ?
+        `).run(
+          env.key,
+          env.name,
+          env.baseUrl,
+          env.username,
+          env.password,
+          env.isDefault ? 1 : 0,
+          env.sort ?? 0,
+          now(),
+          existing.id
+        );
+        return this.getEnvironmentById(existing.id);
+      }
+      return this.createEnvironment(env);
+    },
+    createEnvironment(env) {
+      const id = env.id || this.nextId('ENV');
+      if (env.isDefault) {
+        db.prepare('UPDATE environments SET is_default = 0').run();
+      }
+      db.prepare(`
+        INSERT INTO environments
+        (id, key, name, base_url, username, password, is_default, sort, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        env.key,
+        env.name,
+        env.baseUrl,
+        env.username,
+        env.password,
+        env.isDefault ? 1 : 0,
+        env.sort ?? 0,
+        now(),
+        now()
+      );
+      return this.getEnvironmentById(id);
+    },
+    updateEnvironment(id, patch) {
+      const current = this.getEnvironmentById(id);
+      if (!current) return null;
+      if (patch.isDefault) {
+        db.prepare('UPDATE environments SET is_default = 0').run();
+      }
+      const next = {
+        key: patch.key ?? current.key,
+        name: patch.name ?? current.name,
+        base_url: patch.baseUrl ?? current.base_url,
+        username: patch.username ?? current.username,
+        password: patch.password ?? current.password,
+        is_default: patch.isDefault !== undefined ? (patch.isDefault ? 1 : 0) : current.is_default,
+        sort: patch.sort ?? current.sort
+      };
+      db.prepare(`
+        UPDATE environments
+        SET key = ?, name = ?, base_url = ?, username = ?, password = ?, is_default = ?, sort = ?, updated_at = ?
+        WHERE id = ?
+      `).run(next.key, next.name, next.base_url, next.username, next.password, next.is_default, next.sort, now(), id);
+      return this.getEnvironmentById(id);
+    },
+    getLatestPassedRunForScenario(scenarioId) {
+      return db.prepare(`
+        SELECT * FROM runs
+        WHERE scenario_id = ? AND status = 'passed'
+        ORDER BY finished_at DESC, created_at DESC
+        LIMIT 1
+      `).get(scenarioId);
     },
     createDataset(dataset) {
       db.prepare(`
@@ -328,6 +521,34 @@ export function createPlatformDatabase(filename) {
         LIMIT 100
       `).all();
     },
+    listRunsForScenario(scenarioId, limit = 10) {
+      return db.prepare('SELECT * FROM runs WHERE scenario_id = ? ORDER BY created_at DESC LIMIT ?').all(scenarioId, limit);
+    },
+    listEntities(type) {
+      return db.prepare('SELECT * FROM platform_entities WHERE type = ? ORDER BY created_at DESC').all(type);
+    },
+    createEntity(entity) {
+      const id = entity.id || this.nextId(entity.prefix || 'ENT');
+      db.prepare('INSERT INTO platform_entities (id, type, name, payload, enabled, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, entity.type, entity.name, JSON.stringify(entity.payload || {}), entity.enabled === false ? 0 : 1, entity.createdBy || '', now(), now());
+      return db.prepare('SELECT * FROM platform_entities WHERE id = ?').get(id);
+    },
+    updateEntity(id, patch) {
+      const current = db.prepare('SELECT * FROM platform_entities WHERE id = ?').get(id);
+      if (!current) return null;
+      db.prepare('UPDATE platform_entities SET name = ?, payload = ?, enabled = ?, updated_at = ? WHERE id = ?')
+        .run(patch.name ?? current.name, JSON.stringify(patch.payload ?? JSON.parse(current.payload)), patch.enabled === undefined ? current.enabled : (patch.enabled ? 1 : 0), now(), id);
+      return db.prepare('SELECT * FROM platform_entities WHERE id = ?').get(id);
+    },
+    createAuditLog(log) {
+      const id = this.nextId('AUD');
+      db.prepare('INSERT INTO audit_logs (id, actor, action, target_type, target_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(id, log.actor || '', log.action, log.targetType || '', log.targetId || '', JSON.stringify(log.detail || {}), now());
+      return id;
+    },
+    listAuditLogs() {
+      return db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200').all();
+    },
     getSetting(key) {
       return db.prepare('SELECT * FROM settings WHERE key = ?').get(key);
     },
@@ -385,6 +606,9 @@ function migrateLegacySchema(db) {
   }
   if (scenarioColumns.length && !scenarioColumns.includes('module_id')) {
     db.exec("ALTER TABLE scenarios ADD COLUMN module_id TEXT NOT NULL DEFAULT ''");
+  }
+  if (scenarioColumns.length && !scenarioColumns.includes('depends_on')) {
+    db.exec("ALTER TABLE scenarios ADD COLUMN depends_on TEXT NOT NULL DEFAULT '[]'");
   }
   const runColumns = tableColumns(db, 'runs');
   if (runColumns.length && !runColumns.includes('execution_mode')) {

@@ -1,0 +1,3 @@
+基本信息名称,表名,项目标题,Excel栏位,是否可空值
+客户导入,ImsCustomer,客户编号,CustomerCode,否
+供应商导入,ImsVendor,供应商编号,VendorCode,否

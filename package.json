@@ -1,23 +1,33 @@
 {
-  "name": "jmom-ui-automation",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "start": "node server/index.mjs",
-    "dev": "node --watch server/index.mjs",
-    "test": "node --test \"tests/**/*.test.mjs\"",
-    "test:e2e": "node scripts/run-tests.mjs",
-    "test:e2e:headed": "node scripts/run-tests.mjs --headed",
-    "test:e2e:debug": "node scripts/run-tests.mjs --debug",
-    "results:summary": "node scripts/summarize-results.mjs",
-    "report": "node node_modules/playwright/cli.js show-report"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.54.1"
-  },
-  "dependencies": {
-    "express": "^5.2.1",
-    "multer": "^2.2.0",
-    "read-excel-file": "^9.2.0"
-  }
+    "name":  "jmom-ui-automation",
+    "version":  "0.1.0",
+    "private":  true,
+    "scripts":  {
+                    "start":  "node server/index.mjs",
+                    "dev":  "node --watch server/index.mjs",
+                    "test":  "node --test \"tests/**/*.test.mjs\"",
+                    "test:e2e":  "node scripts/run-tests.mjs",
+                    "test:e2e:headed":  "node scripts/run-tests.mjs --headed",
+                    "test:e2e:debug":  "node scripts/run-tests.mjs --debug",
+                    "record:local":  "node scripts/record-local.mjs",
+                    "results:summary":  "node scripts/summarize-results.mjs",
+                    "report":  "node node_modules/playwright/cli.js show-report",
+                    "dev:web":  "vite --config vite.config.js",
+                    "build:web":  "vite build --config vite.config.js"
+                },
+    "devDependencies":  {
+                            "@playwright/test":  "^1.54.1",
+                            "@vitejs/plugin-vue":  "^6.0.7",
+                            "vite":  "^7.3.6"
+                        },
+    "dependencies":  {
+                         "@element-plus/icons-vue":  "^2.3.2",
+                         "element-plus":  "^2.14.3",
+                         "express":  "^5.2.1",
+                         "multer":  "^2.2.0",
+                         "pinia":  "^3.0.4",
+                         "read-excel-file":  "^9.2.0",
+                         "vue":  "^3.5.39",
+                         "vue-router":  "^4.6.4"
+                     }
 }

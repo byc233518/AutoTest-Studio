@@ -343,6 +343,8 @@ function createArtifactRecords(database, runId, reportDir) {
 
 async function executePlaywright(app, run, scenario, dataset, reportDir) {
   await mkdir(reportDir, { recursive: true });
+  const environment = app.locals.database.getEnvironmentByKey(run.environment)
+    || app.locals.database.getDefaultEnvironment();
   const env = {
     ...process.env,
     JMOM_RUN_ID: run.id,
@@ -351,10 +353,16 @@ async function executePlaywright(app, run, scenario, dataset, reportDir) {
     JMOM_RESULT_DIR: reportDir,
     JMOM_PROCESS_FILE: path.resolve(reportDir, 'process.json'),
     JMOM_EXECUTION_MODE: run.execution_mode || 'headless',
-    JMOM_RECORD_EVIDENCE: '1'
+    JMOM_RECORD_EVIDENCE: '1',
+    ...(environment ? {
+      JMOM_BASE_URL: environment.base_url,
+      JMOM_USERNAME: environment.username,
+      JMOM_PASSWORD: environment.password
+    } : {})
   };
   const child = spawn(process.execPath, [
     path.resolve(app.locals.paths.workspaceRoot, 'scripts', 'run-tests.mjs'),
+    scenario.script_entry,
     ...buildPlaywrightCliArgs(run.execution_mode)
   ], {
     cwd: app.locals.paths.workspaceRoot,

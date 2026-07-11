@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { createApp } from './app.mjs';
 
-const port = Number(process.env.PORT || 46090);
+const port = Number(process.env.PORT || 3050);
 const host = process.env.HOST || '0.0.0.0';
 
 const app = await createApp();

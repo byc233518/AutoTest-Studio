@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { login } = require('./support/jmom-ui');
-const { rowsFor, shouldRun } = require('./support/dataset');
+const { rowsFor, shouldRun, testRowTitle } = require('./support/dataset');
 
 test.skip(!shouldRun('auth-login'), '平台本次未选择登录场景');
 
@@ -10,7 +10,7 @@ const rows = rowsFor('auth-login', () => ({
 }));
 
 for (const row of rows) {
-  test(`基座 - 登录验证 - ${row.用户名}`, async ({ page }) => {
+  test(testRowTitle('基座 - 登录验证', row.用户名, row), async ({ page }) => {
     process.env.JMOM_USERNAME = row.用户名;
     process.env.JMOM_PASSWORD = row.密码;
     await login(page);

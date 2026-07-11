@@ -15,12 +15,21 @@ function shouldRun(key) {
   return !scenarioKey || scenarioKey === key;
 }
 
+function annotateRows(rows) {
+  return rows.map((row, index) => ({ ...row, __rowNumber: index + 1 }));
+}
+
 function rowsFor(key, fallbackFactory) {
   const rows = loadRows();
   if (scenarioKey === key && rows.length) {
-    return rows;
+    return annotateRows(rows);
   }
-  return [fallbackFactory(config.runTag)];
+  return annotateRows([fallbackFactory(config.runTag)]);
 }
 
-module.exports = { rowsFor, shouldRun };
+function testRowTitle(prefix, label, row) {
+  const text = label || 'default';
+  return `${prefix} - ${text} #${row.__rowNumber}`;
+}
+
+module.exports = { rowsFor, shouldRun, testRowTitle };
