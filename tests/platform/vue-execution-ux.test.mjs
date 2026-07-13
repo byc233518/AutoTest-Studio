@@ -21,3 +21,16 @@ test('场景历史会切换执行记录页并传入场景筛选', async () => {
   assert.match(source, /@history="openRunHistory"/);
   assert.match(source, /runScenarioFilter\.value\s*=\s*scenario\?\.id/);
 });
+
+test('场景执行创建成功后留在当前页并直接打开详情抽屉', async () => {
+  const [app, scenarios] = await Promise.all([
+    readFile('frontend/src/App.vue', 'utf8'),
+    readFile('frontend/src/views/ScenariosView.vue', 'utf8')
+  ]);
+
+  assert.doesNotMatch(app, /@started="openRuns"/);
+  assert.match(scenarios, /RunDetailDrawer/);
+  assert.match(scenarios, /@started="handleStarted"/);
+  assert.match(scenarios, /await store\.loadRuns\(\)/);
+  assert.match(scenarios, /runDetailRef\.value\.open\(detailRun\)/);
+});
