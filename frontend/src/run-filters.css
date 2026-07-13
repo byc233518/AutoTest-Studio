@@ -1,0 +1,26 @@
+.runs-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 150px 220px minmax(280px, 340px) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.runs-filter-bar .el-select,
+.runs-filter-bar .el-date-editor {
+  width: 100%;
+}
+
+@media (max-width: 1280px) {
+  .runs-filter-bar {
+    grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(150px, 1fr));
+  }
+
+  .runs-filter-bar .el-date-editor {
+    grid-column: 1 / 3;
+  }
+
+  .runs-filter-bar .reset-filters {
+    justify-self: end;
+  }
+}
