@@ -12,6 +12,8 @@ test('执行记录页提供已确认的四类筛选和重置入口', async () =>
   assert.match(source, /filteredRuns/);
   assert.match(source, /resetFilters/);
   assert.match(source, /暂无符合条件的执行记录/);
+  assert.match(source, /aria-label="执行状态"/);
+  assert.match(source, /aria-label="测试场景"/);
 });
 
 test('场景历史会切换执行记录页并传入场景筛选', async () => {

@@ -13,10 +13,10 @@
 
       <div class="runs-filter-bar">
         <el-input v-model="filters.keyword" :prefix-icon="Search" placeholder="搜索执行编号或场景" clearable />
-        <el-select v-model="filters.status" placeholder="全部状态" clearable>
+        <el-select v-model="filters.status" aria-label="执行状态" placeholder="全部状态" clearable>
           <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <el-select v-model="filters.scenarioId" placeholder="全部场景" clearable filterable>
+        <el-select v-model="filters.scenarioId" aria-label="测试场景" placeholder="全部场景" clearable filterable>
           <el-option v-for="item in store.scenarios" :key="item.id" :label="item.name" :value="item.id" />
         </el-select>
         <el-date-picker
