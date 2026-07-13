@@ -32,6 +32,14 @@ npm start
 | 场景维护员 | maintainer | Maintainer123! |
 | 管理员 | admin | Admin123! |
 
+### Docker Compose 部署
+
+```bash
+docker-compose up -d --build
+```
+
+若 Docker 安装提供的是 CLI 插件，也可使用 `docker compose up -d --build`。服务映射到宿主机 `3050` 端口，SQLite、上传文件和执行报告持久化在宿主机的 `platform-data/`。容器基于 Node 22 Alpine，使用系统 Chromium，并通过 Xvfb 支持有头模式和 UI 模式执行。
+
 ## JMOM 测试环境
 
 默认被测环境来自 `Agents.md`：

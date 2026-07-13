@@ -1,0 +1,25 @@
+services:
+  qtp:
+    build:
+      context: .
+    image: jmom-qtp:local
+    container_name: jmom-qtp
+    restart: unless-stopped
+    init: true
+    ports:
+      - "3050:3050"
+    environment:
+      PORT: "3050"
+      HOST: "0.0.0.0"
+      NODE_ENV: production
+      DISPLAY: ":99"
+      PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: /usr/bin/chromium-browser
+    volumes:
+      - ./platform-data:/app/platform-data
+    shm_size: 1gb
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3050/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s

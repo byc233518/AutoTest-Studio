@@ -3,6 +3,7 @@ const path = require('node:path');
 
 const resultDir = process.env.JMOM_RESULT_DIR || path.join('test-results', 'latest');
 const baseURL = process.env.JMOM_BASE_URL || 'http://172.16.100.11:46069';
+const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
 
 module.exports = defineConfig({
   testDir: './tests',
@@ -32,7 +33,12 @@ module.exports = defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] }
+      use: {
+        ...devices['Desktop Chrome'],
+        ...(chromiumExecutablePath ? {
+          launchOptions: { executablePath: chromiumExecutablePath }
+        } : {})
+      }
     }
   ]
 });

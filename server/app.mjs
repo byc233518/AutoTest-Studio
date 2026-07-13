@@ -1050,13 +1050,25 @@ export async function createApp(options = {}) {
     }
   });
 
-  app.get('/api/runs/:runId/report-file/:file', requireAuth, (request, response) => {
+  app.get('/api/runs/:runId/report-file/*file', requireAuth, (request, response) => {
     const run = database.getRunById(request.params.runId);
     if (!run?.report_path) {
       return jsonError(response, 404, '报告文件不存在');
     }
-    const filePath = path.resolve(run.report_path, request.params.file);
-    if (!filePath.startsWith(path.resolve(run.report_path)) || !existsSync(filePath)) {
+
+    const reportRoot = path.resolve(run.report_path);
+    const requestedFile = Array.isArray(request.params.file)
+      ? request.params.file.join('/')
+      : request.params.file;
+    const filePath = [
+      path.resolve(reportRoot, requestedFile),
+      path.resolve(reportRoot, 'html', requestedFile)
+    ].find((candidate) => {
+      const relative = path.relative(reportRoot, candidate);
+      return relative && !relative.startsWith('..') && !path.isAbsolute(relative) && existsSync(candidate);
+    });
+
+    if (!filePath) {
       return jsonError(response, 404, '报告文件不存在');
     }
     response.type(path.extname(filePath));

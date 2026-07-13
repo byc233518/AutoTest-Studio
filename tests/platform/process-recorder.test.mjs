@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -49,4 +50,20 @@ test('Playwright 配置会为成功和失败执行都保留截图和录像', () 
 
   assert.equal(config.use.screenshot, 'on');
   assert.equal(config.use.video, 'on');
+});
+
+test('容器可以通过环境变量指定系统 Chromium', () => {
+  const output = execFileSync(process.execPath, ['-e', `
+    const config = require('./playwright.config.js');
+    process.stdout.write(config.projects[0].use.launchOptions?.executablePath || '');
+  `], {
+    cwd: path.resolve(import.meta.dirname, '../..'),
+    env: {
+      ...process.env,
+      PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: '/usr/bin/chromium-browser'
+    },
+    encoding: 'utf8'
+  });
+
+  assert.equal(output, '/usr/bin/chromium-browser');
 });
