@@ -316,11 +316,73 @@ export function createPlatformDatabase(filename) {
     listApps() {
       return db.prepare('SELECT * FROM apps ORDER BY sort, name').all();
     },
+    getAppById(id) {
+      return db.prepare('SELECT * FROM apps WHERE id = ?').get(id);
+    },
+    getAppByKey(key) {
+      return db.prepare('SELECT * FROM apps WHERE key = ?').get(key);
+    },
+    createApp(app) {
+      const id = app.id || this.nextId('APP');
+      db.prepare('INSERT INTO apps (id, key, name, description, sort) VALUES (?, ?, ?, ?, ?)')
+        .run(id, app.key, app.name, app.description || '', app.sort ?? 99);
+      return this.getAppById(id);
+    },
+    updateApp(id, patch) {
+      const current = this.getAppById(id);
+      if (!current) return null;
+      db.prepare('UPDATE apps SET key = ?, name = ?, description = ?, sort = ? WHERE id = ?')
+        .run(
+          patch.key ?? current.key,
+          patch.name ?? current.name,
+          patch.description ?? current.description,
+          patch.sort ?? current.sort,
+          id
+        );
+      return this.getAppById(id);
+    },
+    getAppReferences(id) {
+      return {
+        modules: db.prepare('SELECT COUNT(*) AS count FROM modules WHERE app_id = ?').get(id).count,
+        scenarios: db.prepare('SELECT COUNT(*) AS count FROM scenarios WHERE app_id = ?').get(id).count
+      };
+    },
+    deleteApp(id) {
+      return db.prepare('DELETE FROM apps WHERE id = ?').run(id).changes > 0;
+    },
     listModules(appId) {
       if (appId) {
         return db.prepare('SELECT * FROM modules WHERE app_id = ? ORDER BY sort, name').all(appId);
       }
       return db.prepare('SELECT * FROM modules ORDER BY app_id, sort, name').all();
+    },
+    getModuleById(id) {
+      return db.prepare('SELECT * FROM modules WHERE id = ?').get(id);
+    },
+    createModule(module) {
+      const id = module.id || this.nextId('MOD');
+      db.prepare('INSERT INTO modules (id, app_id, name, prefix, sort) VALUES (?, ?, ?, ?, ?)')
+        .run(id, module.appId, module.name, module.prefix, module.sort ?? 99);
+      return this.getModuleById(id);
+    },
+    updateModule(id, patch) {
+      const current = this.getModuleById(id);
+      if (!current) return null;
+      db.prepare('UPDATE modules SET app_id = ?, name = ?, prefix = ?, sort = ? WHERE id = ?')
+        .run(
+          patch.appId ?? current.app_id,
+          patch.name ?? current.name,
+          patch.prefix ?? current.prefix,
+          patch.sort ?? current.sort,
+          id
+        );
+      return this.getModuleById(id);
+    },
+    countScenariosForModule(id) {
+      return db.prepare('SELECT COUNT(*) AS count FROM scenarios WHERE module_id = ?').get(id).count;
+    },
+    deleteModule(id) {
+      return db.prepare('DELETE FROM modules WHERE id = ?').run(id).changes > 0;
     },
     getDefaultProject() {
       return db.prepare('SELECT * FROM projects ORDER BY id LIMIT 1').get();
@@ -437,6 +499,9 @@ export function createPlatformDatabase(filename) {
         WHERE id = ?
       `).run(next.key, next.name, next.base_url, next.username, next.password, next.is_default, next.sort, now(), id);
       return this.getEnvironmentById(id);
+    },
+    deleteEnvironment(id) {
+      return db.prepare('DELETE FROM environments WHERE id = ?').run(id).changes > 0;
     },
     getLatestPassedRunForScenario(scenarioId) {
       return db.prepare(`

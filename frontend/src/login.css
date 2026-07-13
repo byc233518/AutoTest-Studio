@@ -1,0 +1,7 @@
+.test-accounts { display: grid; gap: 8px; }
+.test-accounts button { width: 100%; border: 1px solid #e4e1f2; background: #faf9ff; border-radius: 8px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; text-align: left; color: var(--text); cursor: pointer; }
+.test-accounts button:hover, .test-accounts button.active { border-color: var(--el-color-primary); background: var(--el-color-primary-light-9); }
+.test-accounts button span { display: flex; flex-direction: column; gap: 3px; }
+.test-accounts button small { color: var(--muted); }
+.test-accounts code { color: #5b42a8; }
+.temporary-note { margin: 10px 0 0; color: var(--muted); font-size: 12px; text-align: center; }

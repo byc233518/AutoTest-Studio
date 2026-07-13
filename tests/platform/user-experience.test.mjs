@@ -48,6 +48,7 @@ test('运行详情提供业务摘要并支持失败行 CSV 下载', async (t) =>
   const finished = await context.waitForRun(run.runId);
   assert.ok(finished.businessSummary);
   assert.equal(typeof finished.businessSummary.totalRows, 'number');
+  assert.equal(finished.businessSummary.totalRows, finished.businessSummary.passedRows + finished.businessSummary.failedRows + finished.businessSummary.skippedRows);
   const csv = await context.fetch(`/api/runs/${run.runId}/failed-rows.csv`, { headers: { cookie } });
   assert.equal(csv.status, 200);
   assert.match(csv.headers.get('content-type'), /text\/csv/);

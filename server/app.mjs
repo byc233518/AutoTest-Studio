@@ -129,6 +129,10 @@ function scenarioQuality(database, scenario) {
 
 function toPublicRun(row) {
   const summary = JSON.parse(row.summary || '{}');
+  const passedRows = Number(summary.passed ?? 0);
+  const failedRows = Number(summary.failed ?? summary.failedRows?.length ?? 0);
+  const skippedRows = Number(summary.skipped ?? 0);
+  const totalRows = Number(summary.totalRows ?? summary.total ?? summary.tests?.length ?? (passedRows + failedRows + skippedRows));
   return {
     runId: row.id,
     scenarioId: row.scenario_id,
@@ -140,7 +144,7 @@ function toPublicRun(row) {
     startedAt: row.started_at,
     finishedAt: row.finished_at,
     summary,
-    businessSummary: { totalRows: Number(summary.totalRows ?? summary.tests?.length ?? 0), passedRows: Number(summary.passed ?? 0), failedRows: Number(summary.failed ?? summary.failedRows?.length ?? 0), failures: summary.failedRows || [] },
+    businessSummary: { totalRows, passedRows, failedRows, skippedRows, failures: summary.failedRows || [] },
     reportPath: row.report_path,
     error: row.error,
     processArtifacts: row.processArtifacts || []
@@ -321,7 +325,7 @@ export async function createApp(options = {}) {
   app.use('/reports', express.static(reportsDir));
 
   app.get('/api/health', (request, response) => {
-    response.json({ ok: true, service: 'jmom-test-platform' });
+    response.json({ ok: true, service: 'jmom-test-platform', runMode: app.locals.runMode });
   });
 
   app.post('/api/auth/login', (request, response) => {
@@ -404,8 +408,96 @@ export async function createApp(options = {}) {
     response.json({ apps: database.listApps().map(toPublicApp) });
   });
 
+  app.post('/api/apps', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+    const body = request.body || {};
+    if (!body.key || !body.name) {
+      return jsonError(response, 400, '请填写应用 key 和名称');
+    }
+    if (database.getAppByKey(body.key)) {
+      return jsonError(response, 409, '应用 key 已存在');
+    }
+    const created = database.createApp({
+      key: body.key,
+      name: body.name,
+      description: body.description || '',
+      sort: body.sort ?? 99
+    });
+    return response.status(201).json(toPublicApp(created));
+  });
+
+  app.put('/api/apps/:id', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+    const existing = database.getAppById(request.params.id);
+    if (!existing) {
+      return jsonError(response, 404, '应用不存在');
+    }
+    const duplicate = request.body?.key ? database.getAppByKey(request.body.key) : null;
+    if (duplicate && duplicate.id !== existing.id) {
+      return jsonError(response, 409, '应用 key 已存在');
+    }
+    return response.json(toPublicApp(database.updateApp(existing.id, request.body || {})));
+  });
+
+  app.delete('/api/apps/:id', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+    const existing = database.getAppById(request.params.id);
+    if (!existing) {
+      return jsonError(response, 404, '应用不存在');
+    }
+    const references = database.getAppReferences(existing.id);
+    if (references.modules || references.scenarios) {
+      return jsonError(
+        response,
+        409,
+        `应用仍关联 ${references.modules} 个模块和 ${references.scenarios} 个场景，无法删除`,
+        { references }
+      );
+    }
+    database.deleteApp(existing.id);
+    return response.status(204).end();
+  });
+
   app.get('/api/modules', requireAuth, (request, response) => {
     response.json({ modules: database.listModules(request.query.appId).map(toPublicModule) });
+  });
+
+  app.post('/api/modules', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+    const body = request.body || {};
+    if (!body.appId || !body.name || !body.prefix) {
+      return jsonError(response, 400, '请填写所属应用、模块名称和前缀');
+    }
+    if (!database.getAppById(body.appId)) {
+      return jsonError(response, 400, '所属应用不存在');
+    }
+    const created = database.createModule({
+      appId: body.appId,
+      name: body.name,
+      prefix: body.prefix,
+      sort: body.sort ?? 99
+    });
+    return response.status(201).json(toPublicModule(created));
+  });
+
+  app.put('/api/modules/:id', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+    const existing = database.getModuleById(request.params.id);
+    if (!existing) {
+      return jsonError(response, 404, '模块不存在');
+    }
+    if (request.body?.appId && !database.getAppById(request.body.appId)) {
+      return jsonError(response, 400, '所属应用不存在');
+    }
+    return response.json(toPublicModule(database.updateModule(existing.id, request.body || {})));
+  });
+
+  app.delete('/api/modules/:id', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+    const existing = database.getModuleById(request.params.id);
+    if (!existing) {
+      return jsonError(response, 404, '模块不存在');
+    }
+    const scenarioCount = database.countScenariosForModule(existing.id);
+    if (scenarioCount) {
+      return jsonError(response, 409, `模块仍关联 ${scenarioCount} 个场景，无法删除`, { scenarioCount });
+    }
+    database.deleteModule(existing.id);
+    return response.status(204).end();
   });
 
   app.get('/api/environments', requireAuth, (request, response) => {
@@ -437,8 +529,24 @@ export async function createApp(options = {}) {
     if (!existing) {
       return jsonError(response, 404, '环境不存在');
     }
+    const duplicate = request.body?.key ? database.getEnvironmentByKey(request.body.key) : null;
+    if (duplicate && duplicate.id !== existing.id) {
+      return jsonError(response, 409, '环境 key 已存在');
+    }
     const updated = database.updateEnvironment(request.params.id, request.body || {});
     return response.json(toPublicEnvironment(updated));
+  });
+
+  app.delete('/api/environments/:id', requireAuth, requireRole('admin'), (request, response) => {
+    const existing = database.getEnvironmentById(request.params.id);
+    if (!existing) {
+      return jsonError(response, 404, '环境不存在');
+    }
+    if (existing.is_default) {
+      return jsonError(response, 409, '默认环境不能删除，请先设置其他默认环境');
+    }
+    database.deleteEnvironment(existing.id);
+    return response.status(204).end();
   });
 
   app.get('/api/scenarios/:key/template.csv', requireAuth, (request, response) => {
