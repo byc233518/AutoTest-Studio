@@ -33,9 +33,16 @@ test('Vue 应用外壳提供浅色导航结构与折叠交互', async () => {
 
 test('独立框架样式定义桌面与响应式视觉规则', async () => {
   const styles = await readSource('frontend/src/shell.css');
+  const activeMenuRule = styles.match(
+    /\.shell-menu\s+\.el-menu-item\.is-active\s*\{([^}]*)\}/s
+  )?.[1] ?? '';
 
   assert.match(styles, /--shell-sidebar-width:\s*248px/);
+  assert.match(styles, /--shell-sidebar-collapsed-width:\s*76px/);
+  assert.match(styles, /--shell-primary:\s*#7c3aed/);
+  assert.match(styles, /--shell-accent:\s*#5578ff/);
   assert.match(styles, /\.shell-menu\s+\.el-menu-item\.is-active/);
+  assert.match(activeMenuRule, /background:\s*linear-gradient\([^;]*var\(--shell-primary\)[^;]*var\(--shell-accent\)[^;]*\)/s);
   assert.match(styles, /\.page-tabs/);
   assert.match(styles, /\.content-area/);
   assert.match(styles, /\.shell\.sidebar-collapsed/);
