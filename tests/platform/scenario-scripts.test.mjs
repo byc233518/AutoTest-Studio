@@ -64,6 +64,7 @@ test('本地录制上传后可以绑定脚本到指定场景', async (t) => {
   assert.match(recording.localCommand, /npm run record:local --/);
   assert.match(recording.recordCode, /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
   assert.ok(recording.recordCodeExpires);
+  assert.equal(recording.recorderDownloadUrl, '/api/recorder/download');
 
   const resolved = await ctx.fetch('/api/recordings/resolve', {
     method: 'POST',

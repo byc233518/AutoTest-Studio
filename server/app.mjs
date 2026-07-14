@@ -308,6 +308,9 @@ export async function createApp(options = {}) {
   const reportsDir = path.resolve(dataDir, 'reports');
   const recordingsDir = path.resolve(dataDir, 'recordings');
   const scriptsDir = path.resolve(dataDir, 'scripts');
+  const recorderPackagePath = options.recorderPackagePath
+    || process.env.JMOM_RECORDER_PACKAGE
+    || path.resolve(workspaceRoot, 'dist', 'JMOM本地录制器-win-x64.zip');
   await mkdir(uploadsDir, { recursive: true });
   await mkdir(reportsDir, { recursive: true });
   await mkdir(recordingsDir, { recursive: true });
@@ -320,7 +323,15 @@ export async function createApp(options = {}) {
   const upload = multer({ dest: path.resolve(dataDir, 'tmp') });
 
   app.locals.database = database;
-  app.locals.paths = { dataDir, uploadsDir, reportsDir, recordingsDir, scriptsDir, workspaceRoot };
+  app.locals.paths = {
+    dataDir,
+    uploadsDir,
+    reportsDir,
+    recordingsDir,
+    scriptsDir,
+    recorderPackagePath,
+    workspaceRoot
+  };
   app.locals.runMode = options.runMode || process.env.JMOM_RUN_MODE || 'playwright';
   app.locals.recordMode = options.recordMode || process.env.JMOM_RECORD_MODE || 'codegen';
   app.locals.silent = options.silent || false;
@@ -332,6 +343,16 @@ export async function createApp(options = {}) {
 
   app.get('/api/health', (request, response) => {
     response.json({ ok: true, service: 'jmom-test-platform', runMode: app.locals.runMode });
+  });
+
+  app.get('/api/recorder/download', requireAuth, (request, response) => {
+    if (!existsSync(app.locals.paths.recorderPackagePath)) {
+      return jsonError(response, 404, '免安装录制器尚未构建');
+    }
+    return response.download(
+      app.locals.paths.recorderPackagePath,
+      'JMOM本地录制器-win-x64.zip'
+    );
   });
 
   app.post('/api/auth/login', (request, response) => {
@@ -901,7 +922,8 @@ export async function createApp(options = {}) {
           : null,
         uploadToken: location === 'local' ? uploadToken : null,
         recordCode: recordCode?.code || null,
-        recordCodeExpires: recordCode?.expiresAt || null
+        recordCodeExpires: recordCode?.expiresAt || null,
+        recorderDownloadUrl: location === 'local' ? '/api/recorder/download' : null
       });
     } catch (error) {
       return next(error);
