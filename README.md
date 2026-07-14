@@ -111,10 +111,10 @@ npm start
 - 浜у搧瀹屽杽璁捐锛歚docs/superpowers/specs/2026-07-11-鐢ㄦ埛浣撻獙涓庤繍钀ヨ兘鍔涘畬鍠?design.md`
 
 
-在目标服务器上完成代码更新后，可直接使用一键脚本打包并运行：
+在目标服务器上完成代码更新后，可直接进入仓库根目录使用一键脚本打包并运行：
 
 ```bash
 sh docker/docker-deploy.sh
 ```
 
-该脚本会构建镜像、启动/更新容器并执行健康检查，也可以通过 Jenkins 的 Publish over SSH 在远端调用。
+该脚本会修复平台数据目录权限、构建镜像、启动/更新容器并执行健康检查，也可以通过 Jenkins 的 Publish over SSH 在远端调用。
