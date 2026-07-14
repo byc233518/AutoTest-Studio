@@ -10,7 +10,8 @@ import {
   normalizeRecordCode,
   resolvePortablePaths,
   resolveRecording,
-  runCodegen
+  runCodegen,
+  runRecording
 } from '../../scripts/lib/local-recording.mjs';
 
 test('录制器规范化平台地址和录制码', () => {
@@ -78,4 +79,58 @@ await writeFile(process.argv[outputIndex + 1], '// recorded', 'utf8');
   assert.equal(result.exitCode, 0);
   assert.equal(result.outputExists, true);
   assert.equal(await readFile(outputPath, 'utf8'), '// recorded');
+});
+
+test('上传失败后可在同一录制进程内重试而不重新消费录制码', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'jmom-recorder-retry-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const fakeCli = path.join(root, 'fake-cli.mjs');
+  await writeFile(fakeCli, `
+import { writeFile } from 'node:fs/promises';
+const outputIndex = process.argv.indexOf('-o');
+await writeFile(process.argv[outputIndex + 1], '// recorded', 'utf8');
+`, 'utf8');
+
+  let uploads = 0;
+  const server = createServer(async (request, response) => {
+    if (request.url === '/api/recordings/REC-RETRY/upload') {
+      for await (const _chunk of request) { /* consume multipart body */ }
+      uploads += 1;
+      response.statusCode = uploads === 1 ? 503 : 200;
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify(uploads === 1
+        ? { message: '平台暂时不可用' }
+        : { scriptEntry: 'platform-data/recordings/REC-RETRY.spec.js' }));
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const events = [];
+
+  const result = await runRecording({
+    platform: `http://127.0.0.1:${server.address().port}`,
+    recording: {
+      id: 'REC-RETRY',
+      token: 'upload-token',
+      startUrl: 'http://example.test/#/login'
+    },
+    paths: {
+      root,
+      nodeExecutable: process.execPath,
+      playwrightCli: fakeCli,
+      browserPath: path.join(root, 'browsers'),
+      recordingsDir: path.join(root, 'recordings')
+    },
+    codegenStdio: 'ignore',
+    emit: (event) => events.push(event),
+    waitForRetry: async () => 'retry'
+  });
+
+  assert.equal(uploads, 2);
+  assert.equal(result.scriptEntry, 'platform-data/recordings/REC-RETRY.spec.js');
+  assert.equal(events.some((event) => event.type === 'retryable'), true);
 });

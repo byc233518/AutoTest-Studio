@@ -134,7 +134,8 @@ export async function runRecording({
   spawnImpl = spawn,
   emit = () => {},
   codegenStdio = 'inherit',
-  deleteOnSuccess = false
+  deleteOnSuccess = false,
+  waitForRetry
 }) {
   const resolved = recording || await resolveRecording({ platform, code, fetchImpl });
   const scriptPath = path.resolve(outputPath || path.join(paths.recordingsDir, `${resolved.id}.spec.js`));
@@ -156,14 +157,34 @@ export async function runRecording({
     });
   }
 
-  emit({ type: 'status', stage: 'uploading', message: '正在上传录制脚本' });
-  const result = await uploadRecording({
-    platform,
-    id: resolved.id,
-    token: resolved.token,
-    filePath: scriptPath,
-    fetchImpl
-  });
+  let result;
+  while (!result) {
+    emit({ type: 'status', stage: 'uploading', message: '正在上传录制脚本' });
+    try {
+      result = await uploadRecording({
+        platform,
+        id: resolved.id,
+        token: resolved.token,
+        filePath: scriptPath,
+        fetchImpl
+      });
+    } catch (error) {
+      if (error.code !== 'UPLOAD_FAILED' || typeof waitForRetry !== 'function') throw error;
+      emit({
+        type: 'retryable',
+        stage: 'uploading',
+        code: error.code,
+        message: `${error.message}，可点击“重试上传”再次尝试`,
+        retryable: true
+      });
+      const action = await waitForRetry({ filePath: scriptPath, error });
+      if (action !== 'retry') {
+        throw new RecordingError('UPLOAD_CANCELLED', '上传已取消，录制脚本已保留在本机', {
+          filePath: scriptPath
+        });
+      }
+    }
+  }
   if (deleteOnSuccess) await rm(scriptPath, { force: true });
   emit({ type: 'completed', stage: 'finished', message: '录制脚本已上传', result });
   return result;
