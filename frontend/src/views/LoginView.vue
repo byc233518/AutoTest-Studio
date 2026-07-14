@@ -11,15 +11,15 @@
 
       <div class="login-capabilities">
         <article>
-          <strong>场景管理</strong>
+          <h3>场景管理</h3>
           <small>脚本、数据、环境与依赖统一沉淀</small>
         </article>
         <article>
-          <strong>执行闭环</strong>
+          <h3>执行闭环</h3>
           <small>预检、执行、过程与结果全程追踪</small>
         </article>
         <article>
-          <strong>证据回放</strong>
+          <h3>证据回放</h3>
           <small>步骤、截图、录像与报告集中查看</small>
         </article>
       </div>
