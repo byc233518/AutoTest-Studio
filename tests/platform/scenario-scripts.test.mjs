@@ -62,6 +62,26 @@ test('本地录制上传后可以绑定脚本到指定场景', async (t) => {
   assert.equal(recording.location, 'local');
   assert.equal(recording.scenarioKey, 'script-record-demo');
   assert.match(recording.localCommand, /npm run record:local --/);
+  assert.match(recording.recordCode, /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+  assert.ok(recording.recordCodeExpires);
+
+  const resolved = await ctx.fetch('/api/recordings/resolve', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code: recording.recordCode.toLowerCase().replace('-', ' ') })
+  });
+  assert.equal(resolved.status, 200);
+  const resolvedBody = await resolved.json();
+  assert.equal(resolvedBody.id, recording.id);
+  assert.equal(resolvedBody.token, recording.uploadToken);
+  assert.equal(resolvedBody.startUrl, recording.startUrl);
+
+  const repeated = await ctx.fetch('/api/recordings/resolve', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code: recording.recordCode })
+  });
+  assert.equal(repeated.status, 401);
 
   const form = new FormData();
   const script = `const { test, expect } = require('@playwright/test');
@@ -70,7 +90,7 @@ test('local recorded script', async ({ page }) => {
   await expect(page).toHaveURL(/.+/);
 });
 `;
-  form.append('token', recording.uploadToken);
+  form.append('token', resolvedBody.token);
   form.append('file', new Blob([script], { type: 'text/javascript' }), `${recording.id}.spec.js`);
 
   const uploaded = await ctx.fetch(`/api/recordings/${recording.id}/upload`, {

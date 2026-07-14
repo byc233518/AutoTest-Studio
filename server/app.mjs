@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { createReadStream, existsSync } from 'node:fs';
 import { createPlatformDatabase } from './platform/database.mjs';
 import { seedPlatform } from './platform/seed.mjs';
@@ -22,6 +22,11 @@ import {
   stopRecordingProcess,
   writeRecordingStub
 } from './platform/recordings.mjs';
+import {
+  createRecordingCode,
+  createRecordingCodeLimiter,
+  verifyRecordingCode
+} from './platform/recording-codes.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(__dirname, '..');
@@ -320,6 +325,7 @@ export async function createApp(options = {}) {
   app.locals.recordMode = options.recordMode || process.env.JMOM_RECORD_MODE || 'codegen';
   app.locals.silent = options.silent || false;
   app.locals.mockRunStepDelayMs = options.mockRunStepDelayMs || 0;
+  app.locals.recordingCodeLimiter = createRecordingCodeLimiter();
 
   app.use(express.json({ limit: '2mb' }));
   app.use('/reports', express.static(reportsDir));
@@ -845,6 +851,7 @@ export async function createApp(options = {}) {
       const startUrl = `${baseUrl}/#/login`;
       const uploadToken = createRecordingUploadToken();
       const uploadTokenExpires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      const recordCode = location === 'local' ? createRecordingCode() : null;
       let processInfo = { pid: null, mode: location, startUrl };
 
       if (location === 'server') {
@@ -874,6 +881,9 @@ export async function createApp(options = {}) {
           startUrl,
           uploadToken,
           uploadTokenExpires,
+          recordCodeHash: recordCode?.hash || null,
+          recordCodeExpires: recordCode?.expiresAt || null,
+          recordCodeUsedAt: null,
           createdBy: request.user.user_id,
           createdAt: new Date().toISOString()
         }, null, 2)}\n`,
@@ -889,8 +899,49 @@ export async function createApp(options = {}) {
         localCommand: location === 'local'
           ? buildLocalRecordCommand({ recordingId: id, uploadToken, startUrl, platformUrl })
           : null,
-        uploadToken: location === 'local' ? uploadToken : null
+        uploadToken: location === 'local' ? uploadToken : null,
+        recordCode: recordCode?.code || null,
+        recordCodeExpires: recordCode?.expiresAt || null
       });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post('/api/recordings/resolve', async (request, response, next) => {
+    try {
+      const clientKey = request.ip || request.socket.remoteAddress || 'unknown';
+      const limit = app.locals.recordingCodeLimiter.check(clientKey);
+      if (!limit.allowed) {
+        response.setHeader('retry-after', String(Math.max(1, Math.ceil(limit.retryAfterMs / 1000))));
+        return jsonError(response, 429, '录制码尝试次数过多，请稍后重试');
+      }
+
+      const code = request.body?.code || '';
+      const files = (await readdir(app.locals.paths.recordingsDir))
+        .filter((name) => name.endsWith('.meta.json'))
+        .sort()
+        .reverse();
+
+      for (const name of files) {
+        const metaPath = path.resolve(app.locals.paths.recordingsDir, name);
+        const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+        if (meta.location !== 'local' || !verifyRecordingCode(meta, code).ok) continue;
+
+        meta.recordCodeUsedAt = new Date().toISOString();
+        meta.recordCodeHash = null;
+        await writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
+        app.locals.recordingCodeLimiter.clear(clientKey);
+        return response.json({
+          id: meta.id,
+          token: meta.uploadToken,
+          startUrl: meta.startUrl,
+          expiresAt: meta.uploadTokenExpires
+        });
+      }
+
+      app.locals.recordingCodeLimiter.fail(clientKey);
+      return jsonError(response, 401, '录制码无效或已过期');
     } catch (error) {
       return next(error);
     }
