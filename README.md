@@ -57,6 +57,24 @@ $env:JMOM_PASSWORD='Abcd1234'
 npm start
 ```
 
+## 免安装本地录制
+
+普通测试同事推荐使用绿色免安装录制器，无需安装 Node.js、npm、Playwright 或 .NET Runtime：
+
+1. 在场景详情的“脚本与录制”页签点击“开始录制”。
+2. 下载并解压 `JMOM本地录制器-win-x64.zip`。
+3. 双击 `JMOM录制器.exe`，输入平台显示的 8 位录制码。
+4. 在 Playwright Inspector 中完成操作并关闭窗口。
+5. 录制器会自动上传脚本并绑定场景。
+
+录制码有效期为 30 分钟且只能使用一次。详细说明见：`docs/免安装录制器使用说明.md`。
+
+开发人员仍可使用兼容命令：
+
+```powershell
+npm run record:local -- --id REC-xxx --token TOKEN --url "http://172.16.100.11:46069/#/login" --platform "http://localhost:3050"
+```
+
 ## 开发与验证
 
 ```powershell
@@ -95,6 +113,7 @@ npm start
 ## 使用文档
 
 - 测试人员操作：`docs/测试人员使用手册.md`
+- 免安装录制器：`docs/免安装录制器使用说明.md`
 - 部署与安全：`docs/部署与安全说明.md`
 - 产品完善设计：`docs/superpowers/specs/2026-07-11-用户体验与运营能力完善-design.md`
 

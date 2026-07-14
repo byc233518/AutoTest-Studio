@@ -12,6 +12,8 @@ test('场景抽屉优先展示短录制码和免安装录制器下载入口', as
   assert.match(source, /下载免安装录制器/);
   assert.match(source, /recordCodeExpires/);
   assert.doesNotMatch(source, /recording\.localCommand/);
+  assert.doesNotMatch(source, /完成并绑定脚本/);
+  assert.doesNotMatch(source, /finishRecord/);
 });
 
 test('登录用户可以下载已构建的免安装录制器', async (t) => {
