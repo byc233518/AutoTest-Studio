@@ -351,7 +351,8 @@ export async function createApp(options = {}) {
     }
     return response.download(
       app.locals.paths.recorderPackagePath,
-      'JMOM本地录制器-win-x64.zip'
+      'JMOM本地录制器-win-x64.zip',
+      { dotfiles: 'allow' }
     );
   });
 
