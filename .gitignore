@@ -6,3 +6,4 @@ platform-data/
 .worktrees/
 recorder/**/bin/
 recorder/**/obj/
+dist/

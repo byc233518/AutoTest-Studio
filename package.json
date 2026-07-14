@@ -10,6 +10,8 @@
                     "test:e2e:headed":  "node scripts/run-tests.mjs --headed",
                     "test:e2e:debug":  "node scripts/run-tests.mjs --debug",
                     "record:local":  "node scripts/record-local.mjs",
+                    "test:recorder":  "node --test tests/platform/recording-codes.test.mjs tests/platform/local-recorder.test.mjs tests/platform/portable-recorder-package.test.mjs && dotnet test recorder/JmomRecorder.sln",
+                    "build:recorder":  "node scripts/build-portable-recorder.mjs",
                     "results:summary":  "node scripts/summarize-results.mjs",
                     "report":  "node node_modules/playwright/cli.js show-report",
                     "dev:web":  "vite --config vite.config.js",
