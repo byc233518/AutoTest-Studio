@@ -29,6 +29,16 @@ COPY --chown=node:node . .
 RUN npm run build:web
 RUN mkdir -p /app/test-results && chown -R node:node /app/test-results
 
+# 提前在镜像里建好平台数据子目录并授权给 node，这样即使宿主机以 root
+# 身份创建并挂载了 /app/platform-data，容器内非 root 的 node 用户也能
+# 正常写入 uploads/reports/recordings/scripts 等子目录。
+RUN mkdir -p /app/platform-data/uploads \
+         /app/platform-data/reports \
+         /app/platform-data/recordings \
+         /app/platform-data/scripts \
+         /app/platform-data/tmp \
+    && chown -R node:node /app/platform-data
+
 USER node
 
 EXPOSE 3050
