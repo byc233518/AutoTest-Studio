@@ -28,7 +28,6 @@
         :collapse="sidebarCollapsed"
         :collapse-transition="false"
         @select="handleMenuSelect"
-        @open="handleMenuOpen"
       >
         <el-menu-item index="scenarios">
           <el-icon><Collection /></el-icon>
@@ -40,8 +39,10 @@
         </el-menu-item>
         <el-sub-menu index="settings">
           <template #title>
-            <el-icon><Setting /></el-icon>
-            <span>设置</span>
+            <span class="settings-menu-title" @click="handleSettingsClick">
+              <el-icon><Setting /></el-icon>
+              <span>设置</span>
+            </span>
           </template>
           <el-menu-item index="apps">
             <el-icon><Grid /></el-icon>
@@ -144,7 +145,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import {
   Bell,
   Close,
@@ -173,6 +174,7 @@ const store = usePlatformStore();
 const view = ref('scenarios');
 const runScenarioFilter = ref('');
 const sidebarCollapsed = ref(false);
+let sidebarMediaQuery;
 
 const titles = {
   scenarios: ['测试场景', '准备数据并执行自动化回归'],
@@ -186,6 +188,10 @@ const titles = {
 const title = computed(() => titles[view.value]?.[0]);
 
 onMounted(async () => {
+  sidebarMediaQuery = window.matchMedia('(max-width: 900px)');
+  syncSidebarWithViewport(sidebarMediaQuery);
+  sidebarMediaQuery.addEventListener('change', syncSidebarWithViewport);
+
   try {
     await store.bootstrap();
   } catch (error) {
@@ -193,14 +199,20 @@ onMounted(async () => {
   }
 });
 
+onBeforeUnmount(() => {
+  sidebarMediaQuery?.removeEventListener('change', syncSidebarWithViewport);
+});
+
 function handleMenuSelect(nextView) {
   view.value = nextView;
 }
 
-function handleMenuOpen(index) {
-  if (index === 'settings' && sidebarCollapsed.value) {
-    sidebarCollapsed.value = false;
-  }
+function handleSettingsClick() {
+  if (sidebarCollapsed.value) sidebarCollapsed.value = false;
+}
+
+function syncSidebarWithViewport(event) {
+  sidebarCollapsed.value = event.matches;
 }
 
 function toggleSidebar() {

@@ -23,7 +23,7 @@
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
-  width: var(--shell-sidebar-width);
+  width: var(--shell-sidebar-width) !important;
   padding: 0 12px 14px;
   overflow: hidden;
   background: #fff;
@@ -170,13 +170,33 @@
 }
 
 .shell.sidebar-collapsed .brand-copy,
-.shell.sidebar-collapsed .sidebar-toggle span {
+.shell.sidebar-collapsed .sidebar-toggle span,
+.shell.sidebar-collapsed .shell-menu .el-sub-menu__icon-arrow,
+.shell.sidebar-collapsed .shell-menu .el-menu-item span,
+.shell.sidebar-collapsed .shell-menu .el-sub-menu__title span {
   display: none;
 }
 
 .shell.sidebar-collapsed .shell-brand {
   justify-content: center;
   padding-inline: 0;
+}
+
+.shell.sidebar-collapsed .shell-menu .el-menu-item,
+.shell.sidebar-collapsed .shell-menu .el-sub-menu__title,
+.shell.sidebar-collapsed .shell-menu .el-sub-menu .el-menu-item,
+.shell.sidebar-collapsed .shell-menu .el-sub-menu .el-menu-item.is-active {
+  justify-content: center;
+  padding: 0 !important;
+}
+
+.shell:not(.sidebar-collapsed) .shell-menu .el-menu-item span,
+.shell:not(.sidebar-collapsed) .shell-menu .el-sub-menu__title span {
+  display: inline;
+}
+
+.shell:not(.sidebar-collapsed) .shell-menu .settings-menu-title {
+  display: contents;
 }
 
 .shell-main {
@@ -251,6 +271,11 @@
 .topbar .runner-tag {
   color: var(--el-tag-text-color);
   font-size: 12px;
+}
+
+.topbar .runner-tag .el-tag__content {
+  color: inherit;
+  font-size: inherit;
 }
 
 .notification-icon {
@@ -362,32 +387,6 @@
 }
 
 @media (max-width: 900px) {
-  .shell > .sidebar {
-    width: var(--shell-sidebar-collapsed-width) !important;
-    padding-inline: 10px;
-  }
-
-  .shell .brand-copy,
-  .shell .sidebar-toggle span,
-  .shell-menu .el-sub-menu__icon-arrow,
-  .shell-menu .el-menu-item span,
-  .shell-menu .el-sub-menu__title span {
-    display: none;
-  }
-
-  .shell .shell-brand {
-    justify-content: center;
-    padding-inline: 0;
-  }
-
-  .shell-menu .el-menu-item,
-  .shell-menu .el-sub-menu__title,
-  .shell-menu .el-sub-menu .el-menu-item,
-  .shell-menu .el-sub-menu .el-menu-item.is-active {
-    justify-content: center;
-    padding: 0 !important;
-  }
-
   .topbar {
     padding-inline: 16px;
   }
