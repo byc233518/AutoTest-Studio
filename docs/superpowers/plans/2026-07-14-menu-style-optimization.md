@@ -537,3 +537,67 @@ Title: JMOM 自动化测试平台
 - [ ] **Step 5: 保存验证证据并报告**
 
 保留一张桌面展开态和一张收起或窄屏态截图作为最终 QA 证据。最终报告说明构建、测试、交互、控制台和剩余风险。
+
+### Task 5: 适配 ElephasCRM 风格的登录页左侧视觉
+
+**Files:**
+- Create: `frontend/src/assets/jmom-login-visual.svg`
+- Modify: `frontend/src/views/LoginView.vue`
+- Modify: `frontend/src/login.css`
+- Create: `tests/platform/vue-login-style.test.mjs`
+
+- [ ] **Step 1: 写入失败的登录页视觉契约测试**
+
+测试读取登录组件、登录样式和本地 SVG，验证 `login-visual`、`login-visual-brand`、`login-capabilities`、`login-panel-shell`、三张 JMOM 能力卡、SVG 背景引用和 768px 响应式隐藏规则。读取缺失 SVG 时安全返回空字符串，使 RED 阶段由断言失败而不是 `ENOENT` 结束。
+
+- [ ] **Step 2: 运行测试并确认 RED**
+
+```powershell
+node --test tests/platform/vue-login-style.test.mjs
+```
+
+Expected: 断言因登录页尚未包含参考结构而失败。
+
+- [ ] **Step 3: 复制本地视觉素材**
+
+将 `F:\workspace\ElephasCRM\web\src\assets\brand\client-login-bg.svg` 的完整内容写入 `frontend/src/assets/jmom-login-visual.svg`。素材必须进入当前仓库，不允许在 Vite 代码中使用跨仓库绝对路径。
+
+- [ ] **Step 4: 调整登录页结构**
+
+`LoginView.vue` 使用以下层级，同时保留现有表单、账号列表、`selectAccount` 和 `submit` 逻辑：
+
+```vue
+<div class="login-page">
+  <section class="login-visual" aria-label="JMOM 自动化测试平台介绍">
+    <div class="login-visual-brand">
+      <div class="login-brand-symbol" aria-hidden="true"><i/><i/><i/></div>
+      <div><h1>JMOM 自动化测试平台</h1><p>场景、数据、执行与证据的一体化工作台</p></div>
+    </div>
+    <div class="login-capabilities">
+      <article><strong>场景管理</strong><small>脚本、数据、环境与依赖统一沉淀</small></article>
+      <article><strong>执行闭环</strong><small>预检、执行、过程与结果全程追踪</small></article>
+      <article><strong>证据回放</strong><small>步骤、截图、录像与报告集中查看</small></article>
+    </div>
+  </section>
+  <section class="login-panel-shell" aria-label="登录">
+    <!-- 原有 el-card 登录表单完整保留 -->
+  </section>
+</div>
+```
+
+- [ ] **Step 5: 实现参考布局样式**
+
+`login.css` 覆盖旧登录样式：`.login-page` 使用 `jmom-login-visual.svg` 居中覆盖；`.login-panel-shell` 固定右侧 44.444444%；`.login-visual` 预留右侧面板宽度；品牌区和能力卡使用半透明白色、细边框、模糊和轻阴影；768px 以下隐藏 `.login-visual`，面板恢复普通文档流并占满视口。
+
+- [ ] **Step 6: 验证与提交**
+
+```powershell
+node --test tests/platform/vue-login-style.test.mjs
+node --test tests/platform/login-accounts.test.mjs
+npm.cmd test
+npm.cmd run build:web
+git add frontend/src/assets/jmom-login-visual.svg frontend/src/views/LoginView.vue frontend/src/login.css tests/platform/vue-login-style.test.mjs
+git commit -m "[feat] 优化登录页品牌视觉"
+```
+
+Expected: 新测试、登录账号回归和完整测试全部通过，Vite 构建成功；`web-dist` 在后续构建产物任务中单独提交。

@@ -5,6 +5,7 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn';
 import 'element-plus/dist/index.css';
 import './styles.css';
 import './login.css';
+import './shell.css';
 import App from './App.vue';
 
 createApp(App).use(createPinia()).use(ElementPlus, { locale: zhCn }).mount('#app');
