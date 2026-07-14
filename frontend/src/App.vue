@@ -41,7 +41,7 @@
           <template #title>
             <span class="settings-menu-title" @click="handleSettingsClick">
               <el-icon><Setting /></el-icon>
-              <span>设置</span>
+              <span class="settings-menu-label">设置</span>
             </span>
           </template>
           <el-menu-item index="apps">

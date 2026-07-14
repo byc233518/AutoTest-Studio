@@ -173,7 +173,7 @@
 .shell.sidebar-collapsed .sidebar-toggle span,
 .shell.sidebar-collapsed .shell-menu .el-sub-menu__icon-arrow,
 .shell.sidebar-collapsed .shell-menu .el-menu-item span,
-.shell.sidebar-collapsed .shell-menu .el-sub-menu__title span {
+.shell.sidebar-collapsed .shell-menu .settings-menu-label {
   display: none;
 }
 
@@ -191,12 +191,33 @@
 }
 
 .shell:not(.sidebar-collapsed) .shell-menu .el-menu-item span,
-.shell:not(.sidebar-collapsed) .shell-menu .el-sub-menu__title span {
+.shell:not(.sidebar-collapsed) .shell-menu .settings-menu-label {
   display: inline;
 }
 
+.shell-menu .settings-menu-title {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
 .shell:not(.sidebar-collapsed) .shell-menu .settings-menu-title {
-  display: contents;
+  display: flex;
+}
+
+.shell.sidebar-collapsed .shell-menu .settings-menu-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  visibility: visible;
+}
+
+.shell.sidebar-collapsed .shell-menu .settings-menu-title .el-icon {
+  margin-right: 0;
 }
 
 .shell-main {
