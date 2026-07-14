@@ -1,7 +1,8 @@
 services:
   qtp:
     build:
-      context: .
+      context: ..
+      dockerfile: docker/Dockerfile
     image: jmom-qtp:local
     container_name: jmom-qtp
     restart: unless-stopped
