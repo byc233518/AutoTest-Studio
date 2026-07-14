@@ -7,7 +7,7 @@ async function source(relativePath) {
 }
 
 test('容器镜像使用 Node 22、系统 Chromium 和 3050 端口', async () => {
-  const dockerfile = await source('Dockerfile');
+  const dockerfile = await source('docker/Dockerfile');
 
   assert.match(dockerfile, /FROM node:22-alpine/);
   assert.match(dockerfile, /apk add --no-cache[\s\S]*chromium/);
@@ -23,7 +23,7 @@ test('容器镜像使用 Node 22、系统 Chromium 和 3050 端口', async () =>
 });
 
 test('Compose 持久化平台数据并自动重启', async () => {
-  const compose = await source('compose.yaml');
+  const compose = await source('docker/compose.yaml');
 
   assert.match(compose, /3050:3050/);
   assert.match(compose, /\.\/platform-data:\/app\/platform-data/);
