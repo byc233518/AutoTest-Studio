@@ -1,8 +1,9 @@
 import express from 'express';
+import ExcelJS from 'exceljs';
 import multer from 'multer';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { createReadStream, existsSync } from 'node:fs';
 import { createPlatformDatabase } from './platform/database.mjs';
 import { seedPlatform } from './platform/seed.mjs';
@@ -13,7 +14,12 @@ import { generateSampleRowsSmart } from './platform/llm.mjs';
 import { publicLlmSetting } from './platform/settings.mjs';
 import { normalizeExecutionMode } from './platform/execution-mode.mjs';
 import { checkScenarioDependencies, assertDependenciesReady } from './platform/dependencies.mjs';
-import { isAllowedScriptFile, saveScenarioScript } from './platform/scenario-scripts.mjs';
+import {
+  isAllowedScriptFile,
+  readScenarioScript,
+  saveScenarioScript,
+  saveScenarioScriptContent
+} from './platform/scenario-scripts.mjs';
 import {
   buildLocalRecordCommand,
   createRecordingUploadToken,
@@ -590,6 +596,40 @@ export async function createApp(options = {}) {
     return response.send(`\uFEFF${headers}${example}\n`);
   });
 
+  app.get('/api/scenarios/:key/template.xlsx', requireAuth, async (request, response, next) => {
+    try {
+      const scenario = database.getScenarioByKey(request.params.key);
+      if (!scenario) {
+        return jsonError(response, 404, '测试场景不存在');
+      }
+      const schema = JSON.parse(scenario.data_schema);
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('测试数据');
+      worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+      worksheet.columns = schema.columns.map((column) => ({
+        header: column,
+        key: column,
+        width: Math.max(16, Math.min(32, column.length * 2 + 8))
+      }));
+      const header = worksheet.getRow(1);
+      header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF5B52A3' } };
+      header.alignment = { vertical: 'middle', horizontal: 'center' };
+      header.height = 24;
+      for (const column of schema.required || []) {
+        const index = schema.columns.indexOf(column) + 1;
+        if (index > 0) worksheet.getCell(1, index).note = '必填字段';
+      }
+      if (schema.example) worksheet.addRow(schema.columns.map((column) => schema.example[column] || ''));
+      const buffer = await workbook.xlsx.writeBuffer();
+      response.setHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      response.setHeader('content-disposition', `attachment; filename="${scenario.key}-template.xlsx"`);
+      return response.send(Buffer.from(buffer));
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   app.post('/api/scenarios/:key/sample-data', requireAuth, async (request, response, next) => {
     try {
       const scenario = database.getScenarioByKey(request.params.key);
@@ -599,7 +639,9 @@ export async function createApp(options = {}) {
       const schema = JSON.parse(scenario.data_schema);
       const result = await generateSampleRowsSmart(database, scenario, {
         count: request.body?.count || 3,
-        useLlm: Boolean(request.body?.useLlm)
+        offset: request.body?.offset || 0,
+        useLlm: Boolean(request.body?.useLlm),
+        rules: String(request.body?.rules || '').slice(0, 2000)
       });
       return response.json({
         scenarioId: scenario.id,
@@ -642,6 +684,51 @@ export async function createApp(options = {}) {
       return jsonError(response, 404, '测试场景不存在');
     }
     response.json(database.listDatasets(scenario.id).map(toPublicDataset));
+  });
+
+  app.get('/api/scenarios/:key/datasets/:datasetId', requireAuth, async (request, response, next) => {
+    try {
+      const scenario = database.getScenarioByKey(request.params.key);
+      if (!scenario) {
+        return jsonError(response, 404, '测试场景不存在');
+      }
+      const dataset = database.getDatasetById(request.params.datasetId);
+      if (!dataset || dataset.scenario_id !== scenario.id) {
+        return jsonError(response, 404, '测试数据集不存在');
+      }
+      const rows = JSON.parse(await readFile(dataset.rows_path, 'utf8'));
+      return response.json({ ...toPublicDataset(dataset), rows });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post('/api/scenarios/:key/datasets/preview', requireAuth, upload.single('file'), async (request, response, next) => {
+    try {
+      const scenario = database.getScenarioByKey(request.params.key);
+      if (!scenario) {
+        return jsonError(response, 404, '测试场景不存在');
+      }
+      if (!request.file) {
+        return jsonError(response, 400, '请选择 Excel 或 CSV 文件');
+      }
+      const schema = JSON.parse(scenario.data_schema);
+      const parsed = await parseDatasetFile(request.file.path, request.file.originalname);
+      const errors = validateRows(parsed.rows, schema);
+      if (errors.length) {
+        return jsonError(response, 422, '样本数据校验失败', { errors });
+      }
+      return response.json({
+        scenarioKey: scenario.key,
+        fileName: request.file.originalname,
+        columns: schema.columns,
+        rows: parsed.rows
+      });
+    } catch (error) {
+      return next(error);
+    } finally {
+      if (request.file?.path) await rm(request.file.path, { force: true }).catch(() => {});
+    }
   });
 
   app.post('/api/scenarios/:key/datasets', requireAuth, upload.single('file'), async (request, response, next) => {
@@ -687,6 +774,37 @@ export async function createApp(options = {}) {
     }
   });
 
+  app.get('/api/scenarios/:key/script', requireAuth, async (request, response, next) => {
+    try {
+      const scenario = database.getScenarioByKey(request.params.key);
+      if (!scenario) {
+        return jsonError(response, 404, '测试场景不存在');
+      }
+      if (!scenario.script_entry) {
+        return jsonError(response, 404, '场景尚未绑定脚本');
+      }
+      const script = await readScenarioScript({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        dataDir: app.locals.paths.dataDir,
+        scriptEntry: scenario.script_entry
+      });
+      if (!script) {
+        return jsonError(response, 400, '脚本路径无效');
+      }
+      return response.json({
+        scenarioKey: scenario.key,
+        scriptEntry: scenario.script_entry,
+        fileName: script.fileName,
+        content: script.content
+      });
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        return jsonError(response, 404, '脚本文件不存在');
+      }
+      return next(error);
+    }
+  });
+
   app.post('/api/scenarios/:key/script', requireAuth, upload.single('file'), async (request, response, next) => {
     try {
       const scenario = database.getScenarioByKey(request.params.key);
@@ -713,6 +831,46 @@ export async function createApp(options = {}) {
         scenarioKey: updated.key,
         scriptEntry: saved.scriptEntry,
         fileName: saved.fileName
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.put('/api/scenarios/:key/script', requireAuth, async (request, response, next) => {
+    try {
+      const scenario = database.getScenarioByKey(request.params.key);
+      if (!scenario) {
+        return jsonError(response, 404, '测试场景不存在');
+      }
+      const content = typeof request.body.content === 'string' ? request.body.content : '';
+      if (!content.trim()) {
+        return jsonError(response, 400, '脚本内容不能为空');
+      }
+      if (Buffer.byteLength(content, 'utf8') > 1024 * 1024) {
+        return jsonError(response, 413, '脚本内容不能超过 1 MB');
+      }
+      const fileName = request.body.fileName
+        || (scenario.script_entry ? path.basename(scenario.script_entry) : `${scenario.key}.spec.js`);
+      if (!isAllowedScriptFile(fileName)) {
+        return jsonError(response, 400, '仅支持 .js / .spec.js / .mjs 脚本文件');
+      }
+      const saved = await saveScenarioScriptContent({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        scriptsDir: app.locals.paths.scriptsDir,
+        dataDir: app.locals.paths.dataDir,
+        scenarioKey: scenario.key,
+        existingScriptEntry: scenario.script_entry,
+        fileName,
+        content
+      });
+      const updated = database.updateScenario(scenario.key, { scriptEntry: saved.scriptEntry });
+      return response.json({
+        scenarioId: updated.id,
+        scenarioKey: updated.key,
+        scriptEntry: saved.scriptEntry,
+        fileName: saved.fileName,
+        content
       });
     } catch (error) {
       return next(error);

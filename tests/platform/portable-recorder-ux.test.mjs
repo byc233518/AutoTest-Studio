@@ -16,6 +16,16 @@ test('场景抽屉优先展示短录制码和免安装录制器下载入口', as
   assert.doesNotMatch(source, /finishRecord/);
 });
 
+test('场景抽屉支持上传和在线编辑脚本', async () => {
+  const source = await readFile('frontend/src/components/ScenarioDrawer.vue', 'utf8');
+
+  assert.match(source, /上传并绑定/);
+  assert.match(source, /脚本源码/);
+  assert.match(source, /保存脚本/);
+  assert.match(source, /method: 'PUT'/);
+  assert.match(source, /\/api\/scenarios\/\$\{scenario\.value\.key\}\/script/);
+});
+
 test('登录用户可以下载已构建的免安装录制器', async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), 'jmom-recorder-package-'));
   const packageDir = path.join(root, '.绿色录制包');

@@ -9,7 +9,7 @@ const workshop = process.env.JMOM_WORKSHOP_NAME || '自动化车间-REAL0932';
 const line = process.env.JMOM_LINE_NAME || '自动化线体-REAL0932';
 
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
 const traffic = [];
 page.on('request', (req) => {
   if (req.url().includes('/FBuild/List') && req.method() === 'POST') {

@@ -6,7 +6,7 @@ const { login } = require('../tests/support/jmom-ui.js');
 const baseURL = process.env.JMOM_BASE_URL || 'http://172.16.100.11:46069';
 
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
 await login(page);
 await page.goto(`${baseURL}/#/iMES6/SfcsFactoryModeling/Index`, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(2500);

@@ -118,3 +118,5 @@ sh docker/docker-deploy.sh
 ```
 
 该脚本会修复平台数据目录权限、构建镜像、启动/更新容器并执行健康检查，也可以通过 Jenkins 的 Publish over SSH 在远端调用。
+
+免安装录制器需要先在 Windows 构建机执行 `npm run build:recorder`，再将 `dist/JMOM本地录制器-win-x64.zip` 上传到服务器仓库后重新部署。完整命令见 `docs/免安装录制器使用说明.md` 的“管理员构建与发布”章节。

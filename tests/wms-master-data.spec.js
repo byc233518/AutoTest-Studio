@@ -42,7 +42,7 @@ const partRows = rowsFor('wms-part-create', (runTag) => ({
 const locatorRows = rowsFor('wms-locator-create', (runTag) => ({
   储位码: `AT-LOC-${runTag}`,
   储位名称: `自动化储位-${runTag}`,
-  公司: '自动化公司',
+  公司: '自动化公司1',
   仓库: '自动化仓库',
   捡料区: 'PA01',
   储存区: 'SA01',

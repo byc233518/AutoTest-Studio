@@ -16,7 +16,7 @@ services:
       DISPLAY: ":99"
       PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: /usr/bin/chromium-browser
     volumes:
-      - ./platform-data:/app/platform-data
+      - ../platform-data:/app/platform-data
     shm_size: 1gb
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3050/api/health"]

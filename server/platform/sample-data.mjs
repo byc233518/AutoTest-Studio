@@ -139,11 +139,13 @@ function sampleValue(column, scenarioKey, index) {
   return `样例${seq}`;
 }
 
-export function generateSampleRows(scenario, count = 3) {
+export function generateSampleRows(scenario, count = 3, offset = 0) {
   const schema = JSON.parse(scenario.data_schema);
   const safeCount = Math.max(1, Math.min(Number(count) || 3, 20));
+  const safeOffset = Math.max(0, Number(offset) || 0);
   return Array.from({ length: safeCount }, (_, index) => {
-    return Object.fromEntries(schema.columns.map((column) => [column, sampleValue(column, scenario.key, index)]));
+    const rowIndex = safeOffset + index;
+    return Object.fromEntries(schema.columns.map((column) => [column, sampleValue(column, scenario.key, rowIndex)]));
   });
 }
 

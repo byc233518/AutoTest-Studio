@@ -1,4 +1,4 @@
-import { copyFile, mkdir, rename } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const ALLOWED_SCRIPT_PATTERN = /\.(spec\.)?[cm]?js$/i;
@@ -27,6 +27,69 @@ export function toWorkspaceScriptEntry(workspaceRoot, absolutePath, dataDir) {
     }
   }
   return relative.replaceAll('\\', '/');
+}
+
+function isWithin(root, candidate) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+export function resolveScenarioScriptPath({ workspaceRoot, dataDir, scriptEntry }) {
+  if (!scriptEntry || !isAllowedScriptFile(scriptEntry)) return null;
+  const normalizedEntry = String(scriptEntry).replaceAll('\\', '/');
+  const dataPrefix = 'platform-data/';
+  const isDataEntry = normalizedEntry.startsWith(dataPrefix);
+  const candidate = isDataEntry
+    ? path.resolve(dataDir, normalizedEntry.slice(dataPrefix.length))
+    : path.resolve(workspaceRoot, normalizedEntry);
+  if (isDataEntry ? !isWithin(dataDir, candidate) : !isWithin(workspaceRoot, candidate)) return null;
+  return candidate;
+}
+
+export async function readScenarioScript(options) {
+  const storedPath = resolveScenarioScriptPath(options);
+  if (!storedPath) return null;
+  return {
+    storedPath,
+    fileName: path.basename(storedPath),
+    content: await readFile(storedPath, 'utf8')
+  };
+}
+
+export async function saveScenarioScriptContent({
+  workspaceRoot,
+  scriptsDir,
+  dataDir,
+  scenarioKey,
+  existingScriptEntry,
+  fileName,
+  content
+}) {
+  const safeFileName = sanitizeScriptFileName(fileName);
+  const existingPath = existingScriptEntry
+    ? resolveScenarioScriptPath({ workspaceRoot, dataDir, scriptEntry: existingScriptEntry })
+    : null;
+  let storedPath;
+  if (existingPath && path.basename(existingPath) === safeFileName) {
+    storedPath = existingPath;
+  } else {
+    const targetDir = path.resolve(scriptsDir, scenarioKey);
+    if (!isWithin(scriptsDir, targetDir)) {
+      throw new Error('场景脚本目录无效');
+    }
+    await mkdir(targetDir, { recursive: true });
+    storedPath = path.resolve(targetDir, safeFileName);
+  }
+  const temporaryPath = `${storedPath}.${process.pid}.tmp`;
+  await writeFile(temporaryPath, content, 'utf8');
+  await rename(temporaryPath, storedPath);
+  return {
+    storedPath,
+    fileName: safeFileName,
+    scriptEntry: existingPath === storedPath
+      ? existingScriptEntry
+      : toWorkspaceScriptEntry(workspaceRoot, storedPath, dataDir)
+  };
 }
 
 export async function saveScenarioScript({

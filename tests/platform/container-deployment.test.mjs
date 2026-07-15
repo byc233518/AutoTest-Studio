@@ -26,7 +26,17 @@ test('Compose 持久化平台数据并自动重启', async () => {
   const compose = await source('docker/compose.yaml');
 
   assert.match(compose, /3050:3050/);
-  assert.match(compose, /\.\/platform-data:\/app\/platform-data/);
+  assert.match(compose, /\.\.\/platform-data:\/app\/platform-data/);
   assert.match(compose, /restart: unless-stopped/);
   assert.match(compose, /shm_size: 1gb/);
+});
+
+test('部署脚本修复的宿主机目录与 Compose 挂载目录一致', async () => {
+  const compose = await source('docker/compose.yaml');
+  const deployScript = await source('docker/docker-deploy.sh');
+
+  assert.match(compose, /\.\.\/platform-data:\/app\/platform-data/);
+  assert.match(deployScript, /cd "\$PROJECT_DIR"/);
+  assert.match(deployScript, /mkdir -p platform-data\/uploads/);
+  assert.match(deployScript, /chmod -R g\+rwX,o\+rwX platform-data/);
 });

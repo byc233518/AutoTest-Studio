@@ -4,10 +4,12 @@ import { validateRows } from './datasets.mjs';
 export { rowsToCsv };
 
 export async function generateSampleRowsSmart(database, scenario, options = {}) {
-  const count = options.count || 3;
+  const count = Math.max(1, Math.min(Number(options.count) || 3, 20));
+  const offset = Math.max(0, Math.min(Number(options.offset) || 0, 100000));
+  const rules = String(options.rules || '').trim();
   const useLlm = Boolean(options.useLlm);
   if (!useLlm) {
-    const rows = generateSampleRows(scenario, count);
+    const rows = generateSampleRows(scenario, count, offset);
     return { rows, source: 'rules', fallbackReason: null };
   }
   try {
@@ -16,7 +18,7 @@ export async function generateSampleRowsSmart(database, scenario, options = {}) 
     if (!value?.enabled || !value?.apiKey) {
       throw new Error('LLM 未配置或未启用');
     }
-    const rows = await callLlmForRows(value, scenario, count);
+    const rows = await callLlmForRows(value, scenario, count, rules, offset);
     const schema = JSON.parse(scenario.data_schema);
     const errors = validateRows(rows, schema);
     if (errors.length) {
@@ -24,12 +26,12 @@ export async function generateSampleRowsSmart(database, scenario, options = {}) 
     }
     return { rows, source: 'llm', fallbackReason: null };
   } catch (error) {
-    const rows = generateSampleRows(scenario, count);
+    const rows = generateSampleRows(scenario, count, offset);
     return { rows, source: 'rules', fallbackReason: error.message };
   }
 }
 
-async function callLlmForRows(setting, scenario, count) {
+async function callLlmForRows(setting, scenario, count, rules = '', offset = 0) {
   if (!setting.baseUrl) {
     throw new Error('未配置 LLM baseUrl');
   }
@@ -46,7 +48,7 @@ async function callLlmForRows(setting, scenario, count) {
         { role: 'system', content: '你是测试数据生成器，只返回 JSON 数组，不要 markdown。' },
         {
           role: 'user',
-          content: `为场景 ${scenario.key} (${scenario.name}) 生成 ${count} 行测试数据。列: ${schema.columns.join(',')}。必填: ${(schema.required || []).join(',')}。示例: ${JSON.stringify(schema.example || {})}。返回 JSON 数组，每项为对象。`
+          content: `为场景 ${scenario.key} (${scenario.name}) 生成 ${count} 行测试数据。列: ${schema.columns.join(',')}。必填: ${(schema.required || []).join(',')}。示例: ${JSON.stringify(schema.example || {})}。当前表格已有 ${offset} 行，新数据不要与已有序号重复。${rules ? `额外生成规则: ${rules}。` : ''}返回 JSON 数组，每项为对象。`
         }
       ],
       temperature: 0.2

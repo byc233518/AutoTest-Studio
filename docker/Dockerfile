@@ -29,9 +29,9 @@ COPY --chown=node:node . .
 RUN npm run build:web
 RUN mkdir -p /app/test-results && chown -R node:node /app/test-results
 
-# 提前在镜像里建好平台数据子目录并授权给 node，这样即使宿主机以 root
-# 身份创建并挂载了 /app/platform-data，容器内非 root 的 node 用户也能
-# 正常写入 uploads/reports/recordings/scripts 等子目录。
+# 未挂载持久化目录时，为镜像内的默认平台数据目录准备写权限。
+# 使用 Compose 部署时，宿主机挂载会覆盖这里的目录和权限，相关权限由
+# docker-deploy.sh 在启动容器前处理。
 RUN mkdir -p /app/platform-data/uploads \
          /app/platform-data/reports \
          /app/platform-data/recordings \
@@ -43,4 +43,4 @@ USER node
 
 EXPOSE 3050
 
-CMD ["sh", "-c", "Xvfb :99 -screen 0 1440x900x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & exec node server/index.mjs"]
+CMD ["sh", "-c", "Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & exec node server/index.mjs"]

@@ -22,7 +22,7 @@ async function probe(page, hashPath, buttonText) {
 }
 
 const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
 await login(page);
 const ws = await probe(page, '/iMES6/SfcsFactoryModeling/Index', '新增车间');
 const wo = await probe(page, '/iMES6/ProductConfiguration/Wo/Index', '虚拟工单');
