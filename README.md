@@ -1,55 +1,69 @@
-﻿# JMOM 鑷姩鍖栨祴璇曞钩鍙?
+# JMOM 测试自动化平台
 
-杩欐槸闈㈠悜娴嬭瘯浜哄憳鐨?JMOM B/S 鑷姩鍖栨祴璇曞钩鍙般€傚钩鍙版妸 Playwright 鑴氭湰鍖呰鎴愬彲绠＄悊鐨勬祴璇曞満鏅紝娴嬭瘯浜哄憳閫氳繃缃戦〉閫夋嫨鍦烘櫙銆佷笂浼犳牱鏈暟鎹€佹墽琛屽洖褰掑苟鏌ョ湅鎶ュ憡銆?
+这是面向 JMOM B/S 系统的测试自动化平台。平台把 Playwright 脚本、测试数据、执行环境和执行报告集中管理，测试人员可以通过网页选择场景、维护样本数据、录制或上传脚本，并查看执行过程、截图、录像和报告。
 
-## 涓€鏈熻兘鍔?
+## 核心能力
 
-- 鍦烘櫙搴擄細鐧诲綍銆佸鎴?渚涘簲鍟?鐗╂枡/搴撲綅銆侀噰璐?閿€鍞鍗曪紙瀵煎叆璺緞锛夈€丒xcel 瀵煎叆閰嶇疆锛屼互鍙?MES 宸ュ崟/绾夸綋/鏉＄爜杩囩珯銆?
-- 鏍锋湰鏁版嵁锛欳SV/Excel 涓婁紶鏍￠獙锛涜鍒欏寲鏍蜂緥鐢熸垚锛涘彲閫?AI 鐢熸垚锛堝け璐ュ洖閫€瑙勫垯锛夈€?
-- 鎵ц涓績锛歅laywright Runner锛沨eadless / headed / ui锛涘鐜鍒囨崲锛涙寜 scriptEntry 绮剧‘鎵ц銆?
-- 鎶ュ憡涓績锛氭墽琛岀姸鎬併€丠TML 鎶ュ憡銆佽繃绋嬫埅鍥句笌褰曞儚鍥炴斁銆?
-- 骞冲彴鎵╁睍锛氬満鏅?CRUD / 鍙戝竷涓嬫灦銆佷緷璧栨鏌ャ€佸綍鍒惰崏绋垮叆搴撱€?
-- 鏉冮檺锛氭祴璇曚汉鍛樼淮鎶ゆ暟鎹苟鎵ц锛涚淮鎶ゅ憳/绠＄悊鍛樼鐞嗗満鏅笌鐜銆?
+- 场景库：登录、客户、供应商、物料、库位、采购、销售、Excel 导入、MES 工单、车间线体、条码过站等场景。
+- 测试数据：支持 CSV/Excel 上传、在线表格维护、规则样例生成和可选 AI 生成。
+- 执行中心：基于 Playwright Runner，支持 headless、headed、UI 实时观察模式，多环境切换，并按 `scriptEntry` 精确执行。
+- 报告中心：展示执行状态、HTML 报告、过程截图、录像回放、失败数据下载。
+- 脚本管理：支持上传脚本、在线编辑、本地录制自动绑定、离线录制后手工上传；脚本保存最近 10 个版本，可防止误操作。
+- 权限：测试人员维护数据并执行；维护员和管理员管理场景、环境和发布状态。
 
-瀹屽杽璺嚎鍥撅細`docs/superpowers/specs/2026-07-09-瀹屽杽璺嚎鍥?design.md`
+完善路线图见：`docs/superpowers/specs/2026-07-09-完善路线图-design.md`
 
-## 鍚姩骞冲彴
+## 启动平台
 
 ```powershell
 npm install
 npm start
 ```
 
-榛樿璁块棶鍦板潃锛?
+默认访问地址：
 
 - `http://localhost:3050`
 
-榛樿骞冲彴璐﹀彿锛?
+默认平台账号：
 
-| 瑙掕壊 | 璐﹀彿 | 瀵嗙爜 |
-|------|------|------|
-| 娴嬭瘯浜哄憳 | tester | Tester123! |
-| 鍦烘櫙缁存姢鍛?| maintainer | Maintainer123! |
-| 绠＄悊鍛?| admin | Admin123! |
+| 角色 | 账号 | 密码 |
+| --- | --- | --- |
+| 测试人员 | tester | Tester123! |
+| 场景维护员 | maintainer | Maintainer123! |
+| 管理员 | admin | Admin123! |
 
-### Docker Compose 閮ㄧ讲
+## Docker 部署
 
 ```bash
 cd docker
 docker-compose up -d --build
 ```
 
-鑻?Docker 瀹夎鎻愪緵鐨勬槸 CLI 鎻掍欢锛屼篃鍙娇鐢?`docker compose up -d --build`銆傛湇鍔℃槧灏勫埌瀹夸富鏈?`3050` 绔彛锛孲QLite銆佷笂浼犳枃浠跺拰鎵ц鎶ュ憡鎸佷箙鍖栧湪瀹夸富鏈虹殑 `platform-data/`銆傚鍣ㄥ熀浜?Node 22 Alpine锛屼娇鐢ㄧ郴缁?Chromium锛屽苟閫氳繃 Xvfb 鏀寔鏈夊ご妯″紡鍜?UI 妯″紡鎵ц銆?
+如果 Docker 安装提供的是 CLI 插件，也可以使用：
 
-## JMOM 娴嬭瘯鐜
+```bash
+docker compose up -d --build
+```
 
-榛樿琚祴鐜鏉ヨ嚜 `Agents.md`锛?
+服务默认映射到宿主机 `3050` 端口。SQLite、上传文件和执行报告持久化在 `platform-data/`。容器基于 Node 22 Alpine，使用系统 Chromium，并通过 Xvfb 支持 headed 和 UI 模式执行。
+
+在目标服务器完成代码更新后，也可以在仓库根目录执行：
+
+```bash
+sh docker/docker-deploy.sh
+```
+
+该脚本会修复平台数据目录权限、构建镜像、启动或更新容器并执行健康检查，也可以通过 Jenkins 的 Publish over SSH 在远端调用。
+
+## JMOM 测试环境
+
+默认被测环境来自 `Agents.md`：
 
 - `JMOM_BASE_URL=http://172.16.100.11:46069`
 - `JMOM_USERNAME=byc`
 - `JMOM_PASSWORD=Abcd1234`
 
-濡傞渶瑕嗙洊锛?
+如需覆盖：
 
 ```powershell
 $env:JMOM_BASE_URL='http://172.16.100.11:46069'
@@ -58,65 +72,154 @@ $env:JMOM_PASSWORD='Abcd1234'
 npm start
 ```
 
-## 鍏嶅畨瑁呮湰鍦板綍鍒?
-鏅€氭祴璇曞悓浜嬫帹鑽愪娇鐢ㄧ豢鑹插厤瀹夎褰曞埗鍣紝鏃犻渶瀹夎 Node.js銆乶pm銆丳laywright 鎴?.NET Runtime锛?
-1. 鍦ㄥ満鏅鎯呯殑鈥滆剼鏈笌褰曞埗鈥濋〉绛剧偣鍑烩€滃紑濮嬪綍鍒垛€濄€?2. 涓嬭浇骞惰В鍘?`JMOM鏈湴褰曞埗鍣?win-x64.zip`銆?3. 鍙屽嚮 `JMOM褰曞埗鍣?exe`锛岃緭鍏ュ钩鍙版樉绀虹殑 8 浣嶅綍鍒剁爜銆?4. 鍦?Playwright Inspector 涓畬鎴愭搷浣滃苟鍏抽棴绐楀彛銆?5. 褰曞埗鍣ㄤ細鑷姩涓婁紶鑴氭湰骞剁粦瀹氬満鏅€?
-褰曞埗鐮佹湁鏁堟湡涓?30 鍒嗛挓涓斿彧鑳戒娇鐢ㄤ竴娆°€傝缁嗚鏄庤锛歚docs/鍏嶅畨瑁呭綍鍒跺櫒浣跨敤璇存槑.md`銆?
-寮€鍙戜汉鍛樹粛鍙娇鐢ㄥ吋瀹瑰懡浠わ細
+## 本地录制
+
+普通测试同事推荐使用绿色免安装录制器，无需安装 Node.js、npm、Playwright 或 .NET Runtime。
+
+在线绑定流程：
+
+1. 在场景详情的“脚本与录制”页签点击“开始录制”。
+2. 下载并解压 `JMOM本地录制器-win-x64.zip`。
+3. 双击 `JMOM录制器.exe`，输入平台显示的 8 位录制码。
+4. 在 Playwright Inspector 中完成操作并关闭窗口。
+5. 录制器会自动上传脚本到 `tests/recordings/`，并绑定当前场景。
+
+录制码有效期为 30 分钟，且只能使用一次。
+
+离线录制流程：
+
+```powershell
+npm run record:local -- --offline --url "http://172.16.100.11:46069/#/login" --output "tests/recordings/offline-login.spec.js"
+```
+
+离线模式只生成脚本，不连接测试平台。生成后可在平台的场景详情中选择该脚本手工上传并绑定。
+
+在线命令兼容模式：
 
 ```powershell
 npm run record:local -- --id REC-xxx --token TOKEN --url "http://172.16.100.11:46069/#/login" --platform "http://localhost:3050"
 ```
 
-## 寮€鍙戜笌楠岃瘉
+免安装录制器需要先在 Windows 构建机执行：
+
+```powershell
+npm run build:recorder
+```
+
+然后将 `dist/JMOM本地录制器-win-x64.zip` 上传到服务器仓库后重新部署。完整说明见 `docs/免安装录制器使用说明.md`。
+
+## 测试人员本机执行
+
+绿色免安装录制器现已同时提供“录制场景”和“执行场景”，测试人员无需安装 Node.js、Playwright、Chromium 或 .NET Runtime。
+
+1. 在场景列表点击“执行”，将“执行位置”切换为“本机执行”。
+2. 选择执行环境、浏览器模式和测试数据，创建执行任务。
+3. 平台生成 8 位一次性执行码，30 分钟内有效。
+4. 打开 `JMOM录制器.exe`，功能选择“执行场景”，输入平台地址和执行码。
+5. 工具在测试人员电脑上下载场景脚本与数据，运行 Playwright，并把报告、截图、录像和 Trace 自动上传平台。
+
+本机执行任务在“执行与报告”中标记为“测试人员本机”，任务领取前显示排队中，领取后显示执行中。绿色包的构建命令仍为：
+
+```powershell
+npm run build:recorder
+```
+
+## 可执行录制脚本规范
+
+录制器生成的 Playwright 操作脚本需要补充数据字段和断言后，才能成为可复用场景脚本。平台支持在脚本中声明 `testDataSchema`，上传或录制绑定时会自动回写到场景的测试数据字段。
+
+推荐模板：
+
+```js
+const { test, expect } = require('@playwright/test');
+const { defineRecordedTests } = require(process.cwd() + '/tests/support/recorded-script');
+
+const testDataSchema = {
+  columns: ['locatorCode', 'locatorName', 'warehouseCode'],
+  required: ['locatorCode', 'locatorName', 'warehouseCode'],
+  example: {
+    locatorCode: 'KW-001',
+    locatorName: '自动化库位001',
+    warehouseCode: 'WMS01'
+  }
+};
+exports.testDataSchema = testDataSchema;
+
+defineRecordedTests(test, '库位维护录入', testDataSchema, async ({ page }, data) => {
+  await page.goto(process.env.JMOM_BASE_URL || 'http://172.16.100.11:46069/#/login');
+
+  await page.getByRole('textbox', { name: '库位编码' }).fill(data.locatorCode);
+  await page.getByRole('textbox', { name: '库位名称' }).fill(data.locatorName);
+  await page.getByRole('textbox', { name: '仓库' }).fill(data.warehouseCode);
+  await page.getByRole('button', { name: '保存' }).click();
+
+  await expect(page.getByText('保存成功')).toBeVisible();
+  await expect(page.getByText(data.locatorCode)).toBeVisible();
+});
+```
+
+闭环规则：
+
+1. `testDataSchema.columns` 决定平台测试数据表格、Excel 模板、自动生成字段。
+2. `required` 决定上传或手工保存数据时的必填校验。
+3. `example` 是没有选择数据集时的本地回退样例。
+4. 执行任务创建后，Runner 会把选中的数据集路径写入 `JMOM_DATASET_PATH`。
+5. `defineRecordedTests` 会读取 `JMOM_DATASET_PATH`，按数据集每一行循环生成一个 Playwright test。
+
+## 脚本版本管理
+
+场景脚本在以下操作前会自动归档当前版本：
+
+- 上传并绑定脚本
+- 在线编辑保存脚本
+- 录制脚本自动绑定
+- 从历史版本恢复
+
+每个场景默认保留最近 10 个脚本版本。版本文件存放在：
+
+```text
+platform-data/scripts/_versions/<scenarioKey>/
+```
+
+## 开发与验证
 
 ```powershell
 npm test
 npm run test:e2e
 ```
 
-骞冲彴鏁版嵁榛樿鍐欏叆锛?
+平台数据默认写入：
 
 - `platform-data/platform.sqlite`
 - `platform-data/uploads/`
 - `platform-data/reports/`
+- `platform-data/scripts/`
 
-Playwright 鍘熷缁撴灉浠嶄細鍐欏叆锛?
+Playwright 原始结果仍会写入：
 
-- `test-results/runs/<杩愯鏃堕棿>/`
+- `test-results/runs/<运行时间>/`
 
-## 鏍锋湰鏁版嵁璇存槑
+## 样本数据说明
 
-缃戦〉涓繘鍏ュ満鏅鎯呭悗锛岀偣鍑烩€滀笅杞紺SV妯℃澘鈥濓紝濉啓鍚庝笂浼犮€傚钩鍙颁細鏍￠獙蹇呭～鍒楋紝鏍￠獙閫氳繃鍚庢墠鑳藉垱寤烘墽琛屼换鍔°€?
+网页中进入场景详情后，可下载 Excel 模板，填写后上传。平台会校验必填列，校验通过后才会创建执行任务。
 
-鏀寔鏍煎紡锛?
+支持格式：
 
 - `.csv`
 - `.xlsx`
 
-## Runner 妯″紡
+## Runner 模式
 
-骞冲彴榛樿浣跨敤鐪熷疄 Playwright Runner銆傚紑鍙戞祴璇曟椂鍙娇鐢?mock 妯″紡蹇€熼獙璇佸钩鍙版祦绋嬶細
+平台默认使用真实 Playwright Runner。开发测试时可使用 mock 模式快速验证平台流程：
 
 ```powershell
 $env:JMOM_RUN_MODE='mock'
 npm start
 ```
 
-## 浣跨敤鏂囨。
+## 使用文档
 
-- 娴嬭瘯浜哄憳鎿嶄綔锛歚docs/娴嬭瘯浜哄憳浣跨敤鎵嬪唽.md`
-- 鍏嶅畨瑁呭綍鍒跺櫒锛歚docs/鍏嶅畨瑁呭綍鍒跺櫒浣跨敤璇存槑.md`
-- 閮ㄧ讲涓庡畨鍏細`docs/閮ㄧ讲涓庡畨鍏ㄨ鏄?md`
-- 浜у搧瀹屽杽璁捐锛歚docs/superpowers/specs/2026-07-11-鐢ㄦ埛浣撻獙涓庤繍钀ヨ兘鍔涘畬鍠?design.md`
-
-
-在目标服务器上完成代码更新后，可直接进入仓库根目录使用一键脚本打包并运行：
-
-```bash
-sh docker/docker-deploy.sh
-```
-
-该脚本会修复平台数据目录权限、构建镜像、启动/更新容器并执行健康检查，也可以通过 Jenkins 的 Publish over SSH 在远端调用。
-
-免安装录制器需要先在 Windows 构建机执行 `npm run build:recorder`，再将 `dist/JMOM本地录制器-win-x64.zip` 上传到服务器仓库后重新部署。完整命令见 `docs/免安装录制器使用说明.md` 的“管理员构建与发布”章节。
+- 测试人员操作：`docs/测试人员使用手册.md`
+- 免安装录制器：`docs/免安装录制器使用说明.md`
+- 部署与安全：`docs/部署与安全说明.md`
+- 产品完善设计：`docs/superpowers/specs/2026-07-11-用户体验与运营能力完善-design.md`

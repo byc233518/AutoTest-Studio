@@ -11,6 +11,7 @@ import {
   resolvePortablePaths,
   resolveRecording,
   runCodegen,
+  runOfflineRecording,
   runRecording
 } from '../../scripts/lib/local-recording.mjs';
 
@@ -81,6 +82,35 @@ await writeFile(process.argv[outputIndex + 1], '// recorded', 'utf8');
   assert.equal(await readFile(outputPath, 'utf8'), '// recorded');
 });
 
+test('离线录制只生成脚本不需要平台录制码', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'jmom-recorder-offline-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const fakeCli = path.join(root, 'fake-cli.mjs');
+  const outputPath = path.join(root, 'offline.spec.js');
+  await writeFile(fakeCli, `
+import { writeFile } from 'node:fs/promises';
+const outputIndex = process.argv.indexOf('-o');
+await writeFile(process.argv[outputIndex + 1], 'const { test } = require("@playwright/test");', 'utf8');
+`, 'utf8');
+
+  const result = await runOfflineRecording({
+    startUrl: 'http://example.test/#/login',
+    paths: {
+      root,
+      nodeExecutable: process.execPath,
+      playwrightCli: fakeCli,
+      browserPath: path.join(root, 'browsers'),
+      recordingsDir: path.join(root, 'recordings')
+    },
+    outputPath,
+    codegenStdio: 'ignore'
+  });
+
+  assert.equal(result.mode, 'offline');
+  assert.equal(result.scriptPath, outputPath);
+  assert.equal(await readFile(outputPath, 'utf8'), 'const { test } = require("@playwright/test");');
+});
+
 test('上传失败后可在同一录制进程内重试而不重新消费录制码', async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), 'jmom-recorder-retry-'));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -100,7 +130,7 @@ await writeFile(process.argv[outputIndex + 1], '// recorded', 'utf8');
       response.setHeader('content-type', 'application/json');
       response.end(JSON.stringify(uploads === 1
         ? { message: '平台暂时不可用' }
-        : { scriptEntry: 'platform-data/recordings/REC-RETRY.spec.js' }));
+        : { scriptEntry: 'tests/recordings/REC-RETRY.spec.js' }));
       return;
     }
     response.statusCode = 404;
@@ -131,6 +161,6 @@ await writeFile(process.argv[outputIndex + 1], '// recorded', 'utf8');
   });
 
   assert.equal(uploads, 2);
-  assert.equal(result.scriptEntry, 'platform-data/recordings/REC-RETRY.spec.js');
+  assert.equal(result.scriptEntry, 'tests/recordings/REC-RETRY.spec.js');
   assert.equal(events.some((event) => event.type === 'retryable'), true);
 });

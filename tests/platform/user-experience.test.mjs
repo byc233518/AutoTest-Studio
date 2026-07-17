@@ -24,6 +24,8 @@ test('执行预检返回脚本、数据、环境和依赖检查', async (t) => {
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.deepEqual(body.checks.map((item) => item.type), ['status', 'script', 'dataset', 'environment', 'dependencies']);
+  assert.deepEqual(body.checks.map((item) => item.label), ['场景已发布', '已绑定自动化脚本', '已有有效样本数据', '执行环境可用', '前置依赖已完成']);
+  assert.deepEqual(body.checks.map((item) => item.action), ['发布场景', '上传脚本', '上传数据', '配置环境', '执行依赖链']);
   assert.equal(body.ready, false);
   assert.equal(body.blockers.includes('dataset'), true);
 });

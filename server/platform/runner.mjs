@@ -122,6 +122,7 @@ export function createRun(database, input) {
     datasetId: input.dataset.id,
     environment: input.environment,
     executionMode: input.executionMode,
+    executionLocation: input.executionLocation || 'server',
     status: 'queued',
     triggeredBy: input.triggeredBy,
     summary: {}
@@ -427,4 +428,73 @@ export async function executeRun(app, runId) {
       error: error.message
     });
   }
+}
+
+export async function initializeLocalRun(app, runId) {
+  const database = app.locals.database;
+  const run = database.getRunById(runId);
+  const scenario = database.getScenarioById(run.scenario_id);
+  const dataset = database.getDatasetById(run.dataset_id);
+  const reportDir = path.resolve(app.locals.paths.reportsDir, run.id);
+  const state = initialProcessState(run, scenario, dataset);
+  await writeRunProcess(reportDir, {
+    ...state,
+    executionLocation: 'local',
+    status: 'queued',
+    currentStep: '等待测试人员在本地测试工具中输入执行码',
+    steps: state.steps.map((step) => ({ ...step, status: 'pending', startedAt: undefined }))
+  });
+  database.updateRun(runId, { reportPath: reportDir });
+  return reportDir;
+}
+
+export async function markLocalRunStarted(app, runId) {
+  const database = app.locals.database;
+  const run = database.getRunById(runId);
+  if (!run) throw new Error('执行任务不存在');
+  const reportDir = run.report_path || path.resolve(app.locals.paths.reportsDir, run.id);
+  const processState = await readJson(path.resolve(reportDir, 'process.json'), {});
+  await writeRunProcess(reportDir, {
+    ...processState,
+    executionLocation: 'local',
+    status: 'running',
+    currentStep: '本地测试工具已领取任务，正在准备执行',
+    startedAt: processState.startedAt || now(),
+    steps: markStepRunning(processState.steps || [], 'prepare')
+  });
+  database.updateRun(runId, { status: 'running', startedAt: now(), reportPath: reportDir });
+  return reportDir;
+}
+
+export async function completeLocalRun(app, runId, { exitCode = 1, error = '' } = {}) {
+  const database = app.locals.database;
+  const run = database.getRunById(runId);
+  if (!run) throw new Error('执行任务不存在');
+  const reportDir = run.report_path || path.resolve(app.locals.paths.reportsDir, run.id);
+  await preparePlayableArtifacts(reportDir);
+  const summary = await readJson(path.resolve(reportDir, 'summary.json'), {});
+  const processState = await readJson(path.resolve(reportDir, 'process.json'), {});
+  const status = error ? 'failed' : finalRunStatus(Number(exitCode), summary);
+  const screenshotFile = existsSync(path.resolve(reportDir, 'screenshot.png')) ? 'screenshot.png' : 'screenshot.svg';
+  await writeRunProcess(reportDir, {
+    ...processState,
+    executionLocation: 'local',
+    status,
+    currentStep: error ? '本地执行异常' : finalStepMessage(status),
+    finishedAt: now(),
+    error: error || null,
+    latestScreenshotUrl: existsSync(path.resolve(reportDir, screenshotFile)) ? artifactUrl(run.id, screenshotFile) : null,
+    videoReplayUrl: existsSync(path.resolve(reportDir, 'replay.html')) ? artifactUrl(run.id, 'replay.html') : null,
+    videoFileUrl: existsSync(path.resolve(reportDir, 'video.webm')) ? artifactUrl(run.id, 'video.webm') : null,
+    steps: finishStepsByStatus(processState.steps || [], status)
+  });
+  database.updateRun(runId, {
+    status,
+    finishedAt: now(),
+    summary,
+    reportPath: reportDir,
+    error: error || null
+  });
+  createArtifactRecords(database, runId, reportDir);
+  return database.getRunById(runId);
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createTestContext } from './helpers/test-context.mjs';
-import { resolveScenarioScriptPath } from '../../server/platform/scenario-scripts.mjs';
+import { extractScriptDataSchema, resolveScenarioScriptPath } from '../../server/platform/scenario-scripts.mjs';
 
 test('脚本路径解析拒绝越过工作区和平台数据目录', () => {
   const options = { workspaceRoot: 'D:/workspace', dataDir: 'D:/workspace/platform-data' };
@@ -14,6 +14,75 @@ test('脚本路径解析拒绝越过工作区和平台数据目录', () => {
     ...options,
     scriptEntry: '../../outside.spec.js'
   }), null);
+});
+
+test('脚本字段解析支持 testDataSchema 和 JSON 注释声明', () => {
+  assert.deepEqual(extractScriptDataSchema(`
+    export const testDataSchema = {
+      columns: ['locatorCode', 'locatorName', 'locatorCode'],
+      required: ['locatorCode', 'missing'],
+      example: { locatorCode: 'KW-001', locatorName: '一号库位' }
+    };
+  `), {
+    columns: ['locatorCode', 'locatorName'],
+    required: ['locatorCode'],
+    example: { locatorCode: 'KW-001', locatorName: '一号库位' }
+  });
+
+  assert.deepEqual(extractScriptDataSchema(`
+    /* @jmom-data-schema
+    {"columns":["customerCode","customerName"],"required":["customerCode"],"example":{"customerCode":"C001","customerName":"测试客户"}}
+    */
+  `), {
+    columns: ['customerCode', 'customerName'],
+    required: ['customerCode'],
+    example: { customerCode: 'C001', customerName: '测试客户' }
+  });
+});
+
+test('脚本保存会保留最近 10 个版本并支持恢复', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const created = await ctx.fetch('/api/scenarios', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ key: 'script-version-demo', name: '脚本版本演示' })
+  });
+  assert.equal(created.status, 201);
+
+  const uploadForm = new FormData();
+  uploadForm.append('file', new Blob(['// version 0'], { type: 'text/javascript' }), 'versioned.spec.js');
+  const uploaded = await ctx.fetch('/api/scenarios/script-version-demo/script', {
+    method: 'POST',
+    headers: { cookie },
+    body: uploadForm
+  });
+  assert.equal(uploaded.status, 201);
+
+  for (let index = 1; index <= 12; index += 1) {
+    const saved = await ctx.fetch('/api/scenarios/script-version-demo/script', {
+      method: 'PUT',
+      headers: { cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ fileName: 'versioned.spec.js', content: `// version ${index}` })
+    });
+    assert.equal(saved.status, 200);
+  }
+
+  const versionsResponse = await ctx.fetch('/api/scenarios/script-version-demo/script/versions', { headers: { cookie } });
+  assert.equal(versionsResponse.status, 200);
+  const versionsBody = await versionsResponse.json();
+  assert.equal(versionsBody.versions.length, 10);
+  assert.equal(versionsBody.versions[0].fileName, 'versioned.spec.js');
+
+  const restore = await ctx.fetch(`/api/scenarios/script-version-demo/script/versions/${versionsBody.versions[0].id}/restore`, {
+    method: 'POST',
+    headers: { cookie }
+  });
+  assert.equal(restore.status, 200);
+
+  const source = await ctx.fetch('/api/scenarios/script-version-demo/script', { headers: { cookie } });
+  assert.equal(source.status, 200);
+  assert.equal((await source.json()).content, '// version 11');
 });
 
 test('测试人员可以上传脚本并绑定到已有场景', async (t) => {
@@ -54,6 +123,62 @@ test('uploaded script', async ({ page }) => {
   const sourceBody = await source.json();
   assert.equal(sourceBody.fileName, 'demo.spec.js');
   assert.equal(sourceBody.content, script);
+});
+
+test('上传脚本会自动解析 testDataSchema 并绑定测试数据字段', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+
+  const created = await ctx.fetch('/api/scenarios', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ key: 'script-schema-demo', name: '脚本字段绑定演示' })
+  });
+  assert.equal(created.status, 201);
+
+  const script = `const { test, expect } = require('@playwright/test');
+const { defineRecordedTests } = require(process.cwd() + '/tests/support/recorded-script');
+
+const testDataSchema = {
+  columns: ['locatorCode', 'locatorName', 'warehouseCode'],
+  required: ['locatorCode', 'locatorName'],
+  example: {
+    locatorCode: 'KW-001',
+    locatorName: '自动化库位001',
+    warehouseCode: 'WMS01'
+  }
+};
+exports.testDataSchema = testDataSchema;
+
+defineRecordedTests(test, '库位维护录入', testDataSchema, async ({ page }, data) => {
+  await page.goto('/');
+  await expect(page).toHaveURL(/.+/);
+  await page.getByRole('textbox', { name: '库位编码' }).fill(data.locatorCode);
+});
+`;
+  const form = new FormData();
+  form.append('file', new Blob([script], { type: 'text/javascript' }), 'locator.spec.js');
+
+  const uploaded = await ctx.fetch('/api/scenarios/script-schema-demo/script', {
+    method: 'POST',
+    headers: { cookie },
+    body: form
+  });
+  assert.equal(uploaded.status, 201);
+  const uploadedBody = await uploaded.json();
+  assert.deepEqual(uploadedBody.dataSchema, {
+    columns: ['locatorCode', 'locatorName', 'warehouseCode'],
+    required: ['locatorCode', 'locatorName'],
+    example: {
+      locatorCode: 'KW-001',
+      locatorName: '自动化库位001',
+      warehouseCode: 'WMS01'
+    }
+  });
+
+  const detail = await ctx.fetch('/api/scenarios/script-schema-demo', { headers: { cookie } });
+  assert.equal(detail.status, 200);
+  assert.deepEqual((await detail.json()).dataSchema, uploadedBody.dataSchema);
 });
 
 test('测试人员可以在线编辑已上传脚本并保留脚本入口', async (t) => {
@@ -173,6 +298,11 @@ test('本地录制上传后可以绑定脚本到指定场景', async (t) => {
 
   const form = new FormData();
   const script = `const { test, expect } = require('@playwright/test');
+const testDataSchema = {
+  columns: ['recordCode', 'recordName'],
+  required: ['recordCode'],
+  example: { recordCode: 'REC-001', recordName: '录制样例' }
+};
 test('local recorded script', async ({ page }) => {
   await page.goto('/');
   await expect(page).toHaveURL(/.+/);
@@ -187,9 +317,14 @@ test('local recorded script', async ({ page }) => {
   });
   assert.equal(uploaded.status, 200);
   const body = await uploaded.json();
-  assert.match(body.scriptEntry, /platform-data\/recordings\/REC-/);
+  assert.match(body.scriptEntry, /tests\/recordings\/REC-/);
   assert.equal(body.scenario.key, 'script-record-demo');
   assert.equal(body.scenario.scriptEntry, body.scriptEntry);
+  assert.deepEqual(body.scenario.dataSchema, {
+    columns: ['recordCode', 'recordName'],
+    required: ['recordCode'],
+    example: { recordCode: 'REC-001', recordName: '录制样例' }
+  });
 });
 
 test('上传非法脚本扩展名会被拒绝', async (t) => {

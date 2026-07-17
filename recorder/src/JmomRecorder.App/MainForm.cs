@@ -9,10 +9,11 @@ public sealed class MainForm : Form
     private readonly string _portableRoot = Path.GetFullPath(AppContext.BaseDirectory);
     private readonly TextBox _platformText = new() { Dock = DockStyle.Fill };
     private readonly TextBox _codeText = new() { Dock = DockStyle.Fill, CharacterCasing = CharacterCasing.Upper };
+    private readonly ComboBox _modeCombo = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly Button _startButton = new() { Text = "开始录制", AutoSize = true };
     private readonly Button _retryButton = new() { Text = "重试上传", AutoSize = true, Enabled = false };
     private readonly Button _openLogsButton = new() { Text = "打开日志目录", AutoSize = true };
-    private readonly Label _statusLabel = new() { Text = "请输入平台地址和录制码", AutoSize = true };
+    private readonly Label _statusLabel = new() { Text = "请选择功能并输入平台生成的操作码", AutoSize = true };
     private readonly TextBox _logText = new()
     {
         Dock = DockStyle.Fill,
@@ -28,7 +29,7 @@ public sealed class MainForm : Form
     public MainForm()
     {
         _settingsStore = new RecorderSettingsStore(_portableRoot);
-        Text = "JMOM 本地录制器";
+        Text = "JMOM 本地测试工具";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(680, 460);
         Size = new Size(760, 520);
@@ -45,10 +46,11 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(20),
             ColumnCount = 2,
-            RowCount = 6
+            RowCount = 7
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -58,7 +60,7 @@ public sealed class MainForm : Form
 
         var title = new Label
         {
-            Text = "JMOM 绿色免安装录制器",
+            Text = "JMOM 绿色免安装测试工具",
             AutoSize = true,
             Font = new Font(Font, FontStyle.Bold)
         };
@@ -67,24 +69,29 @@ public sealed class MainForm : Form
 
         layout.Controls.Add(new Label { Text = "平台地址", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
         layout.Controls.Add(_platformText, 1, 1);
-        layout.Controls.Add(new Label { Text = "录制码", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
-        layout.Controls.Add(_codeText, 1, 2);
+        layout.Controls.Add(new Label { Text = "功能", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
+        layout.Controls.Add(_modeCombo, 1, 2);
+        layout.Controls.Add(new Label { Text = "操作码", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 3);
+        layout.Controls.Add(_codeText, 1, 3);
 
         var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         actions.Controls.Add(_startButton);
         actions.Controls.Add(_retryButton);
         actions.Controls.Add(_openLogsButton);
-        layout.Controls.Add(actions, 0, 3);
+        layout.Controls.Add(actions, 0, 4);
         layout.SetColumnSpan(actions, 2);
 
-        layout.Controls.Add(_statusLabel, 0, 4);
+        layout.Controls.Add(_statusLabel, 0, 5);
         layout.SetColumnSpan(_statusLabel, 2);
-        layout.Controls.Add(_logText, 0, 5);
+        layout.Controls.Add(_logText, 0, 6);
         layout.SetColumnSpan(_logText, 2);
 
         Controls.Add(layout);
         AcceptButton = _startButton;
-        _startButton.Click += async (_, _) => await StartRecordingAsync();
+        _modeCombo.Items.AddRange(new object[] { "录制场景", "执行场景" });
+        _modeCombo.SelectedIndex = 0;
+        _modeCombo.SelectedIndexChanged += (_, _) => UpdateModeText();
+        _startButton.Click += async (_, _) => await StartActionAsync();
         _retryButton.Click += async (_, _) => await RetryUploadAsync();
         _openLogsButton.Click += (_, _) => OpenLogsDirectory();
     }
@@ -96,27 +103,36 @@ public sealed class MainForm : Form
         _codeText.Focus();
     }
 
-    private async Task StartRecordingAsync()
+    private void UpdateModeText()
+    {
+        var executing = _modeCombo.SelectedIndex == 1;
+        _startButton.Text = executing ? "开始执行" : "开始录制";
+        _statusLabel.Text = executing ? "请输入平台生成的本地执行码" : "请输入平台生成的录制码";
+    }
+
+    private async Task StartActionAsync()
     {
         if (_process is { HasExited: false }) return;
         RecorderProcessSpec spec;
         try
         {
-            spec = RecorderProcessSpec.Create(_portableRoot, _platformText.Text, _codeText.Text);
+            spec = _modeCombo.SelectedIndex == 1
+                ? RecorderProcessSpec.CreateExecution(_portableRoot, _platformText.Text, _codeText.Text)
+                : RecorderProcessSpec.Create(_portableRoot, _platformText.Text, _codeText.Text);
             if (!File.Exists(spec.FileName)) throw new FileNotFoundException("录制器运行时不完整，请重新下载绿色包", spec.FileName);
             if (!File.Exists(spec.Arguments[0])) throw new FileNotFoundException("录制执行脚本不存在，请重新下载绿色包", spec.Arguments[0]);
             await _settingsStore.SaveAsync(new RecorderSettings(_platformText.Text));
         }
         catch (Exception error)
         {
-            MessageBox.Show(this, error.Message, "无法开始录制", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, error.Message, "无法开始操作", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
         PrepareLogFile();
         SetRunning(true);
         SetStatus("正在连接测试平台……");
-        AppendLog("开始本地录制");
+        AppendLog(_modeCombo.SelectedIndex == 1 ? "开始本地执行" : "开始本地录制");
 
         var startInfo = new ProcessStartInfo
         {
@@ -149,7 +165,7 @@ public sealed class MainForm : Form
         {
             SetStatus("录制器启动失败");
             AppendLog(error.Message);
-            MessageBox.Show(this, error.Message, "录制失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, error.Message, "操作失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
@@ -252,6 +268,7 @@ public sealed class MainForm : Form
         }
         _platformText.Enabled = !running;
         _codeText.Enabled = !running;
+        _modeCombo.Enabled = !running;
         _startButton.Enabled = !running;
         if (!running) _retryButton.Enabled = false;
     }
@@ -268,7 +285,7 @@ public sealed class MainForm : Form
         if (_process is not { HasExited: false }) return;
         var result = MessageBox.Show(
             this,
-            "录制仍在进行，确定要取消并关闭吗？",
+            "本地操作仍在进行，确定要取消并关闭吗？",
             "确认关闭",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);

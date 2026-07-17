@@ -36,3 +36,12 @@ test('场景执行创建成功后留在当前页并直接打开详情抽屉', as
   assert.match(scenarios, /await store\.loadRuns\(\)/);
   assert.match(scenarios, /runDetailRef\.value\.open\(detailRun\)/);
 });
+
+test('场景执行支持选择测试人员本机并显示一次性执行码', async () => {
+  const source = await readFile('frontend/src/components/RunDialog.vue', 'utf8');
+
+  assert.match(source, /executionLocation/);
+  assert.match(source, /本机执行/);
+  assert.match(source, /localExecution\.code/);
+  assert.match(source, /下载绿色本地测试工具/);
+});

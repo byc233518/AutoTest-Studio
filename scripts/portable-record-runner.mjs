@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import {
   RecordingError,
   resolvePortablePaths,
+  runOfflineRecording,
   runRecording
 } from './lib/local-recording.mjs';
 
@@ -14,16 +15,31 @@ export function parsePortableArgs(argv) {
     if (arg === '--platform') options.platform = argv[++index];
     else if (arg === '--code') options.code = argv[++index];
     else if (arg === '--root') options.root = argv[++index];
+    else if (arg === '--url') options.startUrl = argv[++index];
+    else if (arg === '--output') options.output = argv[++index];
+    else if (arg === '--offline') options.offline = true;
   }
   return options;
 }
 
 export async function main(argv = process.argv.slice(2)) {
   const options = parsePortableArgs(argv);
-  if (!options.platform || !options.code || !options.root) {
-    throw new RecordingError('INVALID_ARGUMENTS', '缺少平台地址、录制码或录制器目录');
+  if (!options.root || (options.offline ? !options.startUrl : (!options.platform || !options.code))) {
+    throw new RecordingError('INVALID_ARGUMENTS', '缺少平台地址、录制码、起始地址或录制器目录');
   }
   const paths = resolvePortablePaths(options.root);
+  if (options.offline) {
+    return runOfflineRecording({
+      startUrl: options.startUrl,
+      paths,
+      outputPath: options.output,
+      codegenStdio: 'ignore',
+      emit(event) {
+        process.stdout.write(`${JSON.stringify(event)}\n`);
+      }
+    });
+  }
+
   const commands = createInterface({ input: process.stdin });
   const waitForRetry = () => new Promise((resolve) => {
     const onLine = (line) => {

@@ -118,11 +118,13 @@ test('前端暴露环境、依赖校验与发布/AI 样例能力', async () => {
 
 test('run dialog treats dependency checks as opt-in', async () => {
   const script = await readFile('web/app.js', 'utf8');
+  const vueDialog = await readFile('frontend/src/components/RunDialog.vue', 'utf8');
 
   assert.match(script, /runDialog:\s*\{[\s\S]*enforceDependencies:\s*false/);
   assert.match(script, /state\.runDialog = \{[\s\S]*enforceDependencies:\s*false/);
   assert.match(script, /const enforceDependencies = options\.enforceDependencies \?\? false/);
   assert.doesNotMatch(script, /enforceDependencies:\s*\(scenario\.dependsOn \|\| \[\]\)\.length > 0/);
+  assert.match(vueDialog, /!\['dataset','dependencies'\]\.includes\(item\.type\)/);
 });
 
 test('执行与报告主界面仅保留列表，详情通过弹窗查看', async () => {

@@ -34,6 +34,8 @@ export function portableLayout(outputRoot) {
     appDir,
     runner: path.resolve(appDir, 'portable-record-runner.mjs'),
     library: path.resolve(appDir, 'lib', 'local-recording.mjs'),
+    executionRunner: path.resolve(appDir, 'portable-execution-runner.mjs'),
+    executionLibrary: path.resolve(appDir, 'lib', 'local-execution.mjs'),
     playwrightCli: path.resolve(appDir, 'node_modules', 'playwright', 'cli.js'),
     browsersDir: path.resolve(root, 'browsers'),
     dataDir: path.resolve(root, 'data'),
@@ -184,10 +186,12 @@ export async function buildPortableRecorder({
   await mkdir(path.dirname(layout.library), { recursive: true });
   await copyFile(path.resolve(root, 'scripts', 'portable-record-runner.mjs'), layout.runner);
   await copyFile(path.resolve(root, 'scripts', 'lib', 'local-recording.mjs'), layout.library);
+  await copyFile(path.resolve(root, 'scripts', 'portable-execution-runner.mjs'), layout.executionRunner);
+  await copyFile(path.resolve(root, 'scripts', 'lib', 'local-execution.mjs'), layout.executionLibrary);
   await writeFile(path.resolve(layout.appDir, 'package.json'), JSON.stringify({
     private: true,
     type: 'module',
-    dependencies: { playwright: playwrightVersion }
+    dependencies: { playwright: playwrightVersion, '@playwright/test': playwrightVersion }
   }, null, 2) + '\n', 'utf8');
 
   const npm = resolveNpmInvocation();

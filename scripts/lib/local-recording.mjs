@@ -90,7 +90,7 @@ export async function runCodegen({
     playwrightCli,
     'codegen',
     '--target',
-    'javascript',
+    'playwright-test',
     '-o',
     outputPath,
     startUrl
@@ -122,6 +122,44 @@ export async function uploadRecording({ platform, id, token, filePath, fetchImpl
     });
   }
   return body;
+}
+
+export async function runOfflineRecording({
+  startUrl,
+  paths,
+  outputPath,
+  spawnImpl = spawn,
+  emit = () => {},
+  codegenStdio = 'inherit'
+}) {
+  if (!startUrl) {
+    throw new RecordingError('INVALID_ARGUMENTS', '缺少离线录制起始地址');
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const scriptPath = path.resolve(outputPath || path.join(paths.recordingsDir, `OFFLINE-${stamp}.spec.js`));
+  emit({ type: 'status', stage: 'recording', message: 'Playwright Inspector 已启动' });
+  const generated = await runCodegen({
+    nodeExecutable: paths.nodeExecutable,
+    playwrightCli: paths.playwrightCli,
+    browserPath: paths.browserPath,
+    outputPath: scriptPath,
+    startUrl,
+    cwd: paths.root,
+    spawnImpl,
+    stdio: codegenStdio
+  });
+  if (!generated.outputExists) {
+    throw new RecordingError('RECORDING_CANCELLED', '未生成脚本，录制已取消', {
+      exitCode: generated.exitCode
+    });
+  }
+  const result = {
+    mode: 'offline',
+    filePath: scriptPath,
+    scriptPath
+  };
+  emit({ type: 'completed', stage: 'finished', message: '离线录制脚本已生成', result });
+  return result;
 }
 
 export async function runRecording({

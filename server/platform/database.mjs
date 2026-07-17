@@ -109,6 +109,7 @@ export function createPlatformDatabase(filename) {
       dataset_id TEXT NOT NULL,
       environment TEXT NOT NULL,
       execution_mode TEXT NOT NULL DEFAULT 'headless',
+      execution_location TEXT NOT NULL DEFAULT 'server',
       status TEXT NOT NULL,
       triggered_by TEXT NOT NULL,
       started_at TEXT,
@@ -540,14 +541,15 @@ export function createPlatformDatabase(filename) {
     createRun(run) {
       db.prepare(`
         INSERT INTO runs
-        (id, scenario_id, dataset_id, environment, execution_mode, status, triggered_by, started_at, finished_at, summary, report_path, error, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, scenario_id, dataset_id, environment, execution_mode, execution_location, status, triggered_by, started_at, finished_at, summary, report_path, error, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         run.id,
         run.scenarioId,
         run.datasetId,
         run.environment,
         run.executionMode || 'headless',
+        run.executionLocation || 'server',
         run.status,
         run.triggeredBy,
         run.startedAt || null,
@@ -678,5 +680,8 @@ function migrateLegacySchema(db) {
   const runColumns = tableColumns(db, 'runs');
   if (runColumns.length && !runColumns.includes('execution_mode')) {
     db.exec("ALTER TABLE runs ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'headless'");
+  }
+  if (runColumns.length && !runColumns.includes('execution_location')) {
+    db.exec("ALTER TABLE runs ADD COLUMN execution_location TEXT NOT NULL DEFAULT 'server'");
   }
 }

@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import ExcelJS from 'exceljs';
 import multer from 'multer';
 import path from 'node:path';
@@ -8,15 +8,27 @@ import { createReadStream, existsSync } from 'node:fs';
 import { createPlatformDatabase } from './platform/database.mjs';
 import { seedPlatform } from './platform/seed.mjs';
 import { parseDatasetFile, validateRows } from './platform/datasets.mjs';
-import { createRun, ensureProcessFallbackScreenshot, executeRun, isSkippedOnly } from './platform/runner.mjs';
+import {
+  completeLocalRun,
+  createRun,
+  ensureProcessFallbackScreenshot,
+  executeRun,
+  initializeLocalRun,
+  isSkippedOnly,
+  markLocalRunStarted
+} from './platform/runner.mjs';
 import { rowsToCsv } from './platform/sample-data.mjs';
 import { generateSampleRowsSmart } from './platform/llm.mjs';
 import { publicLlmSetting } from './platform/settings.mjs';
 import { normalizeExecutionMode } from './platform/execution-mode.mjs';
 import { checkScenarioDependencies, assertDependenciesReady } from './platform/dependencies.mjs';
 import {
+  archiveScenarioScriptVersion,
+  extractScriptDataSchema,
   isAllowedScriptFile,
+  listScenarioScriptVersions,
   readScenarioScript,
+  restoreScenarioScriptVersion,
   saveScenarioScript,
   saveScenarioScriptContent
 } from './platform/scenario-scripts.mjs';
@@ -33,6 +45,15 @@ import {
   createRecordingCodeLimiter,
   verifyRecordingCode
 } from './platform/recording-codes.mjs';
+import {
+  buildLocalExecutionBundle,
+  createLocalExecutionTicket,
+  hasValidLocalExecutionToken,
+  readLocalExecutionMeta,
+  resolveLocalArtifactPath,
+  resolveLocalExecutionTicket,
+  writeLocalExecutionMeta
+} from './platform/local-executions.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(__dirname, '..');
@@ -54,7 +75,7 @@ function requireAuth(request, response, next) {
   const token = sessionCookie(request);
   const session = token ? request.app.locals.database.getSession(token) : null;
   if (!session) {
-    return jsonError(response, 401, '请先登录');
+    return jsonError(response, 401, '璇峰厛鐧诲綍');
   }
   request.user = session;
   return next();
@@ -63,7 +84,7 @@ function requireAuth(request, response, next) {
 function requireRole(...roles) {
   return (request, response, next) => {
     if (!roles.includes(request.user.role)) {
-      return jsonError(response, 403, '当前账号没有权限执行该操作');
+      return jsonError(response, 403, '\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u6743\u9650\u6267\u884c\u8be5\u64cd\u4f5c');
     }
     return next();
   };
@@ -138,6 +159,11 @@ function scenarioQuality(database, scenario) {
   return { recentRuns: completed.length, passRate: completed.length ? Math.round(passed / completed.length * 100) : 0 };
 }
 
+function scriptSchemaPatch(content) {
+  const dataSchema = extractScriptDataSchema(content);
+  return dataSchema ? { dataSchema } : {};
+}
+
 function toPublicRun(row) {
   const summary = JSON.parse(row.summary || '{}');
   const passedRows = Number(summary.passed ?? 0);
@@ -150,6 +176,7 @@ function toPublicRun(row) {
     datasetId: row.dataset_id,
     environment: row.environment,
     executionMode: row.execution_mode || 'headless',
+    executionLocation: row.execution_location || 'server',
     status: isSkippedOnly(summary) ? 'skipped' : row.status,
     triggeredBy: row.triggered_by,
     startedAt: row.started_at,
@@ -233,12 +260,12 @@ async function processArtifacts(database, run, reportPath, summary, processState
   const artifacts = runWithArtifacts(database, run).processArtifacts;
   const created = new Set(artifacts.map((artifact) => artifact.type));
   const candidates = [
-    { type: 'html-report', label: 'HTML 报告', fileName: 'index.html' },
-    { type: 'screenshot', label: '过程截图', fileName: 'screenshot.png' },
-    { type: 'screenshot', label: '过程截图', fileName: 'screenshot.svg' },
-    { type: 'video', label: '录像回放', fileName: 'replay.html' },
-    { type: 'video-file', label: '录像文件', fileName: 'video.webm' },
-    { type: 'trace', label: 'Trace 调试包', fileName: 'trace.zip' }
+    { type: 'html-report', label: 'HTML 鎶ュ憡', fileName: 'index.html' },
+    { type: 'screenshot', label: '杩囩▼鎴浘', fileName: 'screenshot.png' },
+    { type: 'screenshot', label: '杩囩▼鎴浘', fileName: 'screenshot.svg' },
+    { type: 'video', label: '褰曞儚鍥炴斁', fileName: 'replay.html' },
+    { type: 'video-file', label: '褰曞儚鏂囦欢', fileName: 'video.webm' },
+    { type: 'trace', label: 'Trace ???', fileName: 'trace.zip' }
   ];
 
   for (const candidate of candidates) {
@@ -289,13 +316,14 @@ async function runProcessPayload(app, run) {
     scenarioName: processState.scenarioName || scenario?.name || run.scenario_id,
     datasetName: processState.datasetName || dataset?.name || run.dataset_id,
     executionMode: run.execution_mode || 'headless',
+    executionLocation: run.execution_location || processState.executionLocation || 'server',
     status: skippedOnly ? 'skipped' : processState.status || run.status,
     canWatchLive: (run.execution_mode || 'headless') === 'ui',
     livePreviewUrl: (run.execution_mode || 'headless') === 'ui' ? `/api/runs/${run.id}/live` : null,
     latestScreenshotUrl: processState.latestScreenshotUrl || screenshot?.previewUrl || null,
     videoReplayUrl: processState.videoReplayUrl || replay?.previewUrl || null,
     videoFileUrl: processState.videoFileUrl || videoFile?.previewUrl || null,
-    currentStep: skippedOnly ? '本次用例全部跳过，未产生浏览器画面' : processState.currentStep || (run.status === 'queued' ? '等待 Runner 调度' : ''),
+    currentStep: skippedOnly ? '\u672c\u6b21\u7528\u4f8b\u5168\u90e8\u8df3\u8fc7\uff0c\u672a\u4ea7\u751f\u6d4f\u89c8\u5668\u753b\u9762' : processState.currentStep || (run.status === 'queued' ? '?? Runner ??' : ''),
     startedAt: processState.startedAt || run.started_at,
     finishedAt: processState.finishedAt || run.finished_at,
     updatedAt: processState.updatedAt || run.finished_at || run.started_at || run.created_at,
@@ -309,17 +337,20 @@ async function runProcessPayload(app, run) {
 }
 
 export async function createApp(options = {}) {
-  const dataDir = options.dataDir || path.resolve(workspaceRoot, 'platform-data');
+  const appWorkspaceRoot = options.workspaceRoot || workspaceRoot;
+  const dataDir = options.dataDir || path.resolve(appWorkspaceRoot, 'platform-data');
   const uploadsDir = path.resolve(dataDir, 'uploads');
   const reportsDir = path.resolve(dataDir, 'reports');
   const recordingsDir = path.resolve(dataDir, 'recordings');
+  const recordingScriptsDir = options.recordingScriptsDir || path.resolve(appWorkspaceRoot, 'tests', 'recordings');
   const scriptsDir = path.resolve(dataDir, 'scripts');
   const recorderPackagePath = options.recorderPackagePath
     || process.env.JMOM_RECORDER_PACKAGE
-    || path.resolve(workspaceRoot, 'dist', 'JMOM本地录制器-win-x64.zip');
+    || path.resolve(workspaceRoot, 'dist', 'JMOM鏈湴褰曞埗鍣?win-x64.zip');
   await mkdir(uploadsDir, { recursive: true });
   await mkdir(reportsDir, { recursive: true });
   await mkdir(recordingsDir, { recursive: true });
+  await mkdir(recordingScriptsDir, { recursive: true });
   await mkdir(scriptsDir, { recursive: true });
 
   const database = createPlatformDatabase(options.databasePath || path.resolve(dataDir, 'platform.sqlite'));
@@ -334,15 +365,17 @@ export async function createApp(options = {}) {
     uploadsDir,
     reportsDir,
     recordingsDir,
+    recordingScriptsDir,
     scriptsDir,
     recorderPackagePath,
-    workspaceRoot
+    workspaceRoot: appWorkspaceRoot
   };
   app.locals.runMode = options.runMode || process.env.JMOM_RUN_MODE || 'playwright';
   app.locals.recordMode = options.recordMode || process.env.JMOM_RECORD_MODE || 'codegen';
   app.locals.silent = options.silent || false;
   app.locals.mockRunStepDelayMs = options.mockRunStepDelayMs || 0;
   app.locals.recordingCodeLimiter = createRecordingCodeLimiter();
+  app.locals.localExecutionCodeLimiter = createRecordingCodeLimiter();
 
   app.use(express.json({ limit: '2mb' }));
   app.use('/reports', express.static(reportsDir));
@@ -353,11 +386,11 @@ export async function createApp(options = {}) {
 
   app.get('/api/recorder/download', requireAuth, (request, response) => {
     if (!existsSync(app.locals.paths.recorderPackagePath)) {
-      return jsonError(response, 404, '免安装录制器尚未构建');
+      return jsonError(response, 404, '\u514d\u5b89\u88c5\u5f55\u5236\u5668\u5c1a\u672a\u6784\u5efa');
     }
     return response.download(
       app.locals.paths.recorderPackagePath,
-      'JMOM本地录制器-win-x64.zip',
+      'JMOM鏈湴褰曞埗鍣?win-x64.zip',
       { dotfiles: 'allow' }
     );
   });
@@ -366,7 +399,7 @@ export async function createApp(options = {}) {
     const { username, password } = request.body || {};
     const user = database.verifyUser(username, password);
     if (!user) {
-      return jsonError(response, 401, '账号或密码错误');
+      return jsonError(response, 401, '\u8bf7\u6c42\u5931\u8d25');
     }
     const token = database.createSession(user.id);
     response.setHeader('set-cookie', `jmom_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`);
@@ -397,19 +430,19 @@ export async function createApp(options = {}) {
   app.get('/api/scenarios/:key', requireAuth, (request, response) => {
     const scenario = database.getScenarioByKey(request.params.key);
     if (!scenario) {
-      return jsonError(response, 404, '测试场景不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     return response.json(toPublicScenario(scenario));
   });
 
-  // 创建场景对所有登录角色开放；发布/下架仍需 maintainer/admin
+  // 鍒涘缓鍦烘櫙瀵规墍鏈夌櫥褰曡鑹插紑鏀撅紱鍙戝竷/涓嬫灦浠嶉渶 maintainer/admin
   app.post('/api/scenarios', requireAuth, (request, response) => {
     const body = request.body || {};
     if (!body.key || !body.name) {
-      return jsonError(response, 400, '请填写场景 key 和名称');
+      return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
     }
     if (database.getScenarioByKey(body.key)) {
-      return jsonError(response, 409, '场景 key 已存在');
+      return jsonError(response, 409, '\u6570\u636e\u51b2\u7a81');
     }
     const scenario = database.createScenario({
       key: body.key,
@@ -432,7 +465,7 @@ export async function createApp(options = {}) {
   app.put('/api/scenarios/:key', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
     const scenario = database.getScenarioByKey(request.params.key);
     if (!scenario) {
-      return jsonError(response, 404, '测试场景不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     const updated = database.updateScenario(request.params.key, request.body || {});
     return response.json(toPublicScenario(updated));
@@ -445,10 +478,10 @@ export async function createApp(options = {}) {
   app.post('/api/apps', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
     const body = request.body || {};
     if (!body.key || !body.name) {
-      return jsonError(response, 400, '请填写应用 key 和名称');
+      return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
     }
     if (database.getAppByKey(body.key)) {
-      return jsonError(response, 409, '应用 key 已存在');
+      return jsonError(response, 409, '\u6570\u636e\u51b2\u7a81');
     }
     const created = database.createApp({
       key: body.key,
@@ -462,11 +495,11 @@ export async function createApp(options = {}) {
   app.put('/api/apps/:id', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
     const existing = database.getAppById(request.params.id);
     if (!existing) {
-      return jsonError(response, 404, '应用不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     const duplicate = request.body?.key ? database.getAppByKey(request.body.key) : null;
     if (duplicate && duplicate.id !== existing.id) {
-      return jsonError(response, 409, '应用 key 已存在');
+      return jsonError(response, 409, '\u6570\u636e\u51b2\u7a81');
     }
     return response.json(toPublicApp(database.updateApp(existing.id, request.body || {})));
   });
@@ -474,14 +507,14 @@ export async function createApp(options = {}) {
   app.delete('/api/apps/:id', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
     const existing = database.getAppById(request.params.id);
     if (!existing) {
-      return jsonError(response, 404, '应用不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     const references = database.getAppReferences(existing.id);
     if (references.modules || references.scenarios) {
       return jsonError(
         response,
         409,
-        `应用仍关联 ${references.modules} 个模块和 ${references.scenarios} 个场景，无法删除`,
+        `\u5e94\u7528\u4ecd\u5173\u8054 ${references.modules} \u4e2a\u6a21\u5757\u548c ${references.scenarios} \u4e2a\u573a\u666f\uff0c\u65e0\u6cd5\u5220\u9664`,
         { references }
       );
     }
@@ -496,10 +529,10 @@ export async function createApp(options = {}) {
   app.post('/api/modules', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
     const body = request.body || {};
     if (!body.appId || !body.name || !body.prefix) {
-      return jsonError(response, 400, '请填写所属应用、模块名称和前缀');
+      return jsonError(response, 400, '璇峰～鍐欐墍灞炲簲鐢ㄣ€佹ā鍧楀悕绉板拰鍓嶇紑');
     }
     if (!database.getAppById(body.appId)) {
-      return jsonError(response, 400, '所属应用不存在');
+      return jsonError(response, 400, '鎵€灞炲簲鐢ㄤ笉瀛樺湪');
     }
     const created = database.createModule({
       appId: body.appId,
@@ -513,10 +546,10 @@ export async function createApp(options = {}) {
   app.put('/api/modules/:id', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
     const existing = database.getModuleById(request.params.id);
     if (!existing) {
-      return jsonError(response, 404, '模块不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     if (request.body?.appId && !database.getAppById(request.body.appId)) {
-      return jsonError(response, 400, '所属应用不存在');
+      return jsonError(response, 400, '鎵€灞炲簲鐢ㄤ笉瀛樺湪');
     }
     return response.json(toPublicModule(database.updateModule(existing.id, request.body || {})));
   });
@@ -524,11 +557,11 @@ export async function createApp(options = {}) {
   app.delete('/api/modules/:id', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
     const existing = database.getModuleById(request.params.id);
     if (!existing) {
-      return jsonError(response, 404, '模块不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     const scenarioCount = database.countScenariosForModule(existing.id);
     if (scenarioCount) {
-      return jsonError(response, 409, `模块仍关联 ${scenarioCount} 个场景，无法删除`, { scenarioCount });
+      return jsonError(response, 409, `\u6a21\u5757\u4ecd\u5173\u8054 ${scenarioCount} \u4e2a\u573a\u666f\uff0c\u65e0\u6cd5\u5220\u9664`, { scenarioCount });
     }
     database.deleteModule(existing.id);
     return response.status(204).end();
@@ -541,10 +574,10 @@ export async function createApp(options = {}) {
   app.post('/api/environments', requireAuth, requireRole('admin'), (request, response) => {
     const body = request.body || {};
     if (!body.key || !body.name || !body.baseUrl || !body.username || !body.password) {
-      return jsonError(response, 400, '请填写环境 key、名称、地址、账号和密码');
+      return jsonError(response, 400, '璇峰～鍐欑幆澧?key銆佸悕绉般€佸湴鍧€銆佽处鍙峰拰瀵嗙爜');
     }
     if (database.getEnvironmentByKey(body.key)) {
-      return jsonError(response, 409, '环境 key 已存在');
+      return jsonError(response, 409, '\u6570\u636e\u51b2\u7a81');
     }
     const env = database.createEnvironment({
       key: body.key,
@@ -561,11 +594,11 @@ export async function createApp(options = {}) {
   app.put('/api/environments/:id', requireAuth, requireRole('admin'), (request, response) => {
     const existing = database.getEnvironmentById(request.params.id);
     if (!existing) {
-      return jsonError(response, 404, '环境不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     const duplicate = request.body?.key ? database.getEnvironmentByKey(request.body.key) : null;
     if (duplicate && duplicate.id !== existing.id) {
-      return jsonError(response, 409, '环境 key 已存在');
+      return jsonError(response, 409, '\u6570\u636e\u51b2\u7a81');
     }
     const updated = database.updateEnvironment(request.params.id, request.body || {});
     return response.json(toPublicEnvironment(updated));
@@ -574,10 +607,10 @@ export async function createApp(options = {}) {
   app.delete('/api/environments/:id', requireAuth, requireRole('admin'), (request, response) => {
     const existing = database.getEnvironmentById(request.params.id);
     if (!existing) {
-      return jsonError(response, 404, '环境不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     if (existing.is_default) {
-      return jsonError(response, 409, '默认环境不能删除，请先设置其他默认环境');
+      return jsonError(response, 409, '\u9ed8\u8ba4\u73af\u5883\u4e0d\u80fd\u5220\u9664\uff0c\u8bf7\u5148\u8bbe\u7f6e\u5176\u4ed6\u9ed8\u8ba4\u73af\u5883');
     }
     database.deleteEnvironment(existing.id);
     return response.status(204).end();
@@ -586,7 +619,7 @@ export async function createApp(options = {}) {
   app.get('/api/scenarios/:key/template.csv', requireAuth, (request, response) => {
     const scenario = database.getScenarioByKey(request.params.key);
     if (!scenario) {
-      return jsonError(response, 404, '测试场景不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     const schema = JSON.parse(scenario.data_schema);
     const headers = schema.columns.join(',');
@@ -600,11 +633,11 @@ export async function createApp(options = {}) {
     try {
       const scenario = database.getScenarioByKey(request.params.key);
       if (!scenario) {
-        return jsonError(response, 404, '测试场景不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       const schema = JSON.parse(scenario.data_schema);
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet('测试数据');
+      const worksheet = workbook.addWorksheet('\u6d4b\u8bd5\u6570\u636e');
       worksheet.views = [{ state: 'frozen', ySplit: 1 }];
       worksheet.columns = schema.columns.map((column) => ({
         header: column,
@@ -618,7 +651,7 @@ export async function createApp(options = {}) {
       header.height = 24;
       for (const column of schema.required || []) {
         const index = schema.columns.indexOf(column) + 1;
-        if (index > 0) worksheet.getCell(1, index).note = '必填字段';
+        if (index > 0) worksheet.getCell(1, index).note = '\u5fc5\u586b\u5b57\u6bb5';
       }
       if (schema.example) worksheet.addRow(schema.columns.map((column) => schema.example[column] || ''));
       const buffer = await workbook.xlsx.writeBuffer();
@@ -634,7 +667,7 @@ export async function createApp(options = {}) {
     try {
       const scenario = database.getScenarioByKey(request.params.key);
       if (!scenario) {
-        return jsonError(response, 404, '测试场景不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       const schema = JSON.parse(scenario.data_schema);
       const result = await generateSampleRowsSmart(database, scenario, {
@@ -660,7 +693,7 @@ export async function createApp(options = {}) {
   app.get('/api/scenarios/:key/dependency-check', requireAuth, (request, response) => {
     const scenario = database.getScenarioByKey(request.params.key);
     if (!scenario) {
-      return jsonError(response, 404, '测试场景不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     const checks = checkScenarioDependencies(database, scenario);
     const ready = checks.every((check) => check.status === 'ready');
@@ -674,14 +707,14 @@ export async function createApp(options = {}) {
 
   app.get('/api/scenarios/:key/preflight', requireAuth, (request, response) => {
     const scenario = database.getScenarioByKey(request.params.key);
-    if (!scenario) return jsonError(response, 404, '测试场景不存在');
+    if (!scenario) return jsonError(response, 404, '\u6d4b\u8bd5\u573a\u666f\u4e0d\u5b58\u5728');
     response.json(scenarioReadiness(database, scenario, request.query.environment || 'test'));
   });
 
   app.get('/api/scenarios/:key/datasets', requireAuth, (request, response) => {
     const scenario = database.getScenarioByKey(request.params.key);
     if (!scenario) {
-      return jsonError(response, 404, '测试场景不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     response.json(database.listDatasets(scenario.id).map(toPublicDataset));
   });
@@ -690,11 +723,11 @@ export async function createApp(options = {}) {
     try {
       const scenario = database.getScenarioByKey(request.params.key);
       if (!scenario) {
-        return jsonError(response, 404, '测试场景不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       const dataset = database.getDatasetById(request.params.datasetId);
       if (!dataset || dataset.scenario_id !== scenario.id) {
-        return jsonError(response, 404, '测试数据集不存在');
+        return jsonError(response, 404, '娴嬭瘯鏁版嵁闆嗕笉瀛樺湪');
       }
       const rows = JSON.parse(await readFile(dataset.rows_path, 'utf8'));
       return response.json({ ...toPublicDataset(dataset), rows });
@@ -707,16 +740,16 @@ export async function createApp(options = {}) {
     try {
       const scenario = database.getScenarioByKey(request.params.key);
       if (!scenario) {
-        return jsonError(response, 404, '测试场景不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       if (!request.file) {
-        return jsonError(response, 400, '请选择 Excel 或 CSV 文件');
+        return jsonError(response, 400, '璇烽€夋嫨 Excel 鎴?CSV 鏂囦欢');
       }
       const schema = JSON.parse(scenario.data_schema);
       const parsed = await parseDatasetFile(request.file.path, request.file.originalname);
       const errors = validateRows(parsed.rows, schema);
       if (errors.length) {
-        return jsonError(response, 422, '样本数据校验失败', { errors });
+        return jsonError(response, 422, '\u6837\u672c\u6570\u636e\u6821\u9a8c\u5931\u8d25', { errors });
       }
       return response.json({
         scenarioKey: scenario.key,
@@ -735,16 +768,16 @@ export async function createApp(options = {}) {
     try {
       const scenario = database.getScenarioByKey(request.params.key);
       if (!scenario) {
-        return jsonError(response, 404, '测试场景不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       if (!request.file) {
-        return jsonError(response, 400, '请上传样本数据文件');
+        return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
       }
       const schema = JSON.parse(scenario.data_schema);
       const parsed = await parseDatasetFile(request.file.path, request.file.originalname);
       const errors = validateRows(parsed.rows, schema);
       if (errors.length) {
-        return jsonError(response, 422, '样本数据校验失败', { errors });
+        return jsonError(response, 422, '\u6837\u672c\u6570\u636e\u6821\u9a8c\u5931\u8d25', { errors });
       }
 
       const datasetId = database.nextId('DS');
@@ -778,10 +811,10 @@ export async function createApp(options = {}) {
     try {
       const scenario = database.getScenarioByKey(request.params.key);
       if (!scenario) {
-        return jsonError(response, 404, '测试场景不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       if (!scenario.script_entry) {
-        return jsonError(response, 404, '场景尚未绑定脚本');
+        return jsonError(response, 404, '鍦烘櫙灏氭湭缁戝畾鑴氭湰');
       }
       const script = await readScenarioScript({
         workspaceRoot: app.locals.paths.workspaceRoot,
@@ -789,7 +822,7 @@ export async function createApp(options = {}) {
         scriptEntry: scenario.script_entry
       });
       if (!script) {
-        return jsonError(response, 400, '脚本路径无效');
+        return jsonError(response, 400, '鑴氭湰璺緞鏃犳晥');
       }
       return response.json({
         scenarioKey: scenario.key,
@@ -799,7 +832,7 @@ export async function createApp(options = {}) {
       });
     } catch (error) {
       if (error?.code === 'ENOENT') {
-        return jsonError(response, 404, '脚本文件不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       return next(error);
     }
@@ -809,14 +842,23 @@ export async function createApp(options = {}) {
     try {
       const scenario = database.getScenarioByKey(request.params.key);
       if (!scenario) {
-        return jsonError(response, 404, '测试场景不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       if (!request.file) {
-        return jsonError(response, 400, '请上传测试脚本文件');
+        return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
       }
       if (!isAllowedScriptFile(request.file.originalname)) {
-        return jsonError(response, 400, '仅支持 .js / .spec.js / .mjs 脚本文件');
+        return jsonError(response, 400, '\u4ec5\u652f\u6301 .js / .spec.js / .mjs \u811a\u672c\u6587\u4ef6');
       }
+      await archiveScenarioScriptVersion({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        scriptsDir: app.locals.paths.scriptsDir,
+        dataDir: app.locals.paths.dataDir,
+        scenarioKey: scenario.key,
+        scriptEntry: scenario.script_entry,
+        actor: request.user.user_id,
+        reason: 'upload'
+      });
       const saved = await saveScenarioScript({
         workspaceRoot: app.locals.paths.workspaceRoot,
         scriptsDir: app.locals.paths.scriptsDir,
@@ -825,12 +867,14 @@ export async function createApp(options = {}) {
         sourcePath: request.file.path,
         originalName: request.file.originalname
       });
-      const updated = database.updateScenario(scenario.key, { scriptEntry: saved.scriptEntry });
+      const content = await readFile(saved.storedPath, 'utf8');
+      const updated = database.updateScenario(scenario.key, { scriptEntry: saved.scriptEntry, ...scriptSchemaPatch(content) });
       return response.status(201).json({
         scenarioId: updated.id,
         scenarioKey: updated.key,
         scriptEntry: saved.scriptEntry,
-        fileName: saved.fileName
+        fileName: saved.fileName,
+        dataSchema: toPublicScenario(updated).dataSchema
       });
     } catch (error) {
       return next(error);
@@ -841,20 +885,29 @@ export async function createApp(options = {}) {
     try {
       const scenario = database.getScenarioByKey(request.params.key);
       if (!scenario) {
-        return jsonError(response, 404, '测试场景不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       const content = typeof request.body.content === 'string' ? request.body.content : '';
       if (!content.trim()) {
-        return jsonError(response, 400, '脚本内容不能为空');
+        return jsonError(response, 400, '\u811a\u672c\u5185\u5bb9\u4e0d\u80fd\u4e3a\u7a7a');
       }
       if (Buffer.byteLength(content, 'utf8') > 1024 * 1024) {
-        return jsonError(response, 413, '脚本内容不能超过 1 MB');
+        return jsonError(response, 413, '\u811a\u672c\u5185\u5bb9\u4e0d\u80fd\u8d85\u8fc7 1 MB');
       }
       const fileName = request.body.fileName
         || (scenario.script_entry ? path.basename(scenario.script_entry) : `${scenario.key}.spec.js`);
       if (!isAllowedScriptFile(fileName)) {
-        return jsonError(response, 400, '仅支持 .js / .spec.js / .mjs 脚本文件');
+        return jsonError(response, 400, '\u4ec5\u652f\u6301 .js / .spec.js / .mjs \u811a\u672c\u6587\u4ef6');
       }
+      await archiveScenarioScriptVersion({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        scriptsDir: app.locals.paths.scriptsDir,
+        dataDir: app.locals.paths.dataDir,
+        scenarioKey: scenario.key,
+        scriptEntry: scenario.script_entry,
+        actor: request.user.user_id,
+        reason: 'edit'
+      });
       const saved = await saveScenarioScriptContent({
         workspaceRoot: app.locals.paths.workspaceRoot,
         scriptsDir: app.locals.paths.scriptsDir,
@@ -864,13 +917,67 @@ export async function createApp(options = {}) {
         fileName,
         content
       });
-      const updated = database.updateScenario(scenario.key, { scriptEntry: saved.scriptEntry });
+      const updated = database.updateScenario(scenario.key, { scriptEntry: saved.scriptEntry, ...scriptSchemaPatch(content) });
       return response.json({
         scenarioId: updated.id,
         scenarioKey: updated.key,
         scriptEntry: saved.scriptEntry,
         fileName: saved.fileName,
-        content
+        content,
+        dataSchema: toPublicScenario(updated).dataSchema
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get('/api/scenarios/:key/script/versions', requireAuth, async (request, response, next) => {
+    try {
+      const scenario = database.getScenarioByKey(request.params.key);
+      if (!scenario) {
+        return jsonError(response, 404, '测试场景不存在');
+      }
+      const versions = await listScenarioScriptVersions({
+        scriptsDir: app.locals.paths.scriptsDir,
+        scenarioKey: scenario.key
+      });
+      return response.json({ scenarioKey: scenario.key, versions });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post('/api/scenarios/:key/script/versions/:versionId/restore', requireAuth, async (request, response, next) => {
+    try {
+      const scenario = database.getScenarioByKey(request.params.key);
+      if (!scenario) {
+        return jsonError(response, 404, '测试场景不存在');
+      }
+      await archiveScenarioScriptVersion({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        scriptsDir: app.locals.paths.scriptsDir,
+        dataDir: app.locals.paths.dataDir,
+        scenarioKey: scenario.key,
+        scriptEntry: scenario.script_entry,
+        actor: request.user.user_id,
+        reason: 'restore'
+      });
+      const restored = await restoreScenarioScriptVersion({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        scriptsDir: app.locals.paths.scriptsDir,
+        dataDir: app.locals.paths.dataDir,
+        scenarioKey: scenario.key,
+        versionId: request.params.versionId
+      });
+      if (!restored) {
+        return jsonError(response, 404, '脚本版本不存在');
+      }
+      const updated = database.updateScenario(scenario.key, { scriptEntry: restored.scriptEntry });
+      return response.json({
+        scenarioId: updated.id,
+        scenarioKey: updated.key,
+        scriptEntry: restored.scriptEntry,
+        fileName: restored.fileName
       });
     } catch (error) {
       return next(error);
@@ -880,7 +987,7 @@ export async function createApp(options = {}) {
   app.post('/api/scenarios/:key/publish', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
     const scenario = database.getScenarioByKey(request.params.key);
     if (!scenario) {
-      return jsonError(response, 404, '测试场景不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     response.json(toPublicScenario(database.updateScenarioStatus(scenario.id, 'published')));
   });
@@ -888,7 +995,7 @@ export async function createApp(options = {}) {
   app.post('/api/scenarios/:key/unpublish', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
     const scenario = database.getScenarioByKey(request.params.key);
     if (!scenario) {
-      return jsonError(response, 404, '测试场景不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     response.json(toPublicScenario(database.updateScenarioStatus(scenario.id, 'draft')));
   });
@@ -899,6 +1006,7 @@ export async function createApp(options = {}) {
         scenarioId,
         datasetId,
         environment = 'test',
+        executionLocation = 'server',
         enforceDependencies = false,
         skipDependencyCheck = false
       } = request.body || {};
@@ -908,17 +1016,20 @@ export async function createApp(options = {}) {
       } catch (error) {
         return jsonError(response, 400, error.message);
       }
+      if (!['server', 'local'].includes(executionLocation)) {
+        return jsonError(response, 400, '执行位置无效');
+      }
       const scenario = database.getScenarioById(scenarioId);
       const dataset = database.getDatasetById(datasetId);
       if (!scenario || !dataset || dataset.scenario_id !== scenario.id) {
-        return jsonError(response, 400, '场景或样本数据无效');
+        return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
       }
       if (scenario.status !== 'published') {
-        return jsonError(response, 400, '仅已发布场景可以执行');
+        return jsonError(response, 400, '浠呭凡鍙戝竷鍦烘櫙鍙互鎵ц');
       }
       const envRow = database.getEnvironmentByKey(environment);
       if (!envRow) {
-        return jsonError(response, 400, `执行环境不存在: ${environment}`);
+        return jsonError(response, 400, `鎵ц鐜涓嶅瓨鍦? ${environment}`);
       }
       const dependsOn = JSON.parse(scenario.depends_on || '[]');
       const shouldEnforce = Boolean(enforceDependencies) && !skipDependencyCheck && dependsOn.length > 0;
@@ -934,18 +1045,136 @@ export async function createApp(options = {}) {
         dataset,
         environment: envRow.key,
         executionMode,
+        executionLocation,
         triggeredBy: request.user.user_id
       });
+      if (executionLocation === 'local') {
+        const reportDir = await initializeLocalRun(app, run.id);
+        const ticket = await createLocalExecutionTicket({
+          reportDir,
+          runId: run.id,
+          createdBy: request.user.user_id
+        });
+        return response.status(202).json({
+          ...toPublicRun(database.getRunById(run.id)),
+          localExecution: {
+            code: ticket.code,
+            expiresAt: ticket.expiresAt,
+            toolDownloadUrl: '/api/recorder/download'
+          }
+        });
+      }
       response.status(202).json(toPublicRun(run));
       setImmediate(() => {
         executeRun(app, run.id).catch((error) => {
-          if (!app.locals.silent) {
-            console.error(error);
-          }
+          if (!app.locals.silent) console.error(error);
         });
       });
     } catch (error) {
       next(error);
+    }
+  });
+
+  app.post('/api/local-runs/resolve', async (request, response, next) => {
+    try {
+      const clientKey = request.ip || request.socket.remoteAddress || 'unknown';
+      const limit = app.locals.localExecutionCodeLimiter.check(clientKey);
+      if (!limit.allowed) {
+        response.setHeader('retry-after', String(Math.max(1, Math.ceil(limit.retryAfterMs / 1000))));
+        return jsonError(response, 429, '尝试次数过多，请稍后再试');
+      }
+      const resolved = await resolveLocalExecutionTicket({
+        reportsDir: app.locals.paths.reportsDir,
+        code: request.body?.code || ''
+      });
+      if (!resolved) {
+        app.locals.localExecutionCodeLimiter.fail(clientKey);
+        return jsonError(response, 401, '执行码无效、已使用或已过期');
+      }
+      const run = database.getRunById(resolved.meta.runId);
+      if (!run || run.execution_location !== 'local' || run.status !== 'queued') {
+        return jsonError(response, 409, '本地执行任务当前不可领取');
+      }
+      const scenario = database.getScenarioById(run.scenario_id);
+      const dataset = database.getDatasetById(run.dataset_id);
+      const environment = database.getEnvironmentByKey(run.environment);
+      if (!scenario || !dataset || !environment) {
+        return jsonError(response, 409, '执行任务关联的场景、数据集或环境不存在');
+      }
+      const bundle = await buildLocalExecutionBundle({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        dataDir: app.locals.paths.dataDir,
+        scenario,
+        dataset,
+        environment
+      });
+      const claimedAt = new Date().toISOString();
+      await writeLocalExecutionMeta(resolved.reportDir, {
+        ...resolved.meta,
+        status: 'running',
+        recordCodeHash: null,
+        recordCodeUsedAt: claimedAt,
+        claimedAt
+      });
+      await markLocalRunStarted(app, run.id);
+      app.locals.localExecutionCodeLimiter.clear(clientKey);
+      return response.json({
+        ...bundle,
+        runId: run.id,
+        token: resolved.meta.token,
+        executionMode: run.execution_mode || 'headed'
+      });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post('/api/local-runs/:runId/artifacts', upload.single('file'), async (request, response, next) => {
+    try {
+      const run = database.getRunById(request.params.runId);
+      const reportDir = path.resolve(app.locals.paths.reportsDir, request.params.runId);
+      const meta = await readLocalExecutionMeta(reportDir);
+      if (!run || run.execution_location !== 'local' || !hasValidLocalExecutionToken(meta, request.body?.token)) {
+        if (request.file) await rm(request.file.path, { force: true });
+        return jsonError(response, 401, '本地执行上传凭证无效或已过期');
+      }
+      if (!request.file) return jsonError(response, 400, '请选择要上传的执行结果文件');
+      const target = resolveLocalArtifactPath(reportDir, request.body?.path);
+      if (!target || path.basename(target) === 'local-execution.json') {
+        await rm(request.file.path, { force: true });
+        return jsonError(response, 400, '执行结果文件路径无效');
+      }
+      await mkdir(path.dirname(target), { recursive: true });
+      await rm(target, { force: true });
+      await rename(request.file.path, target);
+      return response.status(201).json({ ok: true, path: request.body.path });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post('/api/local-runs/:runId/finish', async (request, response, next) => {
+    try {
+      const run = database.getRunById(request.params.runId);
+      const reportDir = path.resolve(app.locals.paths.reportsDir, request.params.runId);
+      const meta = await readLocalExecutionMeta(reportDir);
+      if (!run || run.execution_location !== 'local' || !hasValidLocalExecutionToken(meta, request.body?.token)) {
+        return jsonError(response, 401, '本地执行上传凭证无效或已过期');
+      }
+      if (meta.status === 'finished') return jsonError(response, 409, '本地执行结果已经提交');
+      const completed = await completeLocalRun(app, run.id, {
+        exitCode: Number(request.body?.exitCode ?? 1),
+        error: String(request.body?.error || '')
+      });
+      await writeLocalExecutionMeta(reportDir, {
+        ...meta,
+        status: 'finished',
+        token: null,
+        finishedAt: new Date().toISOString()
+      });
+      return response.json(toPublicRun(runWithArtifacts(database, completed)));
+    } catch (error) {
+      return next(error);
     }
   });
 
@@ -956,24 +1185,24 @@ export async function createApp(options = {}) {
   app.get('/api/runs/:runId', requireAuth, (request, response) => {
     const run = database.getRunById(request.params.runId);
     if (!run) {
-      return jsonError(response, 404, '执行记录不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     response.json(toPublicRun(runWithArtifacts(database, run)));
   });
 
   app.get('/api/runs/:runId/failed-rows.csv', requireAuth, (request, response) => {
     const run = database.getRunById(request.params.runId);
-    if (!run) return jsonError(response, 404, '执行记录不存在');
+    if (!run) return jsonError(response, 404, '\u6267\u884c\u8bb0\u5f55\u4e0d\u5b58\u5728');
     const summary = JSON.parse(run.summary || '{}');
     response.type('text/csv; charset=utf-8');
-    response.send(Array.isArray(summary.failedRows) && summary.failedRows.length ? rowsToCsv(summary.failedRows) : '状态,说明\\n无失败数据,本次执行没有失败行');
+    response.send(Array.isArray(summary.failedRows) && summary.failedRows.length ? rowsToCsv(summary.failedRows) : '\u72b6\u6001,\u8bf4\u660e\n\u65e0\u5931\u8d25\u6570\u636e,\u672c\u6b21\u6267\u884c\u6ca1\u6709\u5931\u8d25\u884c');
   });
 
   app.get('/api/runs/:runId/process', requireAuth, async (request, response, next) => {
     try {
       const run = database.getRunById(request.params.runId);
       if (!run) {
-        return jsonError(response, 404, '执行记录不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       response.json(await runProcessPayload(app, run));
     } catch (error) {
@@ -993,7 +1222,7 @@ export async function createApp(options = {}) {
   app.put('/api/settings/llm', requireAuth, (request, response) => {
     const { provider = '', model = '', baseUrl = '', apiKey = '', enabled = true } = request.body || {};
     if (!provider || !model || !apiKey) {
-      return jsonError(response, 400, '请填写供应商、模型和 API Key');
+      return jsonError(response, 400, '璇峰～鍐欎緵搴斿晢銆佹ā鍨嬪拰 API Key');
     }
     const row = database.setSetting('llm', { provider, model, baseUrl, apiKey, enabled }, request.user.user_id);
     response.json(publicLlmSetting(row));
@@ -1003,12 +1232,12 @@ export async function createApp(options = {}) {
     const setting = database.getSetting('llm');
     const value = setting ? JSON.parse(setting.value) : null;
     if (!value?.apiKey) {
-      return jsonError(response, 400, '请先配置 LLM API Key');
+      return jsonError(response, 400, '璇峰厛閰嶇疆 LLM API Key');
     }
     if (!value.enabled) {
-      return jsonError(response, 400, 'LLM 未启用');
+      return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
     }
-    return response.json({ ok: true, message: '配置可用（未实际调用）' });
+    return response.json({ ok: true, message: '???????????' });
   });
 
   app.post('/api/recordings/start', requireAuth, async (request, response, next) => {
@@ -1020,13 +1249,13 @@ export async function createApp(options = {}) {
         || `${request.protocol}://${request.get('host')}`;
       const environment = database.getEnvironmentByKey(environmentKey) || database.getDefaultEnvironment();
       if (!environment) {
-        return jsonError(response, 400, '执行环境不存在');
+        return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
       }
       if (scenarioKey && !database.getScenarioByKey(scenarioKey)) {
-        return jsonError(response, 404, '测试场景不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       const id = database.nextId('REC');
-      const outputPath = path.resolve(app.locals.paths.recordingsDir, `${id}.spec.js`);
+      const outputPath = path.resolve(app.locals.paths.recordingScriptsDir, `${id}.spec.js`);
       const baseUrl = environment.base_url.replace(/\/+$/, '');
       const startUrl = `${baseUrl}/#/login`;
       const uploadToken = createRecordingUploadToken();
@@ -1095,7 +1324,7 @@ export async function createApp(options = {}) {
       const limit = app.locals.recordingCodeLimiter.check(clientKey);
       if (!limit.allowed) {
         response.setHeader('retry-after', String(Math.max(1, Math.ceil(limit.retryAfterMs / 1000))));
-        return jsonError(response, 429, '录制码尝试次数过多，请稍后重试');
+        return jsonError(response, 429, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
       }
 
       const code = request.body?.code || '';
@@ -1122,7 +1351,7 @@ export async function createApp(options = {}) {
       }
 
       app.locals.recordingCodeLimiter.fail(clientKey);
-      return jsonError(response, 401, '录制码无效或已过期');
+      return jsonError(response, 401, '\u8bf7\u6c42\u5931\u8d25');
     } catch (error) {
       return next(error);
     }
@@ -1132,7 +1361,7 @@ export async function createApp(options = {}) {
     try {
       const metaPath = path.resolve(app.locals.paths.recordingsDir, `${request.params.id}.meta.json`);
       if (!existsSync(metaPath)) {
-        return jsonError(response, 404, '录制记录不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       const meta = JSON.parse(await readFile(metaPath, 'utf8'));
       return response.json({
@@ -1154,7 +1383,7 @@ export async function createApp(options = {}) {
       const id = request.params.id;
       const metaPath = path.resolve(app.locals.paths.recordingsDir, `${id}.meta.json`);
       if (!existsSync(metaPath)) {
-        return jsonError(response, 404, '录制记录不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       const meta = JSON.parse(await readFile(metaPath, 'utf8'));
       const token = request.body?.token || '';
@@ -1166,12 +1395,14 @@ export async function createApp(options = {}) {
         && (!meta.uploadTokenExpires || meta.uploadTokenExpires >= new Date().toISOString());
       const sessionValid = session && session.user_id === meta.createdBy;
       if (!tokenValid && !sessionValid) {
-        return jsonError(response, 401, '录制上传凭证无效或已过期');
+        return jsonError(response, 401, '褰曞埗涓婁紶鍑瘉鏃犳晥鎴栧凡杩囨湡');
       }
       if (!request.file) {
-        return jsonError(response, 400, '请上传录制脚本文件');
+        return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
       }
-      const outputPath = path.resolve(app.locals.paths.recordingsDir, `${id}.spec.js`);
+      const outputPath = meta.outputPath
+        ? path.resolve(meta.outputPath)
+        : path.resolve(app.locals.paths.recordingScriptsDir, `${id}.spec.js`);
       await rename(request.file.path, outputPath);
       const scriptEntry = resolveRecordingScriptEntry(
         app.locals.paths.workspaceRoot,
@@ -1179,16 +1410,26 @@ export async function createApp(options = {}) {
         app.locals.paths.dataDir
       );
       if (!scriptEntry) {
-        return jsonError(response, 400, '录制脚本无效');
+        return jsonError(response, 400, '褰曞埗鑴氭湰鏃犳晥');
       }
       let scenario = null;
       const scenarioKey = meta.scenarioKey || request.body?.scenarioKey || '';
       if (scenarioKey) {
         scenario = database.getScenarioByKey(scenarioKey);
         if (!scenario) {
-          return jsonError(response, 404, '测试场景不存在');
+          return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
         }
-        scenario = database.updateScenario(scenarioKey, { scriptEntry });
+        await archiveScenarioScriptVersion({
+          workspaceRoot: app.locals.paths.workspaceRoot,
+          scriptsDir: app.locals.paths.scriptsDir,
+          dataDir: app.locals.paths.dataDir,
+          scenarioKey: scenario.key,
+          scriptEntry: scenario.script_entry,
+          actor: meta.createdBy || '',
+          reason: 'recording'
+        });
+        const content = await readFile(outputPath, 'utf8').catch(() => '');
+        scenario = database.updateScenario(scenarioKey, { scriptEntry, ...scriptSchemaPatch(content) });
       }
       meta.status = 'finished';
       meta.finishedAt = new Date().toISOString();
@@ -1210,13 +1451,15 @@ export async function createApp(options = {}) {
     try {
       const id = request.params.id;
       const metaPath = path.resolve(app.locals.paths.recordingsDir, `${id}.meta.json`);
-      const outputPath = path.resolve(app.locals.paths.recordingsDir, `${id}.spec.js`);
       if (!existsSync(metaPath)) {
-        return jsonError(response, 404, '录制记录不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+      const outputPath = meta.outputPath
+        ? path.resolve(meta.outputPath)
+        : path.resolve(app.locals.paths.recordingScriptsDir, `${id}.spec.js`);
       if (meta.location === 'local' && meta.status !== 'finished') {
-        return jsonError(response, 400, '本地录制尚未上传脚本，请在本机终端执行录制命令');
+        return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
       }
       stopRecordingProcess(meta.pid);
       if (!existsSync(outputPath) && app.locals.recordMode === 'stub') {
@@ -1229,15 +1472,25 @@ export async function createApp(options = {}) {
         app.locals.paths.dataDir
       );
       if (!scriptEntry) {
-        return jsonError(response, 400, '录制脚本尚未生成，请先在 Playwright Inspector 中保存步骤');
+        return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
       }
       const scenarioKey = request.body?.scenarioKey || meta.scenarioKey || '';
       if (scenarioKey) {
         const scenario = database.getScenarioByKey(scenarioKey);
         if (!scenario) {
-          return jsonError(response, 404, '测试场景不存在');
+          return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
         }
-        const updated = database.updateScenario(scenarioKey, { scriptEntry });
+        await archiveScenarioScriptVersion({
+          workspaceRoot: app.locals.paths.workspaceRoot,
+          scriptsDir: app.locals.paths.scriptsDir,
+          dataDir: app.locals.paths.dataDir,
+          scenarioKey: scenario.key,
+          scriptEntry: scenario.script_entry,
+          actor: request.user.user_id,
+          reason: 'recording'
+        });
+        const content = await readFile(outputPath, 'utf8').catch(() => '');
+        const updated = database.updateScenario(scenarioKey, { scriptEntry, ...scriptSchemaPatch(content) });
         meta.status = 'finished';
         meta.finishedAt = new Date().toISOString();
         meta.scenarioKey = scenarioKey;
@@ -1251,11 +1504,12 @@ export async function createApp(options = {}) {
         });
       }
       const key = `draft-recording-${id}`;
+      const content = await readFile(outputPath, 'utf8').catch(() => '');
       const scenario = database.createScenario({
         key,
-        name: `录制草稿 ${id}`,
-        description: `由录制 ${id} 生成的草稿场景`,
-        module: '录制 / Recording',
+        name: `???? ${id}`,
+        description: `??? ${id} ???????`,
+        module: '褰曞埗 / Recording',
         appId: '',
         moduleId: '',
         priority: 'P2',
@@ -1263,7 +1517,7 @@ export async function createApp(options = {}) {
         version: '0.1.0',
         owner: request.user.display_name || request.user.username,
         scriptEntry,
-        dataSchema: { columns: [], required: [], example: {} },
+        dataSchema: extractScriptDataSchema(content) || { columns: [], required: [], example: {} },
         dependsOn: []
       });
       meta.status = 'finished';
@@ -1285,7 +1539,7 @@ export async function createApp(options = {}) {
   app.get('/api/runs/:runId/report-file/*file', requireAuth, (request, response) => {
     const run = database.getRunById(request.params.runId);
     if (!run?.report_path) {
-      return jsonError(response, 404, '报告文件不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
 
     const reportRoot = path.resolve(run.report_path);
@@ -1301,7 +1555,7 @@ export async function createApp(options = {}) {
     });
 
     if (!filePath) {
-      return jsonError(response, 404, '报告文件不存在');
+      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     response.type(path.extname(filePath));
     createReadStream(filePath).pipe(response);
@@ -1311,21 +1565,21 @@ export async function createApp(options = {}) {
     try {
       const run = database.getRunById(request.params.runId);
       if (!run) {
-        return jsonError(response, 404, '执行记录不存在');
+        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       const process = await runProcessPayload(app, run);
       response.type('html').send(`<!doctype html>
 <html lang="zh-CN">
 <meta charset="utf-8">
 <meta http-equiv="refresh" content="2">
-<title>${process.scenarioName} - 实时执行过程</title>
+<title>${process.scenarioName} - \u5b9e\u65f6\u6267\u884c\u8fc7\u7a0b</title>
 <body style="margin:0;background:#101828;color:#fff;font-family:Arial,'Microsoft YaHei',sans-serif">
   <main style="padding:18px">
-    <h1 style="margin:0 0 8px;font-size:20px">实时执行过程</h1>
-    <p style="margin:0 0 16px;color:#d0d5dd">${process.scenarioName} · ${process.currentStep || process.status}</p>
+    <h1 style="margin:0 0 8px;font-size:20px">\u5b9e\u65f6\u6267\u884c\u8fc7\u7a0b</h1>
+    <p style="margin:0 0 16px;color:#d0d5dd">${process.scenarioName} 路 ${process.currentStep || process.status}</p>
     ${process.latestScreenshotUrl
-      ? `<img src="${process.latestScreenshotUrl}" alt="实时执行截图" style="width:100%;max-height:72vh;object-fit:contain;border-radius:10px;background:#fff" />`
-      : '<div style="display:grid;min-height:320px;place-items:center;border:1px solid #344054;border-radius:10px;color:#98a2b3">等待浏览器画面...</div>'}
+      ? `<img src="${process.latestScreenshotUrl}" alt="\u5b9e\u65f6\u6267\u884c\u622a\u56fe" style="width:100%;max-height:72vh;object-fit:contain;border-radius:10px;background:#fff" />`
+      : '<div style="display:grid;min-height:320px;place-items:center;border:1px solid #344054;border-radius:10px;color:#98a2b3">\u7b49\u5f85\u6d4f\u89c8\u5668\u753b\u9762...</div>'}
   </main>
 </body>
 </html>`);
@@ -1335,7 +1589,7 @@ export async function createApp(options = {}) {
   });
 
   app.use('/api', (request, response) => {
-    return jsonError(response, 404, '接口不存在');
+    return jsonError(response, 404, '\u63a5\u53e3\u4e0d\u5b58\u5728');
   });
 
   app.use(express.static(publicDir));
@@ -1351,8 +1605,9 @@ export async function createApp(options = {}) {
     if (!app.locals.silent) {
       console.error(error);
     }
-    response.status(500).json({ message: '平台服务异常', detail: error.message });
+    response.status(500).json({ message: '骞冲彴鏈嶅姟寮傚父', detail: error.message });
   });
 
   return app;
 }
+

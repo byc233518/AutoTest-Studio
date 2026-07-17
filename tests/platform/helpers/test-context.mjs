@@ -7,7 +7,9 @@ import { createApp } from '../../../server/app.mjs';
 
 export async function createTestContext(t, options = {}) {
   const rootDir = await mkdtemp(path.join(tmpdir(), 'jmom-platform-'));
+  const testWorkspaceRoot = path.resolve(rootDir, 'workspace');
   const app = await createApp({
+    workspaceRoot: testWorkspaceRoot,
     dataDir: rootDir,
     databasePath: ':memory:',
     runMode: 'mock',

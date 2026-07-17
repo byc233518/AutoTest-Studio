@@ -21,6 +21,8 @@ test('绿色包布局包含 EXE、Node、Playwright、浏览器和数据目录',
   assert.match(layout.executable, /JMOM录制器\.exe$/);
   assert.match(layout.nodeExecutable, /runtime[\\/]node\.exe$/);
   assert.match(layout.runner, /app[\\/]portable-record-runner\.mjs$/);
+  assert.match(layout.executionRunner, /app[\\/]portable-execution-runner\.mjs$/);
+  assert.match(layout.executionLibrary, /app[\\/]lib[\\/]local-execution\.mjs$/);
   assert.match(layout.playwrightCli, /app[\\/]node_modules[\\/]playwright[\\/]cli\.js$/);
   assert.match(layout.browsersDir, /browsers$/);
   assert.match(layout.logsDir, /data[\\/]logs$/);

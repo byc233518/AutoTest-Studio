@@ -44,6 +44,15 @@ public sealed class RecorderCoreTests
     }
 
     [TestMethod]
+    public void ExecutionProcessSpec_UsesPortableExecutionRunner()
+    {
+        var spec = RecorderProcessSpec.CreateExecution(@"D:\JMOM录制器", "http://host:3050/", "7k3p w9qm");
+
+        CollectionAssert.Contains(spec.Arguments.ToList(), Path.Combine(spec.WorkingDirectory, "app", "portable-execution-runner.mjs"));
+        CollectionAssert.Contains(spec.Arguments.ToList(), "7K3P-W9QM");
+    }
+
+    [TestMethod]
     public async Task SettingsStore_RoundTripsPlatformUrl()
     {
         var root = Path.Combine(Path.GetTempPath(), $"jmom-recorder-{Guid.NewGuid():N}");

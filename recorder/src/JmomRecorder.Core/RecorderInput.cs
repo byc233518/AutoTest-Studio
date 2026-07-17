@@ -15,7 +15,7 @@ public static partial class RecorderInput
             .ToArray());
         if (!RecordCodePattern().IsMatch(raw))
         {
-            throw new ArgumentException("请输入 8 位录制码", nameof(value));
+            throw new ArgumentException("请输入 8 位操作码", nameof(value));
         }
         return $"{raw[..4]}-{raw[4..]}";
     }

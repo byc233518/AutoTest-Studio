@@ -60,7 +60,7 @@ export function startRecordingProcess({
     cli,
     'codegen',
     '--target',
-    'javascript',
+    'playwright-test',
     '-o',
     outputPath,
     startUrl

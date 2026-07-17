@@ -11,6 +11,7 @@
         <el-statistic title="失败" :value="run?.businessSummary?.failedRows || 0" />
         <el-statistic title="执行状态" :value="statusText" />
       </div>
+      <el-tag effect="plain">{{ run?.executionLocation === 'local' ? '测试人员本机执行' : '平台服务器执行' }}</el-tag>
       <div class="evidence-layout">
         <el-card>
           <template #header><strong>执行步骤</strong></template>

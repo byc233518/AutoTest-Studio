@@ -40,6 +40,9 @@
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="environment" label="环境" width="100" />
+        <el-table-column label="执行位置" width="105">
+          <template #default="{ row }">{{ row.executionLocation === 'local' ? '测试人员本机' : '平台服务器' }}</template>
+        </el-table-column>
         <el-table-column label="模式" width="100">
           <template #default="{ row }">{{ row.executionMode === 'ui' ? 'UI 模式' : row.executionMode }}</template>
         </el-table-column>

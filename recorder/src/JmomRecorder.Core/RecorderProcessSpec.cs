@@ -7,17 +7,31 @@ public sealed record RecorderProcessSpec(
 {
     public static RecorderProcessSpec Create(string portableRoot, string platformUrl, string recordCode)
     {
+        return CreateForRunner(portableRoot, platformUrl, recordCode, "portable-record-runner.mjs");
+    }
+
+    public static RecorderProcessSpec CreateExecution(string portableRoot, string platformUrl, string executionCode)
+    {
+        return CreateForRunner(portableRoot, platformUrl, executionCode, "portable-execution-runner.mjs");
+    }
+
+    private static RecorderProcessSpec CreateForRunner(
+        string portableRoot,
+        string platformUrl,
+        string operationCode,
+        string runnerFile)
+    {
         var root = Path.GetFullPath(portableRoot);
         return new RecorderProcessSpec(
             Path.Combine(root, "runtime", "node.exe"),
             root,
             new[]
             {
-                Path.Combine(root, "app", "portable-record-runner.mjs"),
+                Path.Combine(root, "app", runnerFile),
                 "--platform",
                 RecorderInput.NormalizePlatformUrl(platformUrl),
                 "--code",
-                RecorderInput.NormalizeCode(recordCode),
+                RecorderInput.NormalizeCode(operationCode),
                 "--root",
                 root
             });
