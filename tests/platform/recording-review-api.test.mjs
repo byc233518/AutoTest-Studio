@@ -308,6 +308,42 @@ test('merge 在脚本已匹配目标但平台 schema 不同时仍同步平台 sc
   assert.deepEqual((await merged.json()).scenario.dataSchema.columns, ['targetCode']);
 });
 
+test('script 相同 schema 和 raw 相同上传都保持已发布场景不变', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const key = 'contract-script-noop-published';
+  assert.equal((await ctx.fetch('/api/scenarios', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ key, name: key }) })).status, 201);
+  const source = `const testDataSchema = { columns: ['code'], required: [], example: { code: 'C' } };\nconst { test } = require('@playwright/test');\ntest('noop', async () => {});\n`;
+  const form = new FormData();
+  form.append('file', new Blob([source], { type: 'text/javascript' }), `${key}.spec.js`);
+  assert.equal((await ctx.fetch(`/api/scenarios/${key}/script`, { method: 'POST', headers: { cookie }, body: form })).status, 201);
+  assert.equal((await ctx.fetch(`/api/scenarios/${key}/publish`, { method: 'POST', headers: { cookie } })).status, 200);
+  const before = await (await ctx.fetch(`/api/scenarios/${key}`, { headers: { cookie } })).json();
+  const scriptNoop = await ctx.fetch(`/api/scenarios/${key}/contract`, { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ resolution: 'script', mappings: [] }) });
+  assert.equal(scriptNoop.status, 200);
+  assert.equal((await scriptNoop.json()).scenario.status, 'published');
+
+  const recordingKey = 'upload-raw-noop-published';
+  assert.equal((await ctx.fetch('/api/scenarios', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ key: recordingKey, name: recordingKey }) })).status, 201);
+  const started = await ctx.fetch('/api/recordings/start', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ scenarioKey: recordingKey, location: 'local' }) });
+  const recording = await started.json();
+  const upload = new FormData();
+  upload.append('token', recording.uploadToken);
+  upload.append('file', new Blob([recordedSource], { type: 'text/javascript' }), `${recording.id}.spec.js`);
+  assert.equal((await ctx.fetch(`/api/recordings/${recording.id}/upload`, { method: 'POST', body: upload })).status, 200);
+  assert.equal((await ctx.fetch(`/api/scenarios/${recordingKey}`, { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ dataSchema: { columns: ['manualCode'], required: [], example: { manualCode: 'M' } } }) })).status, 200);
+  assert.equal((await ctx.fetch(`/api/scenarios/${recordingKey}/publish`, { method: 'POST', headers: { cookie } })).status, 200);
+  const beforeRaw = await (await ctx.fetch(`/api/scenarios/${recordingKey}`, { headers: { cookie } })).json();
+  const duplicate = new FormData();
+  duplicate.append('token', recording.uploadToken);
+  duplicate.append('file', new Blob([recordedSource], { type: 'text/javascript' }), `${recording.id}.spec.js`);
+  assert.equal((await ctx.fetch(`/api/recordings/${recording.id}/upload`, { method: 'POST', body: duplicate })).status, 200);
+  const after = await (await ctx.fetch(`/api/scenarios/${recordingKey}`, { headers: { cookie } })).json();
+  assert.equal(after.status, 'published');
+  assert.deepEqual(after.dataSchema.columns, ['manualCode']);
+  assert.equal(after.scriptEntry, beforeRaw.scriptEntry);
+});
+
 test('录制 review 和 contract 未登录返回 401，缺少脚本返回 404', async (t) => {
   const ctx = await createTestContext(t);
   assert.equal((await ctx.fetch('/api/recordings/REC-MISSING')).status, 401);
