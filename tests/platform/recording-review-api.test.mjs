@@ -70,8 +70,11 @@ test('apply 成功保存数据驱动脚本，非法映射返回 422 且不覆盖
   const appliedBody = await applied.json();
   assert.match(appliedBody.script, /data\["customerCode"\]/);
   assert.equal(appliedBody.scenario.status, 'draft');
+  assert.notEqual(appliedBody.scenario.scriptEntry, uploaded.scriptEntry);
+  assert.match(appliedBody.scenario.scriptEntry, /platform-data\/scripts\/recording-apply-demo\/recording-apply-demo\.spec\.js$/);
   const firstScript = (await ctx.fetch(`/api/scenarios/${appliedBody.scenario.key}/script`, { headers: { cookie } })).json();
   const firstContent = (await firstScript).content;
+  assert.equal(firstContent, appliedBody.script);
   const repeated = await ctx.fetch(`/api/recordings/${recording.id}/apply`, {
     method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(body)
   });
@@ -83,6 +86,27 @@ test('apply 成功保存数据驱动脚本，非法映射返回 422 且不覆盖
   });
   assert.equal(invalid.status, 422);
   assert.equal((await (await ctx.fetch(`/api/scenarios/${appliedBody.scenario.key}/script`, { headers: { cookie } })).json()).content, firstContent);
+
+  const platformSchema = { columns: ['customerNo'], required: ['customerNo'], example: { customerNo: 'C-001' } };
+  assert.equal((await ctx.fetch('/api/scenarios/recording-apply-demo', {
+    method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ dataSchema: platformSchema })
+  })).status, 200);
+  const contract = await ctx.fetch('/api/scenarios/recording-apply-demo/contract', { headers: { cookie } });
+  assert.equal(contract.status, 200);
+  assert.deepEqual((await contract.json()).scriptSchema.columns, ['customerCode']);
+  const platformResolved = await ctx.fetch('/api/scenarios/recording-apply-demo/contract', {
+    method: 'PUT', headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ resolution: 'platform', targetSchema: { columns: ['ignored'], required: [], example: {} }, mappings: [{ from: 'customerCode', to: 'customerNo' }] })
+  });
+  assert.equal(platformResolved.status, 200);
+  assert.deepEqual((await platformResolved.json()).scenario.dataSchema.columns, ['customerNo']);
+  assert.match((await (await ctx.fetch('/api/scenarios/recording-apply-demo/script', { headers: { cookie } })).json()).content, /data\[['"]customerNo['"]\]/);
+  const merged = await ctx.fetch('/api/scenarios/recording-apply-demo/contract', {
+    method: 'PUT', headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ resolution: 'merge', targetSchema: { columns: ['mergedCode'], required: [], example: { mergedCode: 'M-001' } }, mappings: [{ from: 'customerNo', to: 'mergedCode' }] })
+  });
+  assert.equal(merged.status, 200);
+  assert.deepEqual((await merged.json()).scenario.dataSchema.columns, ['mergedCode']);
 });
 
 test('contract 支持 platform、script、merge，动态冲突返回 409 且脚本不变', async (t) => {
@@ -94,17 +118,24 @@ test('contract 支持 platform、script、merge，动态冲突返回 409 且脚�
     ['contract-script-demo', 'script', { columns: ['scriptCode'], required: [], example: { scriptCode: 's' } }],
     ['contract-merge-demo', 'merge', { columns: ['mergedCode'], required: [], example: { mergedCode: 'm' } }]
   ]) {
-    const created = await ctx.fetch('/api/scenarios', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ key, name: key, dataSchema: targetSchema }) });
+    const created = await ctx.fetch('/api/scenarios', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ key, name: key }) });
     assert.equal(created.status, 201);
     const upload = new FormData();
     upload.append('file', new Blob([source], { type: 'text/javascript' }), `${key}.spec.js`);
     assert.equal((await ctx.fetch(`/api/scenarios/${key}/script`, { method: 'POST', headers: { cookie }, body: upload })).status, 201);
+    if (resolution !== 'merge') {
+      assert.equal((await ctx.fetch(`/api/scenarios/${key}`, {
+        method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ dataSchema: targetSchema })
+      })).status, 200);
+    }
     const contract = await ctx.fetch(`/api/scenarios/${key}/contract`, { headers: { cookie } });
     assert.equal(contract.status, 200);
     assert.ok((await contract.json()).diff);
-    const result = await ctx.fetch(`/api/scenarios/${key}/contract`, { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ resolution, targetSchema, mappings: resolution === 'platform' ? [{ from: 'oldCode', to: 'newCode' }] : [] }) });
+    const result = await ctx.fetch(`/api/scenarios/${key}/contract`, { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ resolution, targetSchema: resolution === 'platform' ? { columns: ['ignored'], required: [], example: {} } : targetSchema, mappings: resolution === 'platform' ? [{ from: 'oldCode', to: 'newCode' }] : resolution === 'merge' ? [{ from: 'oldCode', to: 'mergedCode' }] : [] }) });
     assert.equal(result.status, 200);
-    assert.equal((await result.json()).scenario.status, 'draft');
+    const resultBody = await result.json();
+    assert.equal(resultBody.scenario.status, 'draft');
+    assert.deepEqual(resultBody.scenario.dataSchema.columns, resolution === 'script' ? ['oldCode'] : targetSchema.columns);
   }
 
   const dynamicKey = 'contract-dynamic-demo';
@@ -131,7 +162,13 @@ test('contract 支持 platform、script、merge，动态冲突返回 409 且脚�
 test('录制 review 和 contract 未登录返回 401，缺少脚本返回 404', async (t) => {
   const ctx = await createTestContext(t);
   assert.equal((await ctx.fetch('/api/recordings/REC-MISSING')).status, 401);
+  assert.equal((await ctx.fetch('/api/recordings/REC-MISSING/apply', { method: 'POST' })).status, 401);
   assert.equal((await ctx.fetch('/api/scenarios/wms-customer-create/contract')).status, 401);
+  assert.equal((await ctx.fetch('/api/scenarios/wms-customer-create/contract', { method: 'PUT' })).status, 401);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  assert.equal((await ctx.fetch('/api/recordings/REC-MISSING/apply', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: '{}' })).status, 404);
   assert.equal((await ctx.fetch('/api/scenarios/wms-customer-create/contract', { headers: { cookie } })).status, 404);
+  assert.equal((await ctx.fetch('/api/scenarios/wms-customer-create/contract', { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ resolution: 'script' }) })).status, 404);
+  assert.equal((await ctx.fetch('/api/scenarios/not-found/contract', { headers: { cookie } })).status, 404);
+  assert.equal((await ctx.fetch('/api/scenarios/not-found/contract', { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ resolution: 'script' }) })).status, 404);
 });

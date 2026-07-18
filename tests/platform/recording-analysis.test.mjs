@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { analyzeRecordedScript, buildDataDrivenScript } from '../../server/platform/recording-analysis.mjs';
+import { extractScriptDataSchema } from '../../server/platform/scenario-scripts.mjs';
+import { synchronizeScriptSchema } from '../../server/platform/schema-sync.mjs';
 
 const basicSource = `import { test, expect } from '@playwright/test';
 
@@ -45,10 +47,32 @@ test('参数化脚本使用 defineRecordedTests 和 schema', () => {
     ]
   });
   assert.match(result.script, /const \{ defineRecordedTests \} = require\('\.\.\/support\/recorded-script'\);/);
-  assert.match(result.script, /defineRecordedTests\(test, ["']客户录入["'], dataSchema, async \(\{ page \}, data\) => \{/);
+  assert.match(result.script, /const testDataSchema = /);
+  assert.match(result.script, /defineRecordedTests\(test, ["']客户录入["'], testDataSchema, async \(\{ page \}, data\) => \{/);
   assert.match(result.script, /\.fill\(data\["customerCode"\]\)/);
   assert.match(result.script, /\.fill\(data\["customerName"\]\)/);
   assert.match(result.script, /await expect\(page\.getByText\('保存成功'\)\)\.toBeVisible\(\);/);
+});
+
+test('生成脚本可被场景 schema 提取器和字段同步器直接消费', () => {
+  const built = buildDataDrivenScript({
+    source: basicSource,
+    title: '字段同步闭环',
+    fields: [
+      { candidateId: 'field-1', key: 'customerCode', label: '客户编号', required: true, example: 'C001' },
+      { candidateId: 'field-2', key: 'customerName', label: '客户名称', example: '测试客户' }
+    ]
+  });
+  const extracted = extractScriptDataSchema(built.script);
+  assert.ok(extracted);
+  assert.deepEqual(extracted.columns, ['customerCode', 'customerName']);
+  const synchronized = synchronizeScriptSchema({
+    source: built.script,
+    targetSchema: { columns: ['customerNo', 'customerName'], required: ['customerNo'], example: { customerNo: 'C001', customerName: '测试客户' } },
+    mappings: [{ from: 'customerCode', to: 'customerNo' }]
+  });
+  assert.equal(synchronized.ok, true);
+  assert.match(synchronized.source, /data\[['"]customerNo['"]\]/);
 });
 
 test('多个 test 拒绝转换', () => {

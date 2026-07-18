@@ -316,9 +316,9 @@ export function buildDataDrivenScript({ source, title, fields = [], assertions =
     "const { test, expect } = require('@playwright/test');",
     "const { defineRecordedTests } = require('../support/recorded-script');",
     '',
-    `const dataSchema = ${JSON.stringify(schema, null, 2)};`,
+    `const testDataSchema = ${JSON.stringify(schema, null, 2)};`,
     '',
-    `defineRecordedTests(test, ${JSON.stringify(title || '录制脚本')}, dataSchema, async (${fixtureParam}, data) => {`,
+    `defineRecordedTests(test, ${JSON.stringify(title || '录制脚本')}, testDataSchema, async (${fixtureParam}, data) => {`,
     callbackBody ? `  ${callbackBody}` : '',
     '});',
     ''
