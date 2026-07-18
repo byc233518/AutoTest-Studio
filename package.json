@@ -24,9 +24,12 @@
                         },
     "dependencies":  {
                          "@element-plus/icons-vue":  "^2.3.2",
+                         "acorn":  "^8.15.0",
+                         "acorn-walk":  "^8.3.4",
                          "element-plus":  "^2.14.3",
                          "exceljs":  "^4.4.0",
                          "express":  "^5.2.1",
+                         "magic-string":  "^0.30.17",
                          "multer":  "^2.2.0",
                          "pinia":  "^3.0.4",
                          "read-excel-file":  "^9.2.0",
