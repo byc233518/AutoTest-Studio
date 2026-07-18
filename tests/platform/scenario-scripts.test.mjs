@@ -48,6 +48,48 @@ test('脚本字段解析支持 testDataSchema 和 JSON 注释声明', () => {
   });
 });
 
+test('脚本字段解析仅接受静态 AST 值，且不会误伤字符串中的括号或关键字', () => {
+  const staticSchema = extractScriptDataSchema(`
+    const testDataSchema = {
+      fields: [{
+        key: 'customerCode',
+        label: '客户(process)导入',
+        type: 'text',
+        required: true,
+        example: 'import process()'
+      }]
+    };
+  `);
+  assert.deepEqual(staticSchema, {
+    columns: ['customerCode'],
+    required: ['customerCode'],
+    example: { customerCode: 'import process()' },
+    fields: [{
+      key: 'customerCode',
+      label: '客户(process)导入',
+      type: 'text',
+      required: true,
+      example: 'import process()'
+    }]
+  });
+
+  for (const source of [
+    `const testDataSchema = { columns: makeColumns(), required: [], example: {} };`,
+    `const testDataSchema = { ...baseSchema };`,
+    `const testDataSchema = { ['columns']: ['code'], required: [], example: {} };`,
+    `const testDataSchema = { columns() { return ['code']; } };`
+  ]) {
+    assert.equal(extractScriptDataSchema(source), null);
+  }
+});
+
+test('脚本字段解析公共 API 对非文本输入不抛异常', () => {
+  for (const source of [null, 1, {}, []]) {
+    assert.doesNotThrow(() => extractScriptDataSchema(source));
+    assert.equal(extractScriptDataSchema(source), null);
+  }
+});
+
 test('脚本保存会保留最近 10 个版本并支持恢复', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');

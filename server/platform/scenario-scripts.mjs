@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import vm from 'node:vm';
+import { parse } from 'acorn';
 import { normalizeSchema } from './schema-sync.mjs';
 
 const ALLOWED_SCRIPT_PATTERN = /\.(spec\.)?[cm]?js$/i;
@@ -16,84 +16,76 @@ export function sanitizeScriptFileName(fileName = '') {
   return isAllowedScriptFile(base) ? base : `${base}.spec.js`;
 }
 
-function findBalancedObjectLiteral(source, startIndex) {
-  const openIndex = source.indexOf('{', startIndex);
-  if (openIndex < 0) return '';
-  let depth = 0;
-  let quote = '';
-  let escaped = false;
-  let lineComment = false;
-  let blockComment = false;
-  for (let index = openIndex; index < source.length; index += 1) {
-    const char = source[index];
-    const next = source[index + 1];
-    if (lineComment) {
-      if (char === '\n') lineComment = false;
-      continue;
-    }
-    if (blockComment) {
-      if (char === '*' && next === '/') {
-        blockComment = false;
-        index += 1;
-      }
-      continue;
-    }
-    if (quote) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === '\\') {
-        escaped = true;
-      } else if (char === quote) {
-        quote = '';
-      }
-      continue;
-    }
-    if (char === '/' && next === '/') {
-      lineComment = true;
-      index += 1;
-      continue;
-    }
-    if (char === '/' && next === '*') {
-      blockComment = true;
-      index += 1;
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      continue;
-    }
-    if (char === '{') depth += 1;
-    if (char === '}') {
-      depth -= 1;
-      if (depth === 0) return source.slice(openIndex, index + 1);
-    }
-  }
-  return '';
-}
-
 function normalizeDataSchema(value) {
   const schema = normalizeSchema(value);
   return schema.columns.length ? schema : null;
 }
 
-export function extractScriptDataSchema(source = '') {
-  const marker = source.match(/\/\*\s*@jmom-data-schema\s*([\s\S]*?)\*\//);
-  if (marker) {
-    try {
-      return normalizeDataSchema(JSON.parse(marker[1].trim()));
-    } catch {
-      return null;
+function propertyName(property) {
+  if (property.computed) return '';
+  if (property.key.type === 'Identifier') return property.key.name;
+  if (property.key.type === 'Literal' && (typeof property.key.value === 'string' || typeof property.key.value === 'number')) {
+    return String(property.key.value);
+  }
+  return '';
+}
+
+function staticValue(node) {
+  if (node.type === 'Literal' && (node.value === null || ['string', 'number', 'boolean'].includes(typeof node.value))) {
+    return { ok: true, value: node.value };
+  }
+  if (node.type === 'ArrayExpression') {
+    const values = [];
+    for (const item of node.elements) {
+      if (!item) return { ok: false };
+      const parsed = staticValue(item);
+      if (!parsed.ok) return parsed;
+      values.push(parsed.value);
     }
+    return { ok: true, value: values };
   }
-  const declaration = /\b(?:export\s+const|const|let|var)\s+testDataSchema\s*=/g.exec(source);
-  if (!declaration) return null;
-  const literal = findBalancedObjectLiteral(source, declaration.index + declaration[0].length);
-  if (!literal) return null;
-  if (/[`()]/.test(literal) || /\b(?:function|new|require|import|process|global|constructor|__proto__)\b/.test(literal)) {
-    return null;
+  if (node.type === 'ObjectExpression') {
+    const value = Object.create(null);
+    for (const property of node.properties) {
+      if (property.type !== 'Property' || property.kind !== 'init' || property.method || property.computed || property.shorthand) {
+        return { ok: false };
+      }
+      const key = propertyName(property);
+      if (!key) return { ok: false };
+      const parsed = staticValue(property.value);
+      if (!parsed.ok) return parsed;
+      value[key] = parsed.value;
+    }
+    return { ok: true, value };
   }
+  return { ok: false };
+}
+
+function findSchemaInitializer(source) {
+  const ast = parse(source, { ecmaVersion: 'latest', sourceType: 'module' });
+  for (const statement of ast.body) {
+    const declaration = statement.type === 'VariableDeclaration'
+      ? statement
+      : statement.type === 'ExportNamedDeclaration' && statement.declaration?.type === 'VariableDeclaration'
+        ? statement.declaration
+        : null;
+    const schema = declaration?.declarations.find((item) => item.id.type === 'Identifier' && item.id.name === 'testDataSchema');
+    if (schema) return schema.init;
+  }
+  return null;
+}
+
+export function extractScriptDataSchema(source = '') {
   try {
-    return normalizeDataSchema(vm.runInNewContext(`(${literal})`, Object.create(null), { timeout: 50 }));
+    if (typeof source !== 'string') return null;
+    const marker = source.match(/\/\*\s*@jmom-data-schema\s*([\s\S]*?)\*\//);
+    if (marker) {
+      return normalizeDataSchema(JSON.parse(marker[1].trim()));
+    }
+    const initializer = findSchemaInitializer(source);
+    if (!initializer || initializer.type !== 'ObjectExpression') return null;
+    const parsed = staticValue(initializer);
+    return parsed.ok ? normalizeDataSchema(parsed.value) : null;
   } catch {
     return null;
   }

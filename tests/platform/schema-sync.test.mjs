@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { parse } from 'acorn';
 import {
   diffSchemas,
   normalizeSchema,
@@ -53,6 +54,7 @@ test('比较字段模型能识别映射重命名和属性变化', () => {
   assert.deepEqual(result.removed, []);
   assert.deepEqual(result.renamed, [{ from: 'code', to: 'customerCode' }]);
   assert.deepEqual(result.changed, [{
+    key: 'customerCode',
     from: 'code',
     to: 'customerCode',
     changes: {
@@ -119,7 +121,8 @@ export function execute(data, key) {
 
   assert.equal(result.ok, false);
   assert.equal(result.source, source);
-  assert.deepEqual(result.conflicts.map((conflict) => conflict.kind), ['data-alias', 'dynamic-data-access']);
+  assert.deepEqual(result.conflicts.map((conflict) => conflict.kind), ['data-alias', 'dynamic-reference']);
+  assert.equal(result.conflicts[1].code, 'dynamic-data-access');
   assert.ok(result.conflicts.every((conflict) => Number.isInteger(conflict.line) && Number.isInteger(conflict.column)));
 });
 
@@ -162,8 +165,7 @@ export function execute(data) { return data.old; }`,
       example: { "new']; globalThis.injected = true; //": '' }
     },
     mappings: [
-      { from: 'old', to: "new']; globalThis.injected = true; //" },
-      { from: 'old', to: 'ignored' }
+      { from: 'old', to: "new']; globalThis.injected = true; //" }
     ]
   });
   assert.equal(safe.ok, true);
@@ -228,7 +230,7 @@ export function execute(data) { return data.old; }`;
   });
   assert.equal(invalidMapping.ok, false);
   assert.equal(invalidMapping.source, source);
-  assert.equal(invalidMapping.conflicts[0].kind, 'mapping');
+  assert.equal(invalidMapping.conflicts[0].kind, 'unknown-to');
 });
 
 test('同步拒绝 catch 参数对 data 的作用域遮蔽', () => {
@@ -281,4 +283,67 @@ export function execute(data) { return data.old; }`;
   assert.equal(result.ok, true);
   assert.match(result.source, /"columns": \[\s*"new"/);
   assert.match(result.source, /return data\['new'\]/);
+});
+
+test('字段差异报告映射输入错误，同步拒绝重复和幽灵映射', () => {
+  const targetSchema = { columns: ['new'], required: [], example: { new: '' } };
+  const sourceSchema = { columns: ['old'], required: [], example: { old: '' } };
+  const mappings = [
+    { from: 'ghost', to: 'new' },
+    { from: 'old', to: 'new' },
+    { from: 'old', to: 'new' },
+    { from: '__proto__', to: 'new' },
+    { from: 'old', to: 'constructor' }
+  ];
+  const diff = diffSchemas(targetSchema, sourceSchema, mappings);
+  assert.deepEqual(diff.invalidMappings.map((item) => item.kind), [
+    'unknown-from', 'duplicate-to', 'duplicate-from', 'dangerous-key', 'dangerous-key'
+  ]);
+
+  const source = `const testDataSchema = { columns: ['old'], required: [], example: { old: '' } };
+export function execute(data) { return data.old; }`;
+  const result = synchronizeScriptSchema({ source, targetSchema, mappings: mappings.slice(0, 2) });
+  assert.equal(result.ok, false);
+  assert.equal(result.source, source);
+  assert.deepEqual(result.conflicts.map((item) => item.kind), ['unknown-from', 'duplicate-to']);
+
+  const dangerousTarget = synchronizeScriptSchema({
+    source,
+    targetSchema: { columns: ['constructor'], required: [], example: { constructor: '' } }
+  });
+  assert.equal(dangerousTarget.ok, false);
+  assert.equal(dangerousTarget.source, source);
+  assert.equal(dangerousTarget.conflicts[0].kind, 'target-schema');
+});
+
+test('同步产物可由 Acorn 解析并能在运行时读取重命名字段', () => {
+  const source = `const testDataSchema = { columns: ['old'], required: [], example: { old: '' } };
+const execute = (data) => data.old;`;
+  const result = synchronizeScriptSchema({
+    source,
+    targetSchema: { columns: ['new'], required: [], example: { new: 'N-001' } },
+    mappings: [{ from: 'old', to: 'new' }]
+  });
+
+  assert.equal(result.ok, true);
+  assert.doesNotThrow(() => parse(result.source, { ecmaVersion: 'latest', sourceType: 'script' }));
+  assert.equal(new Function(`${result.source}; return execute({ new: 'N-001' });`)(), 'N-001');
+});
+
+test('同步公共 API 对无效输入和抛错映射 getter 返回冲突而不抛出', () => {
+  const source = `const testDataSchema = { columns: ['old'], required: [], example: { old: '' } };`;
+  const throwingMapping = {};
+  Object.defineProperty(throwingMapping, 'from', { get() { throw new Error('boom'); } });
+
+  for (const input of [null, [], 1, 'script']) {
+    assert.doesNotThrow(() => synchronizeScriptSchema(input));
+    assert.equal(synchronizeScriptSchema(input).ok, false);
+  }
+  const result = synchronizeScriptSchema({
+    source,
+    targetSchema: { columns: ['new'], required: [], example: { new: '' } },
+    mappings: [throwingMapping, null, 1]
+  });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.conflicts.map((item) => item.kind), ['invalid-mapping', 'invalid-mapping', 'invalid-mapping']);
 });
