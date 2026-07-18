@@ -80,13 +80,38 @@ export function compareScenarioRelease(database, scenarioId, releaseId, toReleas
   const releases = listScenarioReleases(database, scenarioId);
   const to = toReleaseId ? getScenarioRelease(database, scenarioId, toReleaseId) : releases.find((item) => item.id !== releaseId) || from;
   if (!from || !to) return null;
-  return { from, to, changes: { snapshot: from.snapshot, compareTo: to.snapshot } };
+  const fromSnapshot = from.snapshot || {};
+  const toSnapshot = to.snapshot || {};
+  const equal = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+  const scriptChanged = from.scriptHash !== to.scriptHash || fromSnapshot.scriptEntry !== toSnapshot.scriptEntry;
+  const schemaChanged = !equal(fromSnapshot.dataSchema || {}, toSnapshot.dataSchema || {});
+  const scenarioKeys = ['name', 'description', 'module', 'appId', 'moduleId', 'priority', 'owner', 'dependsOn'];
+  const scenarioChanged = scenarioKeys.some((key) => !equal(fromSnapshot[key], toSnapshot[key]));
+  const changedKeys = [];
+  if (schemaChanged) changedKeys.push('dataSchema');
+  if (from.scriptContent !== to.scriptContent) changedKeys.push('scriptContent');
+  if (from.scriptHash !== to.scriptHash) changedKeys.push('scriptHash');
+  if (fromSnapshot.scriptEntry !== toSnapshot.scriptEntry) changedKeys.push('scriptEntry');
+  scenarioKeys.filter((key) => !equal(fromSnapshot[key], toSnapshot[key])).forEach((key) => changedKeys.push(key));
+  return {
+    from,
+    to,
+    snapshots: { from: fromSnapshot, to: toSnapshot },
+    scriptChanged,
+    schemaChanged,
+    scenarioChanged,
+    changedKeys,
+    changes: { snapshot: fromSnapshot, compareTo: toSnapshot }
+  };
 }
 
-export function restoreScenarioRelease({ database, scenarioId, releaseId }) {
+export function restoreScenarioRelease({ database, scenarioId, releaseId, scriptEntry }) {
   const release = getScenarioRelease(database, scenarioId, releaseId);
   if (!release) return null;
-  const scenario = database.restoreScenarioRelease(scenarioId, releaseId, release.snapshot);
+  const scenario = database.restoreScenarioRelease(scenarioId, releaseId, {
+    ...release.snapshot,
+    ...(scriptEntry ? { scriptEntry } : {})
+  });
   return scenario ? { release, scenario } : null;
 }
 

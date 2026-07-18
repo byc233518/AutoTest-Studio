@@ -47,6 +47,10 @@ test('发布创建 v1/v2 快照并支持列表、详情、比较和恢复', asyn
   const comparison = await compare.json();
   assert.equal(comparison.from.versionNo, 1);
   assert.equal(comparison.to.versionNo, 2);
+  assert.equal(comparison.scriptChanged, true);
+  assert.equal(comparison.schemaChanged, true);
+  assert.equal(comparison.scenarioChanged, false);
+  assert.deepEqual(comparison.changedKeys, ['dataSchema', 'scriptContent', 'scriptHash']);
 
   const restored = await ctx.fetch(`/api/scenarios/release-flow/releases/${releases[1].id}/restore`, { method: 'POST', headers: { cookie } });
   assert.equal(restored.status, 200);
@@ -89,6 +93,36 @@ test('三个种子账号均可编辑和发布', async (t) => {
     assert.equal((await ctx.fetch(`/api/scenarios/${key}`, { method: 'PUT', headers: jsonHeaders(cookie), body: JSON.stringify({ description: 'updated' }) })).status, 200);
     assert.equal((await ctx.fetch(`/api/scenarios/${key}`, { headers: { cookie } }).then((r) => r.json())).status, 'draft');
   }
+});
+
+test('恢复跨 workspace 与 platform-data 脚本路径时使用实际保存入口', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const created = await ctx.fetch('/api/scenarios', {
+    method: 'POST', headers: jsonHeaders(cookie),
+    body: JSON.stringify({ key: 'release-paths', name: '跨路径恢复' })
+  });
+  assert.equal(created.status, 201);
+  const workspaceEntry = 'tests/release-paths.spec.js';
+  const workspacePath = `${ctx.app.locals.paths.workspaceRoot}/tests/release-paths.spec.js`;
+  await (await import('node:fs/promises')).mkdir(`${ctx.app.locals.paths.workspaceRoot}/tests`, { recursive: true });
+  await (await import('node:fs/promises')).writeFile(workspacePath, "export const testDataSchema={columns:['workspace'],required:[]};\n", 'utf8');
+  ctx.app.locals.database.updateScenario('release-paths', { scriptEntry: workspaceEntry });
+  const first = await ctx.fetch('/api/scenarios/release-paths/publish', { method: 'POST', headers: { cookie } });
+  assert.equal(first.status, 200);
+  const platformScript = await ctx.fetch('/api/scenarios/release-paths/script', {
+    method: 'PUT',
+    headers: jsonHeaders(cookie),
+    body: JSON.stringify({ fileName: 'platform-release-paths.spec.js', content: "export const testDataSchema={columns:['platform'],required:[]};\n" })
+  });
+  assert.equal(platformScript.status, 200);
+  const releases = await (await ctx.fetch('/api/scenarios/release-paths/releases', { headers: { cookie } })).json();
+  const restored = await ctx.fetch(`/api/scenarios/release-paths/releases/${releases[0].id}/restore`, { method: 'POST', headers: { cookie } });
+  assert.equal(restored.status, 200);
+  const restoredScenario = await restored.json();
+  assert.match(restoredScenario.scriptEntry, /^platform-data\//);
+  const script = await ctx.fetch('/api/scenarios/release-paths/script', { headers: { cookie } });
+  assert.match((await script.json()).content, /workspace/);
 });
 
 test('并发发布版本号唯一且连续', async (t) => {
