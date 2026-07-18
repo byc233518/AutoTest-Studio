@@ -1,0 +1,123 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createTestContext } from './helpers/test-context.mjs';
+
+const jsonHeaders = (cookie) => ({ cookie, 'content-type': 'application/json' });
+
+async function saveScript(ctx, cookie, key, content = "export const testDataSchema={columns:['id'],required:['id'],example:{id:'1'}};\nexport default {};\n") {
+  return ctx.fetch(`/api/scenarios/${key}/script`, {
+    method: 'PUT',
+    headers: jsonHeaders(cookie),
+    body: JSON.stringify({ fileName: `${key}.spec.js`, content })
+  });
+}
+
+test('发布创建 v1/v2 快照并支持列表、详情、比较和恢复', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const created = await ctx.fetch('/api/scenarios', {
+    method: 'POST', headers: jsonHeaders(cookie),
+    body: JSON.stringify({ key: 'release-flow', name: '发布流程', dataSchema: { columns: ['id'], required: ['id'], example: { id: '1' } } })
+  });
+  assert.equal(created.status, 201);
+  assert.equal((await saveScript(ctx, cookie, 'release-flow')).status, 200);
+
+  const first = await ctx.fetch('/api/scenarios/release-flow/publish', { method: 'POST', headers: { cookie } });
+  assert.equal(first.status, 200);
+  assert.equal((await first.json()).version, 'v1');
+  const secondScript = await saveScript(ctx, cookie, 'release-flow', "export const testDataSchema={columns:['id','name'],required:['id'],example:{id:'2',name:'n'}};\n");
+  assert.equal(secondScript.status, 200);
+  const second = await ctx.fetch('/api/scenarios/release-flow/publish', { method: 'POST', headers: { cookie } });
+  assert.equal(second.status, 200);
+  assert.equal((await second.json()).version, 'v2');
+
+  const list = await ctx.fetch('/api/scenarios/release-flow/releases', { headers: { cookie } });
+  assert.equal(list.status, 200);
+  const releases = await list.json();
+  assert.deepEqual(releases.map((item) => item.versionNo), [2, 1]);
+  const detail = await ctx.fetch(`/api/scenarios/release-flow/releases/${releases[1].id}`, { headers: { cookie } });
+  assert.equal(detail.status, 200);
+  const release = await detail.json();
+  assert.equal(release.versionNo, 1);
+  assert.equal(release.snapshot.dataSchema.columns[0], 'id');
+  assert.doesNotMatch(JSON.stringify(release.snapshot), /Tester123|password|apiKey/i);
+
+  const compare = await ctx.fetch(`/api/scenarios/release-flow/releases/${releases[1].id}/compare`, { headers: { cookie } });
+  assert.equal(compare.status, 200);
+  const comparison = await compare.json();
+  assert.equal(comparison.from.versionNo, 1);
+  assert.equal(comparison.to.versionNo, 2);
+
+  const restored = await ctx.fetch(`/api/scenarios/release-flow/releases/${releases[1].id}/restore`, { method: 'POST', headers: { cookie } });
+  assert.equal(restored.status, 200);
+  const restoredBody = await restored.json();
+  assert.equal(restoredBody.status, 'draft');
+  assert.equal(restoredBody.version, 'v1');
+  const current = await ctx.fetch('/api/scenarios/release-flow', { headers: { cookie } });
+  assert.equal((await current.json()).dataSchema.columns.length, 1);
+  const restoredScript = await ctx.fetch('/api/scenarios/release-flow/script', { headers: { cookie } });
+  assert.match(await restoredScript.text(), /columns:\['id'\]/);
+  const listAfter = await (await ctx.fetch('/api/scenarios/release-flow/releases', { headers: { cookie } })).json();
+  assert.deepEqual(listAfter.map((item) => item.versionNo), [2, 1]);
+});
+
+test('无脚本发布失败且不产生 release，草稿可执行', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const created = await ctx.fetch('/api/scenarios', {
+    method: 'POST', headers: jsonHeaders(cookie),
+    body: JSON.stringify({ key: 'release-no-script', name: '无脚本发布' })
+  });
+  const scenario = await created.json();
+  const publish = await ctx.fetch('/api/scenarios/release-no-script/publish', { method: 'POST', headers: { cookie } });
+  assert.equal(publish.status, 400);
+  const releases = await (await ctx.fetch('/api/scenarios/release-no-script/releases', { headers: { cookie } })).json();
+  assert.equal(releases.length, 0);
+
+  await saveScript(ctx, cookie, 'release-no-script');
+  assert.equal(scenario.status, 'draft');
+});
+
+test('三个种子账号均可编辑和发布', async (t) => {
+  const ctx = await createTestContext(t);
+  for (const [username, password] of [['admin', 'Admin123!'], ['maintainer', 'Maintainer123!'], ['tester', 'Tester123!']]) {
+    const cookie = await ctx.loginCookie(username, password);
+    const key = `release-${username}`;
+    assert.equal((await ctx.fetch('/api/scenarios', { method: 'POST', headers: jsonHeaders(cookie), body: JSON.stringify({ key, name: key }) })).status, 201);
+    assert.equal((await saveScript(ctx, cookie, key)).status, 200);
+    assert.equal((await ctx.fetch(`/api/scenarios/${key}/publish`, { method: 'POST', headers: { cookie } })).status, 200);
+    assert.equal((await ctx.fetch(`/api/scenarios/${key}`, { method: 'PUT', headers: jsonHeaders(cookie), body: JSON.stringify({ description: 'updated' }) })).status, 200);
+    assert.equal((await ctx.fetch(`/api/scenarios/${key}`, { headers: { cookie } }).then((r) => r.json())).status, 'draft');
+  }
+});
+
+test('并发发布版本号唯一且连续', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const key = 'release-concurrent';
+  assert.equal((await ctx.fetch('/api/scenarios', { method: 'POST', headers: jsonHeaders(cookie), body: JSON.stringify({ key, name: key }) })).status, 201);
+  assert.equal((await saveScript(ctx, cookie, key)).status, 200);
+  const responses = await Promise.all(Array.from({ length: 4 }, () => ctx.fetch(`/api/scenarios/${key}/publish`, { method: 'POST', headers: { cookie } })));
+  assert.equal(responses.every((response) => response.status === 200), true);
+  const releases = await (await ctx.fetch(`/api/scenarios/${key}/releases`, { headers: { cookie } })).json();
+  assert.deepEqual(releases.map((release) => release.versionNo), [4, 3, 2, 1]);
+});
+
+test('草稿场景允许创建服务器和本地执行任务', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const unpublish = await ctx.fetch('/api/scenarios/wms-customer-create/unpublish', { method: 'POST', headers: { cookie } });
+  assert.equal(unpublish.status, 200);
+  const dataset = await ctx.uploadCustomerDataset(cookie);
+  for (const executionLocation of ['server', 'local']) {
+    const response = await ctx.fetch('/api/runs', {
+      method: 'POST',
+      headers: jsonHeaders(cookie),
+      body: JSON.stringify({ scenarioId: dataset.scenarioId, datasetId: dataset.id, environment: 'test', executionLocation })
+    });
+    assert.equal(response.status, 202);
+    const body = await response.json();
+    if (executionLocation === 'server') await ctx.waitForRun(body.runId);
+  }
+});
+

@@ -36,13 +36,22 @@ test('平台种子数据包含 JMOM 项目和第一批发布场景', async (t) =
   assert.equal(body.scenarios.find((scenario) => scenario.key === 'mes-barcode-pass').dataSchema.required.includes('条码'), true);
 });
 
-test('普通测试人员不能发布场景', async (t) => {
+test('普通测试人员可以发布场景', async (t) => {
   const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const script = await ctx.fetch('/api/scenarios/wms-customer-create/script', {
+    method: 'PUT',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ content: 'export const testDataSchema={columns:[\'客户编号\'],required:[\'客户编号\']};', fileName: 'wms-customer-create.spec.js' })
+  });
+  assert.equal(script.status, 200);
   const response = await ctx.fetch('/api/scenarios/wms-customer-create/publish', {
     method: 'POST',
-    headers: { cookie: await ctx.loginCookie('tester', 'Tester123!') }
+    headers: { cookie }
   });
 
-  assert.equal(response.status, 403);
-  assert.equal((await response.json()).message, '当前账号没有权限执行该操作');
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.status, 'published');
+  assert.equal(body.version, 'v1');
 });

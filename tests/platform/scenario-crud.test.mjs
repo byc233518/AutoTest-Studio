@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createTestContext } from './helpers/test-context.mjs';
 
-test('所有角色都可创建草稿场景，发布仍需维护员', async (t) => {
+test('所有角色都可创建草稿场景、编辑并发布', async (t) => {
   const ctx = await createTestContext(t);
   const maintainerCookie = await ctx.loginCookie('maintainer', 'Maintainer123!');
   const testerCookie = await ctx.loginCookie('tester', 'Tester123!');
@@ -15,11 +15,14 @@ test('所有角色都可创建草稿场景，发布仍需维护员', async (t) =
   assert.equal(testerCreated.status, 201);
   assert.equal((await testerCreated.json()).status, 'draft');
 
-  const testerPublish = await ctx.fetch('/api/scenarios/draft-from-tester/publish', {
-    method: 'POST',
-    headers: { cookie: testerCookie }
+  const testerScript = await ctx.fetch('/api/scenarios/draft-from-tester/script', {
+    method: 'PUT',
+    headers: { cookie: testerCookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ content: 'export const testDataSchema={columns:[\'id\'],required:[\'id\']};', fileName: 'draft-from-tester.spec.js' })
   });
-  assert.equal(testerPublish.status, 403);
+  assert.equal(testerScript.status, 200);
+  const testerPublish = await ctx.fetch('/api/scenarios/draft-from-tester/publish', { method: 'POST', headers: { cookie: testerCookie } });
+  assert.equal(testerPublish.status, 200);
 
   const created = await ctx.fetch('/api/scenarios', {
     method: 'POST',
@@ -43,6 +46,13 @@ test('所有角色都可创建草稿场景，发布仍需维护员', async (t) =
   const draft = await created.json();
   assert.equal(draft.status, 'draft');
   assert.deepEqual(draft.dependsOn, ['auth-login']);
+
+  const script = await ctx.fetch('/api/scenarios/draft-customer-extra/script', {
+    method: 'PUT',
+    headers: { cookie: maintainerCookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ content: 'export const testDataSchema={columns:[\'客户编号\',\'客户名称\'],required:[\'客户编号\']};', fileName: 'draft-customer-extra.spec.js' })
+  });
+  assert.equal(script.status, 200);
 
   const byKey = await ctx.fetch('/api/scenarios/draft-customer-extra', {
     headers: { cookie: maintainerCookie }

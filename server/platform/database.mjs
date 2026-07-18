@@ -80,6 +80,17 @@ export function createPlatformDatabase(filename) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS scenario_releases (
+      id TEXT PRIMARY KEY,
+      scenario_id TEXT NOT NULL,
+      version_no INTEGER NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      script_content TEXT NOT NULL,
+      script_hash TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE (scenario_id, version_no)
+    );
     CREATE TABLE IF NOT EXISTS environments (
       id TEXT PRIMARY KEY,
       key TEXT NOT NULL UNIQUE,
@@ -303,7 +314,7 @@ export function createPlatformDatabase(filename) {
       db.prepare(`
         UPDATE scenarios
         SET name = ?, description = ?, module = ?, app_id = ?, module_id = ?, priority = ?,
-            script_entry = ?, data_schema = ?, depends_on = ?, owner = ?, version = ?, updated_at = ?
+            script_entry = ?, data_schema = ?, depends_on = ?, owner = ?, version = ?, status = 'draft', updated_at = ?
         WHERE key = ?
       `).run(
         next.name,
@@ -321,6 +332,81 @@ export function createPlatformDatabase(filename) {
         key
       );
       return this.getScenarioByKey(key);
+    },
+    createScenarioRelease(release) {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const next = Number(db.prepare('SELECT COALESCE(MAX(version_no), 0) + 1 AS value FROM scenario_releases WHERE scenario_id = ?').get(release.scenarioId).value);
+        const id = release.id || this.nextId('REL');
+        let snapshotJson = release.snapshotJson;
+        try { const snapshot = JSON.parse(snapshotJson); snapshot.version = `v${next}`; snapshotJson = JSON.stringify(snapshot); } catch {}
+        db.prepare(`
+          INSERT INTO scenario_releases
+          (id, scenario_id, version_no, snapshot_json, script_content, script_hash, created_by, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(id, release.scenarioId, next, snapshotJson, release.scriptContent, release.scriptHash, release.createdBy || '', now());
+        db.exec('COMMIT');
+        return this.getScenarioReleaseById(id);
+      } catch (error) {
+        try { db.exec('ROLLBACK'); } catch {}
+        throw error;
+      }
+    },
+    createScenarioReleaseAndPublish(release) {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const next = Number(db.prepare('SELECT COALESCE(MAX(version_no), 0) + 1 AS value FROM scenario_releases WHERE scenario_id = ?').get(release.scenarioId).value);
+        const id = release.id || this.nextId('REL');
+        let snapshotJson = release.snapshotJson;
+        try { const snapshot = JSON.parse(snapshotJson); snapshot.version = `v${next}`; snapshotJson = JSON.stringify(snapshot); } catch {}
+        db.prepare(`
+          INSERT INTO scenario_releases
+          (id, scenario_id, version_no, snapshot_json, script_content, script_hash, created_by, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(id, release.scenarioId, next, snapshotJson, release.scriptContent, release.scriptHash, release.createdBy || '', now());
+        db.prepare("UPDATE scenarios SET status = 'published', version = ?, updated_at = ? WHERE id = ?").run(`v${next}`, now(), release.scenarioId);
+        db.exec('COMMIT');
+        return { release: this.getScenarioReleaseById(id), scenario: this.getScenarioById(release.scenarioId) };
+      } catch (error) {
+        try { db.exec('ROLLBACK'); } catch {}
+        throw error;
+      }
+    },
+    listScenarioReleases(scenarioId) {
+      return db.prepare('SELECT * FROM scenario_releases WHERE scenario_id = ? ORDER BY version_no DESC').all(scenarioId);
+    },
+    getScenarioReleaseById(id) {
+      return db.prepare('SELECT * FROM scenario_releases WHERE id = ?').get(id);
+    },
+    getScenarioRelease(scenarioId, releaseId) {
+      const row = this.getScenarioReleaseById(releaseId);
+      return row && row.scenario_id === scenarioId ? row : null;
+    },
+    restoreScenarioRelease(scenarioId, releaseId, snapshot) {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const current = this.getScenarioById(scenarioId);
+        if (!current) {
+          db.exec('ROLLBACK');
+          return null;
+        }
+        db.prepare(`
+          UPDATE scenarios
+          SET name = ?, description = ?, module = ?, app_id = ?, module_id = ?, priority = ?,
+              script_entry = ?, data_schema = ?, depends_on = ?, owner = ?, version = ?, status = 'draft', updated_at = ?
+          WHERE id = ?
+        `).run(snapshot.name ?? current.name, snapshot.description ?? current.description,
+          snapshot.module ?? current.module, snapshot.appId ?? current.app_id, snapshot.moduleId ?? current.module_id,
+          snapshot.priority ?? current.priority, snapshot.scriptEntry ?? current.script_entry,
+          JSON.stringify(snapshot.dataSchema ?? JSON.parse(current.data_schema || '{}')),
+          JSON.stringify(snapshot.dependsOn ?? JSON.parse(current.depends_on || '[]')),
+          snapshot.owner ?? current.owner, snapshot.version ?? current.version, now(), scenarioId);
+        db.exec('COMMIT');
+        return this.getScenarioById(scenarioId);
+      } catch (error) {
+        try { db.exec('ROLLBACK'); } catch {}
+        throw error;
+      }
     },
     listApps() {
       return db.prepare('SELECT * FROM apps ORDER BY sort, name').all();
@@ -677,6 +763,19 @@ function tableColumns(db, tableName) {
 }
 
 function migrateLegacySchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scenario_releases (
+      id TEXT PRIMARY KEY,
+      scenario_id TEXT NOT NULL,
+      version_no INTEGER NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      script_content TEXT NOT NULL,
+      script_hash TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE (scenario_id, version_no)
+    );
+  `);
   const moduleColumns = tableColumns(db, 'modules');
   if (moduleColumns.length && !moduleColumns.includes('app_id')) {
     db.exec('DROP TABLE modules');
