@@ -13,6 +13,7 @@ public sealed class MainForm : Form
     private readonly Button _startButton = new() { Text = "开始录制", AutoSize = true };
     private readonly Button _retryButton = new() { Text = "重试上传", AutoSize = true, Enabled = false };
     private readonly Button _openLogsButton = new() { Text = "打开日志目录", AutoSize = true };
+    private readonly Button _enableProtocolButton = new() { Text = "启用平台一键启动", AutoSize = true };
     private readonly Label _statusLabel = new() { Text = "请选择功能并输入平台生成的操作码", AutoSize = true };
     private readonly TextBox _logText = new()
     {
@@ -23,11 +24,14 @@ public sealed class MainForm : Form
         BackColor = SystemColors.Window
     };
     private readonly RecorderSettingsStore _settingsStore;
+    private readonly RecorderLaunchRequest? _launchRequest;
     private Process? _process;
     private string _logFilePath = string.Empty;
+    private bool _initialized;
 
-    public MainForm()
+    public MainForm(RecorderLaunchRequest? launchRequest = null)
     {
+        _launchRequest = launchRequest;
         _settingsStore = new RecorderSettingsStore(_portableRoot);
         Text = "JMOM 本地测试工具";
         StartPosition = FormStartPosition.CenterScreen;
@@ -35,7 +39,6 @@ public sealed class MainForm : Form
         Size = new Size(760, 520);
         Font = new Font("Microsoft YaHei UI", 10F);
         BuildLayout();
-        Shown += async (_, _) => await LoadSettingsAsync();
         FormClosing += OnFormClosing;
     }
 
@@ -78,6 +81,7 @@ public sealed class MainForm : Form
         actions.Controls.Add(_startButton);
         actions.Controls.Add(_retryButton);
         actions.Controls.Add(_openLogsButton);
+        actions.Controls.Add(_enableProtocolButton);
         layout.Controls.Add(actions, 0, 4);
         layout.SetColumnSpan(actions, 2);
 
@@ -94,13 +98,58 @@ public sealed class MainForm : Form
         _startButton.Click += async (_, _) => await StartActionAsync();
         _retryButton.Click += async (_, _) => await RetryUploadAsync();
         _openLogsButton.Click += (_, _) => OpenLogsDirectory();
+        _enableProtocolButton.Click += (_, _) => EnableDesktopLaunch();
+    }
+
+    protected override async void OnShown(EventArgs eventArgs)
+    {
+        base.OnShown(eventArgs);
+        if (_initialized) return;
+        _initialized = true;
+        await InitializeAsync();
+    }
+
+    private async Task InitializeAsync()
+    {
+        await LoadSettingsAsync();
+        if (_launchRequest is null)
+        {
+            _codeText.Focus();
+            return;
+        }
+        _modeCombo.SelectedIndex = _launchRequest.Mode == RecorderLaunchMode.Execute ? 1 : 0;
+        _platformText.Text = _launchRequest.PlatformUrl;
+        _codeText.Text = _launchRequest.Code;
+        await StartActionAsync();
     }
 
     private async Task LoadSettingsAsync()
     {
         var settings = await _settingsStore.LoadAsync();
         _platformText.Text = settings?.PlatformUrl ?? "http://localhost:3050";
-        _codeText.Focus();
+    }
+
+    private void EnableDesktopLaunch()
+    {
+        try
+        {
+            ProtocolRegistration.EnableForCurrentUser(Application.ExecutablePath);
+            MessageBox.Show(
+                this,
+                "已启用平台一键启动",
+                "设置完成",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show(
+                this,
+                error.Message,
+                "无法启用平台一键启动",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
     }
 
     private void UpdateModeText()

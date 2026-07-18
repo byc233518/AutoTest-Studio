@@ -1,11 +1,14 @@
+using JmomRecorder.Core;
+
 namespace JmomRecorder.App;
 
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
-        Application.Run(new MainForm());
+        RecorderLaunchRequest.TryParse(args.FirstOrDefault(), out var launchRequest);
+        Application.Run(new MainForm(launchRequest));
     }
 }
