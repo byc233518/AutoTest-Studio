@@ -290,6 +290,24 @@ test('contract 支持 platform、script、merge，动态冲突返回 409 且脚�
   assert.deepEqual((await (await ctx.fetch(`/api/scenarios/${dynamicKey}`, { headers: { cookie } })).json()).dataSchema, beforeScenario.dataSchema);
 });
 
+test('merge 在脚本已匹配目标但平台 schema 不同时仍同步平台 schema', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const key = 'contract-merge-platform-drift';
+  assert.equal((await ctx.fetch('/api/scenarios', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ key, name: key }) })).status, 201);
+  const source = `const testDataSchema = { columns: ['targetCode'], required: [], example: { targetCode: 'T' } };\nconst { test } = require('@playwright/test');\ntest('merge drift', async ({ page }) => { await page.getByLabel('编号').fill(data.targetCode); });\n`;
+  const form = new FormData();
+  form.append('file', new Blob([source], { type: 'text/javascript' }), `${key}.spec.js`);
+  assert.equal((await ctx.fetch(`/api/scenarios/${key}/script`, { method: 'POST', headers: { cookie }, body: form })).status, 201);
+  assert.equal((await ctx.fetch(`/api/scenarios/${key}`, { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ dataSchema: { columns: ['platformCode'], required: [], example: { platformCode: 'P' } } }) })).status, 200);
+  const merged = await ctx.fetch(`/api/scenarios/${key}/contract`, {
+    method: 'PUT', headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ resolution: 'merge', targetSchema: { columns: ['targetCode'], required: [], example: { targetCode: 'T' } }, mappings: [] })
+  });
+  assert.equal(merged.status, 200);
+  assert.deepEqual((await merged.json()).scenario.dataSchema.columns, ['targetCode']);
+});
+
 test('录制 review 和 contract 未登录返回 401，缺少脚本返回 404', async (t) => {
   const ctx = await createTestContext(t);
   assert.equal((await ctx.fetch('/api/recordings/REC-MISSING')).status, 401);
