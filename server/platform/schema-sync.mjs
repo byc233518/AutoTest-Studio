@@ -160,6 +160,8 @@ function collectDataConflicts(ast) {
   const add = (kind, node, message) => conflicts.push({ ...conflict(kind, node, message), start: node.start });
   const variableBindings = [];
   const parameterBindings = [];
+  const catchBindings = [];
+  const importBindings = [];
   ancestor(ast, {
     VariableDeclarator(node) {
       if (node.id.type === 'Identifier' && node.id.name === 'data') variableBindings.push(node.id);
@@ -172,6 +174,14 @@ function collectDataConflicts(ast) {
     },
     ArrowFunctionExpression(node) {
       parameterBindings.push(...node.params.filter((param) => param.type === 'Identifier' && param.name === 'data'));
+    },
+    CatchClause(node) {
+      if (node.param?.type === 'Identifier' && node.param.name === 'data') catchBindings.push(node.param);
+    },
+    ImportDeclaration(node) {
+      importBindings.push(...node.specifiers
+        .filter((specifier) => specifier.local?.type === 'Identifier' && specifier.local.name === 'data')
+        .map((specifier) => specifier.local));
     }
   });
   for (const binding of variableBindings) {
@@ -179,6 +189,12 @@ function collectDataConflicts(ast) {
   }
   for (const binding of parameterBindings.slice(1)) {
     add('data-shadow', binding, '检测到多个 data 参数，无法确定字段引用作用域');
+  }
+  for (const binding of catchBindings) {
+    add('data-shadow', binding, '检测到 catch 作用域中的 data 参数，无法安全重命名');
+  }
+  for (const binding of importBindings) {
+    add('data-shadow', binding, '检测到 import 的 data 绑定，无法安全重命名');
   }
   ancestor(ast, {
     MemberExpression(node) {
@@ -272,6 +288,7 @@ export function synchronizeScriptSchema({ source, targetSchema, mappings = [] } 
   ancestor(ast, {
     MemberExpression(node) {
       if (node.object.type !== 'Identifier' || node.object.name !== 'data') return;
+      if (node.start >= declaration.init.start && node.end <= declaration.init.end) return;
       const key = node.computed ? node.property.value : node.property.name;
       const target = mappingByFrom.get(key);
       if (target) {

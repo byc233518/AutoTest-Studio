@@ -230,3 +230,55 @@ export function execute(data) { return data.old; }`;
   assert.equal(invalidMapping.source, source);
   assert.equal(invalidMapping.conflicts[0].kind, 'mapping');
 });
+
+test('同步拒绝 catch 参数对 data 的作用域遮蔽', () => {
+  const source = `const testDataSchema = { columns: ['old'], required: [], example: { old: '' } };
+export function execute(data) {
+  try { throw new Error('x'); } catch (data) { return data.old; }
+}`;
+  const result = synchronizeScriptSchema({
+    source,
+    targetSchema: { columns: ['new'], required: [], example: { new: '' } },
+    mappings: [{ from: 'old', to: 'new' }]
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.source, source);
+  assert.equal(result.conflicts[0].kind, 'data-shadow');
+});
+
+test('同步拒绝 import 对 data 的模块绑定', () => {
+  const source = `import { payload as data } from './payload.mjs';
+const testDataSchema = { columns: ['old'], required: [], example: { old: '' } };
+export function execute() { return data.old; }`;
+  const result = synchronizeScriptSchema({
+    source,
+    targetSchema: { columns: ['new'], required: [], example: { new: '' } },
+    mappings: [{ from: 'old', to: 'new' }]
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.source, source);
+  assert.equal(result.conflicts[0].kind, 'data-shadow');
+});
+
+test('同步跳过 schema initializer 内的 data 引用，且不抛出重叠替换错误', () => {
+  const source = `const testDataSchema = {
+  columns: [data.old],
+  required: [],
+  example: { old: '' }
+};
+export function execute(data) { return data.old; }`;
+  let result;
+
+  assert.doesNotThrow(() => {
+    result = synchronizeScriptSchema({
+      source,
+      targetSchema: { columns: ['new'], required: [], example: { new: '' } },
+      mappings: [{ from: 'old', to: 'new' }]
+    });
+  });
+  assert.equal(result.ok, true);
+  assert.match(result.source, /"columns": \[\s*"new"/);
+  assert.match(result.source, /return data\['new'\]/);
+});
