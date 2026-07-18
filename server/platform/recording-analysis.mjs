@@ -145,7 +145,7 @@ function schemaFromFields(fields) {
   return {
     columns: usable.map((field) => field.key),
     required: usable.filter((field) => field.required).map((field) => field.key),
-    example: Object.fromEntries(usable.map((field) => [field.key, field.value ?? ''])),
+    example: Object.fromEntries(usable.map((field) => [field.key, field.example ?? field.value ?? ''])),
     fields: usable.map((field) => ({
       key: field.key,
       label: field.label || field.key,
@@ -155,29 +155,61 @@ function schemaFromFields(fields) {
   };
 }
 
+function locatorSource(locator) {
+  if (!locator || typeof locator !== 'object') return { error: '断言缺少 locator 定位器。' };
+  const { kind, value } = locator;
+  if (kind === 'page') return { source: 'page' };
+  if (!['getByLabel', 'getByPlaceholder', 'getByRole', 'getByText'].includes(kind) || value === undefined) {
+    return { error: '断言 locator 不受支持或缺少 value。' };
+  }
+  if (kind === 'getByRole' && value && typeof value === 'object') {
+    if (!value.role) return { error: 'getByRole 断言缺少 role。' };
+    const options = value.name === undefined ? '' : `, { name: ${JSON.stringify(value.name)} }`;
+    return { source: `page.getByRole(${JSON.stringify(value.role)}${options})` };
+  }
+  return { source: `page.${kind}(${JSON.stringify(value)})` };
+}
+
+function normalizeAssertion(assertion) {
+  if (!assertion || typeof assertion !== 'object') return { error: '断言必须是对象。' };
+  const type = assertion.type;
+  if (!['visible', 'text', 'value', 'url'].includes(type)) {
+    return { error: `不支持的断言类型：${type || '空'}。` };
+  }
+
+  const legacyLocator = type === 'url'
+    ? { kind: 'page' }
+    : { kind: type === 'value' ? 'getByLabel' : 'getByText', value: assertion.label };
+  const locator = locatorSource(assertion.locator || legacyLocator);
+  if (locator.error) return locator;
+  if (type === 'url' && locator.source !== 'page') return { error: 'URL 断言的 locator 必须是 page。' };
+  if (type !== 'url' && locator.source === 'page') return { error: `${type} 断言不能使用 page 定位器。` };
+
+  const expected = assertion.expected ?? assertion.value ?? (type === 'url' ? assertion.locator?.value : undefined);
+  if (type !== 'visible' && expected === undefined) return { error: `${type} 断言缺少 expected。` };
+  return { type, locator: locator.source, expected };
+}
+
 function assertionKey(assertion) {
-  return `${assertion.type}|${assertion.label || ''}|${JSON.stringify(assertion.value)}`;
+  return `${assertion.type}|${assertion.locator}|${JSON.stringify(assertion.expected)}`;
 }
 
 function wizardAssertionSource(assertion) {
-  if (assertion.type === 'visible' && assertion.label) {
-    return `await expect(page.getByText(${JSON.stringify(assertion.label)})).toBeVisible();`;
+  if (assertion.type === 'visible') {
+    return `await expect(${assertion.locator}).toBeVisible();`;
   }
-  if (assertion.type === 'text' && assertion.label && assertion.value !== undefined) {
-    return `await expect(page.getByText(${JSON.stringify(assertion.label)})).toHaveText(${JSON.stringify(assertion.value)});`;
+  if (assertion.type === 'text') {
+    return `await expect(${assertion.locator}).toHaveText(${JSON.stringify(assertion.expected)});`;
   }
-  if (assertion.type === 'value' && assertion.label && assertion.value !== undefined) {
-    return `await expect(page.getByLabel(${JSON.stringify(assertion.label)})).toHaveValue(${JSON.stringify(assertion.value)});`;
+  if (assertion.type === 'value') {
+    return `await expect(${assertion.locator}).toHaveValue(${JSON.stringify(assertion.expected)});`;
   }
-  if (assertion.type === 'url' && assertion.value !== undefined) {
-    return `await expect(page).toHaveURL(${JSON.stringify(assertion.value)});`;
-  }
-  return '';
+  return `await expect(page).toHaveURL(${JSON.stringify(assertion.expected)});`;
 }
 
 export function buildDataDrivenScript({ source, title, fields = [], assertions = [] } = {}) {
   const parsed = parseSingleTest(source);
-  if (parsed.error) return { supported: false, warnings: [parsed.error], script: '', schema: schemaFromFields(fields) };
+  if (parsed.error) return { supported: false, warnings: [parsed.error], source: '', script: '', schema: schemaFromFields(fields) };
 
   const details = collectScriptDetails(parsed.callback);
   const fieldsByCandidate = new Map(fields.map((field) => [field.candidateId, field]));
@@ -195,11 +227,17 @@ export function buildDataDrivenScript({ source, title, fields = [], assertions =
 
   const body = rewritten.slice(parsed.callback.body.start + 1, parsed.callback.body.end - 1).trim();
   const fixtureParam = parsed.callback.params.length ? source.slice(parsed.callback.params[0].start, parsed.callback.params[0].end) : '{}';
-  const originalAssertionKeys = new Set(details.assertions.map(assertionKey));
-  const additions = assertions
-    .filter((assertion) => !originalAssertionKeys.has(assertionKey(assertion)))
-    .map(wizardAssertionSource)
-    .filter(Boolean);
+  const originalAssertionKeys = new Set(details.assertions.map(normalizeAssertion).filter((item) => !item.error).map(assertionKey));
+  const warnings = [];
+  const additions = [];
+  for (const assertion of assertions) {
+    const normalized = normalizeAssertion(assertion);
+    if (normalized.error) {
+      warnings.push(normalized.error);
+    } else if (!originalAssertionKeys.has(assertionKey(normalized))) {
+      additions.push(wizardAssertionSource(normalized));
+    }
+  }
   const callbackBody = [body, ...additions].filter(Boolean).join('\n  ');
   const schema = schemaFromFields(fields);
   const script = [
@@ -213,5 +251,5 @@ export function buildDataDrivenScript({ source, title, fields = [], assertions =
     '});',
     ''
   ].join('\n');
-  return { supported: true, warnings: [], script, schema };
+  return { supported: true, warnings, source: script, script, schema };
 }

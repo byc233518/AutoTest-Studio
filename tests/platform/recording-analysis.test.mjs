@@ -81,6 +81,29 @@ test('选择', async ({ page }) => {
   ]);
 });
 
+test('分析 type、上传文件、getByText 标签及 text/value/URL 断言', () => {
+  const source = `import { test, expect } from '@playwright/test';
+test('扩展操作', async ({ page }) => {
+  await page.getByText('备注').type('加急');
+  await page.getByLabel('附件').setInputFiles('C:/tmp/demo.xlsx');
+  await expect(page.getByText('处理结果')).toHaveText('成功');
+  await expect(page.getByLabel('客户编码')).toHaveValue('C001');
+  await expect(page).toHaveURL('/customers');
+});`;
+
+  const result = analyzeRecordedScript(source);
+
+  assert.deepEqual(result.fields, [
+    { candidateId: 'field-1', label: '备注', type: 'text', value: '加急' },
+    { candidateId: 'field-2', label: '附件', type: 'file', value: 'C:/tmp/demo.xlsx' }
+  ]);
+  assert.deepEqual(result.assertions, [
+    { type: 'text', label: '处理结果', value: '成功' },
+    { type: 'value', label: '客户编码', value: 'C001' },
+    { type: 'url', value: '/customers' }
+  ]);
+});
+
 test('参数化 checkbox 候选为 data 布尔值', () => {
   const source = `import { test } from '@playwright/test';
 test('选择', async ({ page }) => {
@@ -112,4 +135,47 @@ test('参数化时补充向导新增的 URL、文本和值断言', () => {
   assert.match(result.script, /await expect\(page\)\.toHaveURL\(["']\/customers["']\);/);
   assert.match(result.script, /await expect\(page\.getByText\(["']客户编号["']\)\)\.toHaveText\(["']C001["']\);/);
   assert.match(result.script, /await expect\(page\.getByLabel\(["']客户编码["']\)\)\.toHaveValue\(["']C001["']\);/);
+});
+
+test('按计划字段 example 和 locator 断言对象生成稳定 source', () => {
+  const result = buildDataDrivenScript({
+    source: basicSource,
+    title: '客户录入',
+    fields: [{ candidateId: 'field-1', key: 'customerCode', label: '客户编码', type: 'text', required: true, example: 'EX-001' }],
+    assertions: [
+      { type: 'visible', locator: { kind: 'getByText', value: '已保存' } },
+      { type: 'text', locator: { kind: 'getByText', value: '处理结果' }, expected: '成功' },
+      { type: 'value', locator: { kind: 'getByLabel', value: '客户编码' }, expected: 'EX-001' },
+      { type: 'url', locator: { kind: 'page', value: '' }, expected: '/customers' }
+    ]
+  });
+
+  assert.equal(result.source, result.script);
+  assert.deepEqual(result.schema.example, { customerCode: 'EX-001' });
+  assert.match(result.source, /\.fill\(data\.customerCode\)/);
+  assert.match(result.source, /getByText\(["']已保存["']\)\)\.toBeVisible\(\)/);
+  assert.match(result.source, /getByText\(["']处理结果["']\)\)\.toHaveText\(["']成功["']\)/);
+  assert.match(result.source, /getByLabel\(["']客户编码["']\)\)\.toHaveValue\(["']EX-001["']\)/);
+  assert.match(result.source, /expect\(page\)\.toHaveURL\(["']\/customers["']\)/);
+  assert.deepEqual(result.warnings, []);
+});
+
+test('不能生成的向导断言返回 warning 而不是静默丢弃', () => {
+  const result = buildDataDrivenScript({
+    source: basicSource,
+    fields: [],
+    assertions: [{ type: 'unknown', locator: { kind: 'getByText', value: '提示' } }]
+  });
+
+  assert.match(result.warnings.join('\n'), /不支持的断言类型/);
+});
+
+test('缺少断言类型也返回 warning 而不是抛出异常', () => {
+  const result = buildDataDrivenScript({
+    source: basicSource,
+    fields: [],
+    assertions: [{ locator: { kind: 'getByText', value: '提示' } }]
+  });
+
+  assert.match(result.warnings.join('\n'), /不支持的断言类型/);
 });
