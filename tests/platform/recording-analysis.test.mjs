@@ -16,11 +16,11 @@ test('分析两个固定输入并保留可读标签和可见断言', () => {
   assert.equal(result.supported, true);
   assert.deepEqual(result.warnings, []);
   assert.deepEqual(result.fields, [
-    { candidateId: 'field-1', label: '客户编码', type: 'text', value: 'C001' },
-    { candidateId: 'field-2', label: '请输入客户名称', type: 'text', value: '测试客户' }
+    { candidateId: 'field-1', label: '客户编码', type: 'text', example: 'C001', value: 'C001' },
+    { candidateId: 'field-2', label: '请输入客户名称', type: 'text', example: '测试客户', value: '测试客户' }
   ]);
   assert.deepEqual(result.assertions, [
-    { type: 'visible', label: '保存成功' }
+    { type: 'visible', label: '保存成功', value: '保存成功' }
   ]);
 });
 
@@ -76,8 +76,8 @@ test('选择', async ({ page }) => {
 
   assert.equal(result.supported, true);
   assert.deepEqual(result.fields, [
-    { candidateId: 'field-1', label: '状态', type: 'select', value: 'enabled' },
-    { candidateId: 'field-2', label: '启用', type: 'checkbox', value: true }
+    { candidateId: 'field-1', label: '状态', type: 'select', example: 'enabled', value: 'enabled' },
+    { candidateId: 'field-2', label: '启用', type: 'checkbox', example: true, value: true }
   ]);
 });
 
@@ -94,8 +94,8 @@ test('扩展操作', async ({ page }) => {
   const result = analyzeRecordedScript(source);
 
   assert.deepEqual(result.fields, [
-    { candidateId: 'field-1', label: '备注', type: 'text', value: '加急' },
-    { candidateId: 'field-2', label: '附件', type: 'file', value: 'C:/tmp/demo.xlsx' }
+    { candidateId: 'field-1', label: '备注', type: 'text', example: '加急', value: '加急' },
+    { candidateId: 'field-2', label: '附件', type: 'file', example: 'C:/tmp/demo.xlsx', value: 'C:/tmp/demo.xlsx' }
   ]);
   assert.deepEqual(result.assertions, [
     { type: 'text', label: '处理结果', value: '成功' },
@@ -143,7 +143,7 @@ test('按计划字段 example 和 locator 断言对象生成稳定 source', () =
     title: '客户录入',
     fields: [{ candidateId: 'field-1', key: 'customerCode', label: '客户编码', type: 'text', required: true, example: 'EX-001' }],
     assertions: [
-      { type: 'visible', locator: { kind: 'getByText', value: '已保存' } },
+      { type: 'visible', locator: { kind: 'text', value: '已保存' } },
       { type: 'text', locator: { kind: 'getByText', value: '处理结果' }, expected: '成功' },
       { type: 'value', locator: { kind: 'getByLabel', value: '客户编码' }, expected: 'EX-001' },
       { type: 'url', locator: { kind: 'page', value: '' }, expected: '/customers' }

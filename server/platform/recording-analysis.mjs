@@ -95,6 +95,7 @@ function collectScriptDetails(callback) {
             candidateId: `field-${fields.length + 1}`,
           label,
           type,
+          example: value,
           value,
           valueNode: method === 'check' ? null : node.arguments[0],
           callNode: node
@@ -115,7 +116,7 @@ function collectScriptDetails(callback) {
       }
       const label = locatorLabel(expected.arguments[0]);
       const value = staticValue(node.arguments[0]);
-      if (assertionType === 'visible' && label) assertions.push({ type: 'visible', label });
+      if (assertionType === 'visible' && label) assertions.push({ type: 'visible', label, value: label });
       if (assertionType !== 'visible' && label && value !== undefined) assertions.push({ type: assertionType, label, value });
     }
   });
@@ -127,6 +128,7 @@ function publicField(field) {
     candidateId: field.candidateId,
     label: field.label,
     type: field.type,
+    example: field.example,
     value: field.value
   };
 }
@@ -157,7 +159,8 @@ function schemaFromFields(fields) {
 
 function locatorSource(locator) {
   if (!locator || typeof locator !== 'object') return { error: '断言缺少 locator 定位器。' };
-  const { kind, value } = locator;
+  const { value } = locator;
+  const kind = locator.kind === 'text' ? 'getByText' : locator.kind;
   if (kind === 'page') return { source: 'page' };
   if (!['getByLabel', 'getByPlaceholder', 'getByRole', 'getByText'].includes(kind) || value === undefined) {
     return { error: '断言 locator 不受支持或缺少 value。' };
