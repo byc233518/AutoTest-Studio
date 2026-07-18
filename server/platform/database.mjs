@@ -101,6 +101,9 @@ export function createPlatformDatabase(filename) {
       validation_status TEXT NOT NULL,
       uploaded_by TEXT NOT NULL,
       errors TEXT NOT NULL,
+      schema_snapshot TEXT NOT NULL DEFAULT '{}',
+      source_dataset_id TEXT,
+      migration_json TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS runs (
@@ -515,8 +518,9 @@ export function createPlatformDatabase(filename) {
     createDataset(dataset) {
       db.prepare(`
         INSERT INTO datasets
-        (id, scenario_id, name, file_name, file_path, rows_path, row_count, validation_status, uploaded_by, errors, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, scenario_id, name, file_name, file_path, rows_path, row_count, validation_status, uploaded_by, errors,
+         schema_snapshot, source_dataset_id, migration_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         dataset.id,
         dataset.scenarioId,
@@ -528,6 +532,9 @@ export function createPlatformDatabase(filename) {
         dataset.validationStatus,
         dataset.uploadedBy,
         JSON.stringify(dataset.errors),
+        JSON.stringify(dataset.schemaSnapshot || {}),
+        dataset.sourceDatasetId || null,
+        JSON.stringify(dataset.migration || {}),
         now()
       );
       return this.getDatasetById(dataset.id);
@@ -537,6 +544,15 @@ export function createPlatformDatabase(filename) {
     },
     getDatasetById(id) {
       return db.prepare('SELECT * FROM datasets WHERE id = ?').get(id);
+    },
+    beginTransaction() {
+      db.exec('BEGIN IMMEDIATE');
+    },
+    commitTransaction() {
+      db.exec('COMMIT');
+    },
+    rollbackTransaction() {
+      if (db.isTransaction) db.exec('ROLLBACK');
     },
     createRun(run) {
       db.prepare(`
@@ -683,5 +699,15 @@ function migrateLegacySchema(db) {
   }
   if (runColumns.length && !runColumns.includes('execution_location')) {
     db.exec("ALTER TABLE runs ADD COLUMN execution_location TEXT NOT NULL DEFAULT 'server'");
+  }
+  const datasetColumns = tableColumns(db, 'datasets');
+  if (datasetColumns.length && !datasetColumns.includes('schema_snapshot')) {
+    db.exec("ALTER TABLE datasets ADD COLUMN schema_snapshot TEXT NOT NULL DEFAULT '{}'");
+  }
+  if (datasetColumns.length && !datasetColumns.includes('source_dataset_id')) {
+    db.exec('ALTER TABLE datasets ADD COLUMN source_dataset_id TEXT');
+  }
+  if (datasetColumns.length && !datasetColumns.includes('migration_json')) {
+    db.exec("ALTER TABLE datasets ADD COLUMN migration_json TEXT NOT NULL DEFAULT '{}'");
   }
 }
