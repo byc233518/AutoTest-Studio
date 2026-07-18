@@ -173,6 +173,29 @@ test('重复上传原始录制不会回绑覆盖已应用脚本，且 apply 校�
   assert.equal(rejected.status, 403);
 });
 
+test('录制首次上传后再次上传不同内容会先保存旧原始脚本版本', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const key = 'recording-upload-version-demo';
+  const created = await ctx.fetch('/api/scenarios', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ key, name: key }) });
+  assert.equal(created.status, 201);
+  const started = await ctx.fetch('/api/recordings/start', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ scenarioKey: key, location: 'local' }) });
+  const recording = await started.json();
+  const firstForm = new FormData();
+  firstForm.append('token', recording.uploadToken);
+  firstForm.append('file', new Blob([recordedSource], { type: 'text/javascript' }), `${recording.id}.spec.js`);
+  assert.equal((await ctx.fetch(`/api/recordings/${recording.id}/upload`, { method: 'POST', body: firstForm })).status, 200);
+  const changedSource = recordedSource.replace('C-001', 'C-002');
+  const secondForm = new FormData();
+  secondForm.append('token', recording.uploadToken);
+  secondForm.append('file', new Blob([changedSource], { type: 'text/javascript' }), `${recording.id}.spec.js`);
+  assert.equal((await ctx.fetch(`/api/recordings/${recording.id}/upload`, { method: 'POST', body: secondForm })).status, 200);
+  const versions = await (await ctx.fetch(`/api/scenarios/${key}/script/versions`, { headers: { cookie } })).json();
+  assert.equal(versions.versions.length, 1);
+  const archived = JSON.parse(await readFile(path.resolve(ctx.app.locals.paths.scriptsDir, '_versions', key, versions.versions[0].id), 'utf8'));
+  assert.equal(archived.content, recordedSource);
+});
+
 test('脚本入口只允许受管目录，非法上传令牌会清理临时文件并限制大小', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
@@ -225,11 +248,21 @@ test('contract 支持 platform、script、merge，动态冲突返回 409 且脚�
     const contract = await ctx.fetch(`/api/scenarios/${key}/contract`, { headers: { cookie } });
     assert.equal(contract.status, 200);
     assert.ok((await contract.json()).diff);
-    const result = await ctx.fetch(`/api/scenarios/${key}/contract`, { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ resolution, targetSchema: resolution === 'platform' ? { columns: ['ignored'], required: [], example: {} } : targetSchema, mappings: resolution === 'platform' ? [{ from: 'oldCode', to: 'newCode' }] : resolution === 'merge' ? [{ from: 'oldCode', to: 'mergedCode' }] : [] }) });
+    const contractBody = { resolution, targetSchema: resolution === 'platform' ? { columns: ['ignored'], required: [], example: {} } : targetSchema, mappings: resolution === 'platform' ? [{ from: 'oldCode', to: 'newCode' }] : resolution === 'merge' ? [{ from: 'oldCode', to: 'mergedCode' }] : [] };
+    const versionsBefore = resolution === 'script' ? null : await (await ctx.fetch(`/api/scenarios/${key}/script/versions`, { headers: { cookie } })).json();
+    const result = await ctx.fetch(`/api/scenarios/${key}/contract`, { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(contractBody) });
     assert.equal(result.status, 200);
     const resultBody = await result.json();
     assert.equal(resultBody.scenario.status, 'draft');
     assert.deepEqual(resultBody.scenario.dataSchema.columns, resolution === 'script' ? ['oldCode'] : targetSchema.columns);
+    if (resolution !== 'script') {
+      const versionsAfter = await (await ctx.fetch(`/api/scenarios/${key}/script/versions`, { headers: { cookie } })).json();
+      assert.equal(versionsAfter.versions.length, versionsBefore.versions.length + 1);
+      const repeated = await ctx.fetch(`/api/scenarios/${key}/contract`, { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(contractBody) });
+      assert.equal(repeated.status, 200);
+      const versionsRepeated = await (await ctx.fetch(`/api/scenarios/${key}/script/versions`, { headers: { cookie } })).json();
+      assert.equal(versionsRepeated.versions.length, versionsAfter.versions.length);
+    }
   }
 
   const dynamicKey = 'contract-dynamic-demo';
@@ -241,6 +274,10 @@ test('contract 支持 platform、script、merge，动态冲突返回 409 且脚�
   const dynamicUpload = new FormData();
   dynamicUpload.append('file', new Blob([dynamicSource], { type: 'text/javascript' }), `${dynamicKey}.spec.js`);
   assert.equal((await ctx.fetch(`/api/scenarios/${dynamicKey}/script`, { method: 'POST', headers: { cookie }, body: dynamicUpload })).status, 201);
+  assert.equal((await ctx.fetch(`/api/scenarios/${dynamicKey}`, {
+    method: 'PUT', headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ dataSchema: { columns: ['newCode'], required: [], example: { newCode: 'n' } } })
+  })).status, 200);
   const beforeScript = await (await ctx.fetch(`/api/scenarios/${dynamicKey}/script`, { headers: { cookie } })).json();
   const beforeScenario = await (await ctx.fetch(`/api/scenarios/${dynamicKey}`, { headers: { cookie } })).json();
   const conflict = await ctx.fetch(`/api/scenarios/${dynamicKey}/contract`, {

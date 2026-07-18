@@ -71,6 +71,13 @@ test('测试人员可以用一次性执行码在本机领取场景并上传执�
   });
   assert.equal(uploaded.status, 201);
 
+  const largeArtifact = new FormData();
+  largeArtifact.append('token', claimed.token);
+  largeArtifact.append('path', 'large-result.bin');
+  largeArtifact.append('file', new Blob(['x'.repeat(1024 * 1024 + 1)], { type: 'application/octet-stream' }), 'large-result.bin');
+  const largeUploaded = await ctx.fetch(`/api/local-runs/${created.runId}/artifacts`, { method: 'POST', body: largeArtifact });
+  assert.equal(largeUploaded.status, 201);
+
   const finishedResponse = await ctx.fetch(`/api/local-runs/${created.runId}/finish`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
