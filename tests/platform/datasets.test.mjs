@@ -390,6 +390,33 @@ test('迁移文件 ID 首次碰撞时重试且不覆盖旧数据库和旧文件'
   assert.equal(ctx.app.locals.database.getDatasetById(source.id).name, source.name);
 });
 
+test('仅数据库存在全局 ID 碰撞时迁移会重试且不创建碰撞文件', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const source = await uploadCustomerDataset(ctx, cookie, '751');
+  const targetDir = migrationTargetDir(ctx, source.scenarioId);
+  await mkdir(targetDir, { recursive: true });
+  const collisionPath = path.join(targetDir, `${source.id}.json`);
+  const originalNextId = ctx.app.locals.database.nextId;
+  let calls = 0;
+  ctx.app.locals.database.nextId = function nextIdWithDatabaseCollision(prefix) {
+    calls += 1;
+    return calls === 1 ? source.id : originalNextId.call(this, prefix);
+  };
+
+  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ ...migrationRequest, datasetIds: [source.id] })
+  });
+
+  assert.equal(response.status, 201);
+  const migrated = (await response.json()).datasets[0];
+  assert.notEqual(migrated.id, source.id);
+  assert.equal(ctx.app.locals.database.getDatasetById(source.id).name, source.name);
+  await assert.rejects(readFile(collisionPath, 'utf8'), { code: 'ENOENT' });
+});
+
 test('第二个迁移文件真实写入失败时仅清理本请求已创建文件', async (t) => {
   const writtenPaths = [];
   let writes = 0;
@@ -422,6 +449,75 @@ test('第二个迁移文件真实写入失败时仅清理本请求已创建文�
   assert.equal(await readFile(existingPath, 'utf8'), '既有文件');
   assert.equal(writtenPaths.length, 1);
   await assert.rejects(readFile(writtenPaths[0], 'utf8'), { code: 'ENOENT' });
+});
+
+test('排他写入创建部分文件后抛错时 helper 立即清理 candidate', async (t) => {
+  let candidatePath = '';
+  const ctx = await createTestContext(t, {
+    migrationWriteFile: async (filePath, data, options) => {
+      candidatePath = filePath;
+      await writeFile(filePath, data.slice(0, 8), options);
+      throw new Error('模拟部分文件写入后失败');
+    }
+  });
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const source = await uploadCustomerDataset(ctx, cookie, '851');
+  const targetDir = migrationTargetDir(ctx, source.scenarioId);
+
+  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ ...migrationRequest, datasetIds: [source.id] })
+  });
+
+  assert.equal(response.status, 500);
+  assert.ok(candidatePath);
+  assert.deepEqual(await readdir(targetDir), []);
+  await assert.rejects(readFile(candidatePath, 'utf8'), { code: 'ENOENT' });
+  assert.equal(ctx.app.locals.database.listDatasets(source.scenarioId).length, 1);
+});
+
+test('文件写入后发生事务期全局 ID 竞争时返回 409 并保留竞争方记录', async (t) => {
+  let ctx;
+  let source;
+  let candidatePath = '';
+  const competingId = 'DS-CONCURRENT-CONFLICT';
+  ctx = await createTestContext(t, {
+    migrationWriteFile: async (filePath, data, options) => {
+      candidatePath = filePath;
+      await writeFile(filePath, data, options);
+      const sourceRow = ctx.app.locals.database.getDatasetById(source.id);
+      ctx.app.locals.database.createDataset({
+        id: competingId,
+        scenarioId: source.scenarioId,
+        name: '竞争请求数据集',
+        fileName: sourceRow.file_name,
+        filePath: sourceRow.file_path,
+        rowsPath: sourceRow.rows_path,
+        rowCount: sourceRow.row_count,
+        validationStatus: 'valid',
+        uploadedBy: 'competing-request',
+        errors: [],
+        schemaSnapshot: migrationRequest.targetSchema,
+        sourceDatasetId: source.id,
+        migration: {}
+      });
+    }
+  });
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  source = await uploadCustomerDataset(ctx, cookie, '852');
+  ctx.app.locals.database.nextId = () => competingId;
+
+  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ ...migrationRequest, datasetIds: [source.id] })
+  });
+
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).message, '数据集 ID 冲突，请重试');
+  assert.equal(ctx.app.locals.database.getDatasetById(competingId).name, '竞争请求数据集');
+  await assert.rejects(readFile(candidatePath, 'utf8'), { code: 'ENOENT' });
 });
 
 test('两个并发迁移和一个常规数据集写入互不回滚', async (t) => {
