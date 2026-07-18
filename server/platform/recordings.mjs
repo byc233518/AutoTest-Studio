@@ -4,6 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { toWorkspaceScriptEntry } from './scenario-scripts.mjs';
+import { analyzeRecordedScript, buildDataDrivenScript } from './recording-analysis.mjs';
 
 function trimTrailingSlash(value = '') {
   return value.replace(/\/+$/, '');
@@ -89,4 +90,12 @@ export function stopRecordingProcess(pid) {
 export function resolveRecordingScriptEntry(workspaceRoot, outputPath, dataDir) {
   if (!existsSync(outputPath)) return '';
   return toWorkspaceScriptEntry(workspaceRoot, outputPath, dataDir);
+}
+
+export function analyzeRecordingScript(source) {
+  return analyzeRecordedScript(source);
+}
+
+export function buildRecordingReviewScript(input) {
+  return buildDataDrivenScript(input);
 }
