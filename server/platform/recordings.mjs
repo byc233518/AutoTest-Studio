@@ -92,6 +92,15 @@ export function resolveRecordingScriptEntry(workspaceRoot, outputPath, dataDir) 
   return toWorkspaceScriptEntry(workspaceRoot, outputPath, dataDir);
 }
 
+export function isManagedScriptEntry(entry) {
+  if (typeof entry !== 'string' || !entry.trim()) return false;
+  const normalized = entry.replaceAll('\\', '/');
+  if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) return false;
+  const parts = normalized.split('/');
+  if (parts.includes('..')) return false;
+  return normalized.startsWith('tests/') || normalized.startsWith('platform-data/scripts/');
+}
+
 export function analyzeRecordingScript(source) {
   return analyzeRecordedScript(source);
 }

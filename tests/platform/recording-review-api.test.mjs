@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createTestContext } from './helpers/test-context.mjs';
 import { resolveScenarioScriptPath } from '../../server/platform/scenario-scripts.mjs';
 import { buildLocalExecutionBundle } from '../../server/platform/local-executions.mjs';
@@ -110,12 +110,21 @@ test('apply 成功保存数据驱动脚本，非法映射返回 422 且不覆盖
   });
   assert.equal(repeated.status, 200);
   assert.equal((await repeated.json()).script, firstContent);
+  const versionsBeforeChange = await (await ctx.fetch('/api/scenarios/recording-apply-demo/script/versions', { headers: { cookie } })).json();
+  const changedApply = await ctx.fetch(`/api/recordings/${recording.id}/apply`, {
+    method: 'POST', headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ ...body, fields: [{ ...body.fields[0], key: 'customerCodeChanged' }] })
+  });
+  assert.equal(changedApply.status, 200);
+  const changedContent = (await changedApply.clone().json()).script;
+  const versionsAfterChange = await (await ctx.fetch('/api/scenarios/recording-apply-demo/script/versions', { headers: { cookie } })).json();
+  assert.equal(versionsAfterChange.versions.length, versionsBeforeChange.versions.length + 1);
   const invalid = await ctx.fetch(`/api/recordings/${recording.id}/apply`, {
     method: 'POST', headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ ...body, fields: [{ candidateId: 'missing', key: 'bad' }] })
   });
   assert.equal(invalid.status, 422);
-  assert.equal((await (await ctx.fetch(`/api/scenarios/${appliedBody.scenario.key}/script`, { headers: { cookie } })).json()).content, firstContent);
+  assert.equal((await (await ctx.fetch(`/api/scenarios/${appliedBody.scenario.key}/script`, { headers: { cookie } })).json()).content, changedContent);
 
   const platformSchema = { columns: ['customerNo'], required: ['customerNo'], example: { customerNo: 'C-001' } };
   assert.equal((await ctx.fetch('/api/scenarios/recording-apply-demo', {
@@ -123,10 +132,10 @@ test('apply 成功保存数据驱动脚本，非法映射返回 422 且不覆盖
   })).status, 200);
   const contract = await ctx.fetch('/api/scenarios/recording-apply-demo/contract', { headers: { cookie } });
   assert.equal(contract.status, 200);
-  assert.deepEqual((await contract.json()).scriptSchema.columns, ['customerCode']);
+  assert.deepEqual((await contract.json()).scriptSchema.columns, ['customerCodeChanged']);
   const platformResolved = await ctx.fetch('/api/scenarios/recording-apply-demo/contract', {
     method: 'PUT', headers: { cookie, 'content-type': 'application/json' },
-    body: JSON.stringify({ resolution: 'platform', targetSchema: { columns: ['ignored'], required: [], example: {} }, mappings: [{ from: 'customerCode', to: 'customerNo' }] })
+    body: JSON.stringify({ resolution: 'platform', targetSchema: { columns: ['ignored'], required: [], example: {} }, mappings: [{ from: 'customerCodeChanged', to: 'customerNo' }] })
   });
   assert.equal(platformResolved.status, 200);
   assert.deepEqual((await platformResolved.json()).scenario.dataSchema.columns, ['customerNo']);
@@ -137,6 +146,61 @@ test('apply 成功保存数据驱动脚本，非法映射返回 422 且不覆盖
   });
   assert.equal(merged.status, 200);
   assert.deepEqual((await merged.json()).scenario.dataSchema.columns, ['mergedCode']);
+});
+
+test('重复上传原始录制不会回绑覆盖已应用脚本，且 apply 校验录制归属', async (t) => {
+  const ctx = await createTestContext(t);
+  const ownerCookie = await ctx.loginCookie('tester', 'Tester123!');
+  const { recording, uploaded } = await createRecording(ctx, ownerCookie, 'recording-upload-after-apply');
+  const fields = [{ candidateId: uploaded.analysis.fields[0].candidateId, key: 'customerCode', label: '客户编号', type: 'text', example: 'C-001', required: true }];
+  const applied = await ctx.fetch(`/api/recordings/${recording.id}/apply`, {
+    method: 'POST', headers: { cookie: ownerCookie, 'content-type': 'application/json' }, body: JSON.stringify({ title: '已应用', fields, assertions: [] })
+  });
+  const appliedBody = await applied.json();
+  const duplicate = new FormData();
+  duplicate.append('token', recording.uploadToken);
+  duplicate.append('file', new Blob([recordedSource], { type: 'text/javascript' }), `${recording.id}.spec.js`);
+  const repeatedUpload = await ctx.fetch(`/api/recordings/${recording.id}/upload`, { method: 'POST', body: duplicate });
+  assert.equal(repeatedUpload.status, 200);
+  const repeatedBody = await repeatedUpload.json();
+  assert.equal(repeatedBody.scenario.scriptEntry, appliedBody.scenario.scriptEntry);
+  assert.deepEqual(repeatedBody.scenario.dataSchema, appliedBody.scenario.dataSchema);
+
+  const otherCookie = await ctx.loginCookie('admin', 'Admin123!');
+  const rejected = await ctx.fetch(`/api/recordings/${recording.id}/apply`, {
+    method: 'POST', headers: { cookie: otherCookie, 'content-type': 'application/json' }, body: JSON.stringify({ title: '越权', fields, assertions: [] })
+  });
+  assert.equal(rejected.status, 403);
+});
+
+test('脚本入口只允许受管目录，非法上传令牌会清理临时文件并限制大小', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const unsafe = await ctx.fetch('/api/scenarios/wms-customer-create', {
+    method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ scriptEntry: 'server/app.mjs' })
+  });
+  assert.equal(unsafe.status, 400);
+  const absolute = await ctx.fetch('/api/scenarios/wms-customer-create', {
+    method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ scriptEntry: path.resolve(ctx.app.locals.paths.workspaceRoot, 'server', 'app.mjs') })
+  });
+  assert.equal(absolute.status, 400);
+
+  const started = await ctx.fetch('/api/recordings/start', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ location: 'local' }) });
+  const recording = await started.json();
+  const bad = new FormData();
+  bad.append('token', 'invalid');
+  bad.append('file', new Blob(['bad-script'], { type: 'text/javascript' }), `${recording.id}.spec.js`);
+  const rejected = await ctx.fetch(`/api/recordings/${recording.id}/upload`, { method: 'POST', body: bad });
+  assert.equal(rejected.status, 401);
+  const tmpFiles = await readdir(path.resolve(ctx.app.locals.paths.dataDir, 'tmp'));
+  assert.equal(tmpFiles.length, 0);
+
+  const oversized = new FormData();
+  oversized.append('token', recording.uploadToken);
+  oversized.append('file', new Blob(['x'.repeat(1024 * 1024 + 1)], { type: 'text/javascript' }), `${recording.id}.spec.js`);
+  const tooLarge = await ctx.fetch(`/api/recordings/${recording.id}/upload`, { method: 'POST', body: oversized });
+  assert.equal(tooLarge.status, 413);
+  assert.equal((await readdir(path.resolve(ctx.app.locals.paths.dataDir, 'tmp'))).length, 0);
 });
 
 test('contract 支持 platform、script、merge，动态冲突返回 409 且脚本不变', async (t) => {
