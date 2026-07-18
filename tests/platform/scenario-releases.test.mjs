@@ -41,6 +41,8 @@ test('发布创建 v1/v2 快照并支持列表、详情、比较和恢复', asyn
   assert.equal(release.versionNo, 1);
   assert.equal(release.snapshot.dataSchema.columns[0], 'id');
   assert.doesNotMatch(JSON.stringify(release.snapshot), /Tester123|password|apiKey/i);
+  assert.equal(Object.hasOwn(release, 'scriptContent'), false);
+  assert.equal(typeof release.scriptLength, 'number');
 
   const compare = await ctx.fetch(`/api/scenarios/release-flow/releases/${releases[1].id}/compare`, { headers: { cookie } });
   assert.equal(compare.status, 200);
@@ -51,6 +53,7 @@ test('发布创建 v1/v2 快照并支持列表、详情、比较和恢复', asyn
   assert.equal(comparison.schemaChanged, true);
   assert.equal(comparison.scenarioChanged, false);
   assert.deepEqual(comparison.changedKeys, ['dataSchema', 'scriptContent', 'scriptHash']);
+  assert.equal(Object.hasOwn(comparison.from, 'scriptContent'), false);
 
   const restored = await ctx.fetch(`/api/scenarios/release-flow/releases/${releases[1].id}/restore`, { method: 'POST', headers: { cookie } });
   assert.equal(restored.status, 200);
@@ -93,6 +96,40 @@ test('三个种子账号均可编辑和发布', async (t) => {
     assert.equal((await ctx.fetch(`/api/scenarios/${key}`, { method: 'PUT', headers: jsonHeaders(cookie), body: JSON.stringify({ description: 'updated' }) })).status, 200);
     assert.equal((await ctx.fetch(`/api/scenarios/${key}`, { headers: { cookie } }).then((r) => r.json())).status, 'draft');
   }
+});
+
+test('compare 对快照键顺序变化不报告 schema 变化', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  await ctx.fetch('/api/scenarios', { method: 'POST', headers: jsonHeaders(cookie), body: JSON.stringify({ key: 'release-canonical', name: '规范比较' }) });
+  await saveScript(ctx, cookie, 'release-canonical', "export const testDataSchema={columns:['id','name'],required:['id'],example:{id:'1',name:'n'}};\n");
+  await ctx.fetch('/api/scenarios/release-canonical/publish', { method: 'POST', headers: { cookie } });
+  await saveScript(ctx, cookie, 'release-canonical', "export const testDataSchema={columns:['id','name'],required:['id'],example:{name:'n',id:'1'}};\n");
+  await ctx.fetch('/api/scenarios/release-canonical/publish', { method: 'POST', headers: { cookie } });
+  const releases = await (await ctx.fetch('/api/scenarios/release-canonical/releases', { headers: { cookie } })).json();
+  const compare = await (await ctx.fetch(`/api/scenarios/release-canonical/releases/${releases[1].id}/compare`, { headers: { cookie } })).json();
+  assert.equal(compare.schemaChanged, false);
+});
+
+test('恢复数据库失败时回滚脚本文件和场景入口', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  await ctx.fetch('/api/scenarios', { method: 'POST', headers: jsonHeaders(cookie), body: JSON.stringify({ key: 'release-atomic', name: '原子恢复' }) });
+  await saveScript(ctx, cookie, 'release-atomic', "export const testDataSchema={columns:['old'],required:[]};\n");
+  await ctx.fetch('/api/scenarios/release-atomic/publish', { method: 'POST', headers: { cookie } });
+  await saveScript(ctx, cookie, 'release-atomic', "export const testDataSchema={columns:['new'],required:[]};\n");
+  const before = await (await ctx.fetch('/api/scenarios/release-atomic', { headers: { cookie } })).json();
+  const releases = await (await ctx.fetch('/api/scenarios/release-atomic/releases', { headers: { cookie } })).json();
+  const original = ctx.app.locals.database.restoreScenarioRelease;
+  ctx.app.locals.database.restoreScenarioRelease = () => { throw new Error('injected restore failure'); };
+  const response = await ctx.fetch(`/api/scenarios/release-atomic/releases/${releases[0].id}/restore`, { method: 'POST', headers: { cookie } });
+  ctx.app.locals.database.restoreScenarioRelease = original;
+  assert.equal(response.status, 500);
+  const after = await (await ctx.fetch('/api/scenarios/release-atomic', { headers: { cookie } })).json();
+  assert.equal(after.scriptEntry, before.scriptEntry);
+  assert.deepEqual(after.dataSchema, before.dataSchema);
+  const script = await ctx.fetch('/api/scenarios/release-atomic/script', { headers: { cookie } });
+  assert.match((await script.json()).content, /new/);
 });
 
 test('恢复跨 workspace 与 platform-data 脚本路径时使用实际保存入口', async (t) => {

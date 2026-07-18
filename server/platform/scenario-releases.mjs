@@ -43,6 +43,12 @@ export function validateScenarioReleaseScript(scriptContent = '') {
   }
 }
 
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
+  return value;
+}
+
 function publicRelease(row) {
   if (!row) return null;
   let snapshot = {};
@@ -52,8 +58,9 @@ function publicRelease(row) {
     scenarioId: row.scenario_id,
     versionNo: row.version_no,
     version: `v${row.version_no}`,
+    scriptEntry: snapshot.scriptEntry || '',
     snapshot,
-    scriptContent: row.script_content,
+    scriptLength: Buffer.byteLength(row.script_content || '', 'utf8'),
     scriptHash: row.script_hash,
     createdBy: row.created_by,
     createdAt: row.created_at
@@ -82,14 +89,14 @@ export function compareScenarioRelease(database, scenarioId, releaseId, toReleas
   if (!from || !to) return null;
   const fromSnapshot = from.snapshot || {};
   const toSnapshot = to.snapshot || {};
-  const equal = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+  const equal = (left, right) => JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
   const scriptChanged = from.scriptHash !== to.scriptHash || fromSnapshot.scriptEntry !== toSnapshot.scriptEntry;
   const schemaChanged = !equal(fromSnapshot.dataSchema || {}, toSnapshot.dataSchema || {});
   const scenarioKeys = ['name', 'description', 'module', 'appId', 'moduleId', 'priority', 'owner', 'dependsOn'];
   const scenarioChanged = scenarioKeys.some((key) => !equal(fromSnapshot[key], toSnapshot[key]));
   const changedKeys = [];
   if (schemaChanged) changedKeys.push('dataSchema');
-  if (from.scriptContent !== to.scriptContent) changedKeys.push('scriptContent');
+  if (from.scriptHash !== to.scriptHash) changedKeys.push('scriptContent');
   if (from.scriptHash !== to.scriptHash) changedKeys.push('scriptHash');
   if (fromSnapshot.scriptEntry !== toSnapshot.scriptEntry) changedKeys.push('scriptEntry');
   scenarioKeys.filter((key) => !equal(fromSnapshot[key], toSnapshot[key])).forEach((key) => changedKeys.push(key));
@@ -106,13 +113,15 @@ export function compareScenarioRelease(database, scenarioId, releaseId, toReleas
 }
 
 export function restoreScenarioRelease({ database, scenarioId, releaseId, scriptEntry }) {
-  const release = getScenarioRelease(database, scenarioId, releaseId);
-  if (!release) return null;
+  const row = database?.getScenarioReleaseById(releaseId);
+  if (!row || row.scenario_id !== scenarioId) return null;
+  let snapshot;
+  try { snapshot = JSON.parse(row.snapshot_json || '{}'); } catch { return null; }
   const scenario = database.restoreScenarioRelease(scenarioId, releaseId, {
-    ...release.snapshot,
+    ...snapshot,
     ...(scriptEntry ? { scriptEntry } : {})
   });
-  return scenario ? { release, scenario } : null;
+  return scenario ? { release: publicRelease(row), scriptContent: row.script_content, scenario } : null;
 }
 
 export { publicRelease, snapshotFromScenario };
