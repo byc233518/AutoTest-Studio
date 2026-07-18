@@ -179,3 +179,13 @@ test('缺少断言类型也返回 warning 而不是抛出异常', () => {
 
   assert.match(result.warnings.join('\n'), /不支持的断言类型/);
 });
+
+test('已有可见成功条件与 kind:text 向导断言只保留一次', () => {
+  const result = buildDataDrivenScript({
+    source: basicSource,
+    fields: [],
+    assertions: [{ type: 'visible', locator: { kind: 'text', value: '保存成功' } }]
+  });
+
+  assert.equal(result.source.match(/toBeVisible\(\)/g)?.length, 1);
+});

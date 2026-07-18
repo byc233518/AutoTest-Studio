@@ -194,7 +194,8 @@ function normalizeAssertion(assertion) {
 }
 
 function assertionKey(assertion) {
-  return `${assertion.type}|${assertion.locator}|${JSON.stringify(assertion.expected)}`;
+  const expected = assertion.type === 'visible' ? undefined : assertion.expected;
+  return `${assertion.type}|${assertion.locator}|${JSON.stringify(expected)}`;
 }
 
 function wizardAssertionSource(assertion) {
