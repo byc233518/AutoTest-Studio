@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import vm from 'node:vm';
+import { normalizeSchema } from './schema-sync.mjs';
 
 const ALLOWED_SCRIPT_PATTERN = /\.(spec\.)?[cm]?js$/i;
 
@@ -71,20 +72,8 @@ function findBalancedObjectLiteral(source, startIndex) {
 }
 
 function normalizeDataSchema(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const columns = Array.isArray(value.columns)
-    ? value.columns.map((item) => String(item).trim()).filter(Boolean)
-    : [];
-  if (!columns.length) return null;
-  const uniqueColumns = [...new Set(columns)];
-  const columnSet = new Set(uniqueColumns);
-  const required = Array.isArray(value.required)
-    ? [...new Set(value.required.map((item) => String(item).trim()).filter((item) => columnSet.has(item)))]
-    : [];
-  const example = value.example && typeof value.example === 'object' && !Array.isArray(value.example)
-    ? Object.fromEntries(uniqueColumns.map((column) => [column, String(value.example[column] ?? '')]))
-    : Object.fromEntries(uniqueColumns.map((column) => [column, '']));
-  return { columns: uniqueColumns, required, example };
+  const schema = normalizeSchema(value);
+  return schema.columns.length ? schema : null;
 }
 
 export function extractScriptDataSchema(source = '') {

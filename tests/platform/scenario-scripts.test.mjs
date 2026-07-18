@@ -26,7 +26,11 @@ test('脚本字段解析支持 testDataSchema 和 JSON 注释声明', () => {
   `), {
     columns: ['locatorCode', 'locatorName'],
     required: ['locatorCode'],
-    example: { locatorCode: 'KW-001', locatorName: '一号库位' }
+    example: { locatorCode: 'KW-001', locatorName: '一号库位' },
+    fields: [
+      { key: 'locatorCode', label: 'locatorCode', type: 'text', required: true, example: 'KW-001' },
+      { key: 'locatorName', label: 'locatorName', type: 'text', required: false, example: '一号库位' }
+    ]
   });
 
   assert.deepEqual(extractScriptDataSchema(`
@@ -36,7 +40,11 @@ test('脚本字段解析支持 testDataSchema 和 JSON 注释声明', () => {
   `), {
     columns: ['customerCode', 'customerName'],
     required: ['customerCode'],
-    example: { customerCode: 'C001', customerName: '测试客户' }
+    example: { customerCode: 'C001', customerName: '测试客户' },
+    fields: [
+      { key: 'customerCode', label: 'customerCode', type: 'text', required: true, example: 'C001' },
+      { key: 'customerName', label: 'customerName', type: 'text', required: false, example: '测试客户' }
+    ]
   });
 });
 
@@ -173,7 +181,12 @@ defineRecordedTests(test, '库位维护录入', testDataSchema, async ({ page },
       locatorCode: 'KW-001',
       locatorName: '自动化库位001',
       warehouseCode: 'WMS01'
-    }
+    },
+    fields: [
+      { key: 'locatorCode', label: 'locatorCode', type: 'text', required: true, example: 'KW-001' },
+      { key: 'locatorName', label: 'locatorName', type: 'text', required: true, example: '自动化库位001' },
+      { key: 'warehouseCode', label: 'warehouseCode', type: 'text', required: false, example: 'WMS01' }
+    ]
   });
 
   const detail = await ctx.fetch('/api/scenarios/script-schema-demo', { headers: { cookie } });
@@ -323,7 +336,11 @@ test('local recorded script', async ({ page }) => {
   assert.deepEqual(body.scenario.dataSchema, {
     columns: ['recordCode', 'recordName'],
     required: ['recordCode'],
-    example: { recordCode: 'REC-001', recordName: '录制样例' }
+    example: { recordCode: 'REC-001', recordName: '录制样例' },
+    fields: [
+      { key: 'recordCode', label: 'recordCode', type: 'text', required: true, example: 'REC-001' },
+      { key: 'recordName', label: 'recordName', type: 'text', required: false, example: '录制样例' }
+    ]
   });
 });
 
