@@ -20,7 +20,7 @@ test('分析两个固定输入并保留可读标签和可见断言', () => {
     { candidateId: 'field-2', label: '请输入客户名称', type: 'text', example: '测试客户', value: '测试客户' }
   ]);
   assert.deepEqual(result.assertions, [
-    { type: 'visible', label: '保存成功', value: '保存成功' }
+    { type: 'visible', label: '保存成功', value: '保存成功', locator: { kind: 'getByText', value: '保存成功' } }
   ]);
 });
 
@@ -46,8 +46,8 @@ test('参数化脚本使用 defineRecordedTests 和 schema', () => {
   });
   assert.match(result.script, /const \{ defineRecordedTests \} = require\('\.\.\/support\/recorded-script'\);/);
   assert.match(result.script, /defineRecordedTests\(test, ["']客户录入["'], dataSchema, async \(\{ page \}, data\) => \{/);
-  assert.match(result.script, /\.fill\(data\.customerCode\)/);
-  assert.match(result.script, /\.fill\(data\.customerName\)/);
+  assert.match(result.script, /\.fill\(data\["customerCode"\]\)/);
+  assert.match(result.script, /\.fill\(data\["customerName"\]\)/);
   assert.match(result.script, /await expect\(page\.getByText\('保存成功'\)\)\.toBeVisible\(\);/);
 });
 
@@ -98,9 +98,9 @@ test('扩展操作', async ({ page }) => {
     { candidateId: 'field-2', label: '附件', type: 'file', example: 'C:/tmp/demo.xlsx', value: 'C:/tmp/demo.xlsx' }
   ]);
   assert.deepEqual(result.assertions, [
-    { type: 'text', label: '处理结果', value: '成功' },
-    { type: 'value', label: '客户编码', value: 'C001' },
-    { type: 'url', value: '/customers' }
+    { type: 'text', label: '处理结果', value: '成功', locator: { kind: 'getByText', value: '处理结果' } },
+    { type: 'value', label: '客户编码', value: 'C001', locator: { kind: 'getByLabel', value: '客户编码' } },
+    { type: 'url', value: '/customers', locator: { kind: 'page' } }
   ]);
 });
 
@@ -117,7 +117,7 @@ test('选择', async ({ page }) => {
     assertions: []
   });
 
-  assert.match(result.script, /page\.getByLabel\('启用'\)\.setChecked\(data\.enabled\)/);
+  assert.match(result.script, /page\.getByLabel\('启用'\)\.setChecked\(data\["enabled"\]\)/);
 });
 
 test('参数化时补充向导新增的 URL、文本和值断言', () => {
@@ -152,7 +152,7 @@ test('按计划字段 example 和 locator 断言对象生成稳定 source', () =
 
   assert.equal(result.source, result.script);
   assert.deepEqual(result.schema.example, { customerCode: 'EX-001' });
-  assert.match(result.source, /\.fill\(data\.customerCode\)/);
+  assert.match(result.source, /\.fill\(data\["customerCode"\]\)/);
   assert.match(result.source, /getByText\(["']已保存["']\)\)\.toBeVisible\(\)/);
   assert.match(result.source, /getByText\(["']处理结果["']\)\)\.toHaveText\(["']成功["']\)/);
   assert.match(result.source, /getByLabel\(["']客户编码["']\)\)\.toHaveValue\(["']EX-001["']\)/);
@@ -188,4 +188,51 @@ test('已有可见成功条件与 kind:text 向导断言只保留一次', () => 
   });
 
   assert.equal(result.source.match(/toBeVisible\(\)/g)?.length, 1);
+});
+
+test('危险字段 key 使用 bracket 访问且生成脚本可编译', () => {
+  const result = buildDataDrivenScript({
+    source: basicSource,
+    fields: [
+      { candidateId: 'field-1', key: 'customer-code', example: 'C001' },
+      { candidateId: 'field-2', key: 'x\"]; throw new Error(\"pwn\"); //', example: '客户' }
+    ]
+  });
+
+  assert.equal(result.supported, true);
+  assert.match(result.source, /data\["customer-code"\]/);
+  assert.match(result.source, /data\["x\\\"\]; throw new Error/);
+  assert.doesNotThrow(() => new Function(result.source));
+});
+
+test('分析保留 placeholder 结构化 locator 并与向导断言去重', () => {
+  const source = `import { test, expect } from '@playwright/test';
+test('状态', async ({ page }) => {
+  await expect(page.getByPlaceholder('状态')).toHaveValue('enabled');
+});`;
+  const analysis = analyzeRecordedScript(source);
+  const result = buildDataDrivenScript({ source, fields: [], assertions: analysis.assertions });
+
+  assert.deepEqual(analysis.assertions, [{
+    type: 'value',
+    label: '状态',
+    value: 'enabled',
+    locator: { kind: 'getByPlaceholder', value: '状态' }
+  }]);
+  assert.equal(result.source.match(/toHaveValue\(/g)?.length, 1);
+});
+
+test('非法字段配置返回中文 warnings 而不抛出', () => {
+  const cases = [
+    null,
+    [null],
+    [{ candidateId: 'field-1', key: '   ' }],
+    [{ candidateId: 'field-1', key: 'same' }, { candidateId: 'field-2', key: 'same' }]
+  ];
+
+  for (const fields of cases) {
+    const result = buildDataDrivenScript({ source: basicSource, fields });
+    assert.equal(result.supported, false);
+    assert.match(result.warnings.join('\n'), /字段/);
+  }
 });

@@ -45,14 +45,33 @@ function objectPropertyValue(node, name) {
   return property ? staticValue(property.value) : undefined;
 }
 
-function locatorLabel(node) {
+function staticObject(node) {
+  if (node?.type !== 'ObjectExpression') return undefined;
+  const entries = node.properties.map((property) => {
+    const key = property.key?.name ?? property.key?.value;
+    const value = staticValue(property.value);
+    return key === undefined || value === undefined ? undefined : [key, value];
+  });
+  return entries.some((entry) => !entry) ? undefined : Object.fromEntries(entries);
+}
+
+function locatorDetails(node) {
   if (node?.type !== 'CallExpression' || node.callee.type !== 'MemberExpression') return '';
   const method = propertyName(node.callee);
   if (!['getByLabel', 'getByPlaceholder', 'getByRole', 'getByText'].includes(method)) return '';
-  const label = method === 'getByRole'
-    ? objectPropertyValue(node.arguments[1], 'name') ?? staticValue(node.arguments[0])
-    : staticValue(node.arguments[0]);
-  return typeof label === 'string' || typeof label === 'number' ? String(label) : '';
+  if (method === 'getByRole') {
+    const role = staticValue(node.arguments[0]);
+    const options = staticObject(node.arguments[1]) || {};
+    const value = options.name ?? role;
+    return role === undefined || value === undefined ? '' : { kind: method, value, role, options };
+  }
+  const value = staticValue(node.arguments[0]);
+  return value === undefined ? '' : { kind: method, value };
+}
+
+function locatorLabel(node) {
+  const locator = locatorDetails(node);
+  return locator && (typeof locator.value === 'string' || typeof locator.value === 'number') ? String(locator.value) : '';
 }
 
 function isPlaywrightTestCall(node) {
@@ -111,13 +130,14 @@ function collectScriptDetails(callback) {
 
       if (assertionType === 'url') {
         const value = staticValue(node.arguments[0]);
-        if (value !== undefined) assertions.push({ type: 'url', value });
+        if (value !== undefined) assertions.push({ type: 'url', value, locator: { kind: 'page' } });
         return;
       }
+      const locator = locatorDetails(expected.arguments[0]);
       const label = locatorLabel(expected.arguments[0]);
       const value = staticValue(node.arguments[0]);
-      if (assertionType === 'visible' && label) assertions.push({ type: 'visible', label, value: label });
-      if (assertionType !== 'visible' && label && value !== undefined) assertions.push({ type: assertionType, label, value });
+      if (assertionType === 'visible' && label) assertions.push({ type: 'visible', label, value: label, locator });
+      if (assertionType !== 'visible' && label && value !== undefined) assertions.push({ type: assertionType, label, value, locator });
     }
   });
   return { fields, assertions };
@@ -157,20 +177,45 @@ function schemaFromFields(fields) {
   };
 }
 
+function validateFields(fields) {
+  if (!Array.isArray(fields)) return ['字段配置必须是数组。'];
+  const keys = new Set();
+  const warnings = [];
+  fields.forEach((field, index) => {
+    if (!field || typeof field !== 'object' || Array.isArray(field)) {
+      warnings.push(`第 ${index + 1} 个字段必须是对象。`);
+      return;
+    }
+    if (typeof field.key !== 'string' || !field.key.trim()) {
+      warnings.push(`第 ${index + 1} 个字段 key 不能为空。`);
+      return;
+    }
+    if (keys.has(field.key)) warnings.push(`字段 key 不能重复：${field.key}。`);
+    keys.add(field.key);
+  });
+  return warnings;
+}
+
 function locatorSource(locator) {
   if (!locator || typeof locator !== 'object') return { error: '断言缺少 locator 定位器。' };
   const { value } = locator;
   const kind = locator.kind === 'text' ? 'getByText' : locator.kind;
-  if (kind === 'page') return { source: 'page' };
+  if (kind === 'page') return { source: 'page', locator: { kind: 'page' } };
   if (!['getByLabel', 'getByPlaceholder', 'getByRole', 'getByText'].includes(kind) || value === undefined) {
     return { error: '断言 locator 不受支持或缺少 value。' };
   }
   if (kind === 'getByRole' && value && typeof value === 'object') {
     if (!value.role) return { error: 'getByRole 断言缺少 role。' };
     const options = value.name === undefined ? '' : `, { name: ${JSON.stringify(value.name)} }`;
-    return { source: `page.getByRole(${JSON.stringify(value.role)}${options})` };
+    return { source: `page.getByRole(${JSON.stringify(value.role)}${options})`, locator: { kind, value: value.name ?? value.role, role: value.role, options: value.name === undefined ? {} : { name: value.name } } };
   }
-  return { source: `page.${kind}(${JSON.stringify(value)})` };
+  if (kind === 'getByRole') {
+    const role = locator.role ?? value;
+    const options = locator.options || {};
+    if (typeof role !== 'string') return { error: 'getByRole 断言缺少 role。' };
+    return { source: `page.getByRole(${JSON.stringify(role)}${Object.keys(options).length ? `, ${JSON.stringify(options)}` : ''})`, locator: { kind, value: options.name ?? role, role, options } };
+  }
+  return { source: `page.${kind}(${JSON.stringify(value)})`, locator: { kind, value } };
 }
 
 function normalizeAssertion(assertion) {
@@ -190,28 +235,30 @@ function normalizeAssertion(assertion) {
 
   const expected = assertion.expected ?? assertion.value ?? (type === 'url' ? assertion.locator?.value : undefined);
   if (type !== 'visible' && expected === undefined) return { error: `${type} 断言缺少 expected。` };
-  return { type, locator: locator.source, expected };
+  return { type, locator: locator.locator, source: locator.source, expected };
 }
 
 function assertionKey(assertion) {
   const expected = assertion.type === 'visible' ? undefined : assertion.expected;
-  return `${assertion.type}|${assertion.locator}|${JSON.stringify(expected)}`;
+  return `${assertion.type}|${JSON.stringify(assertion.locator)}|${JSON.stringify(expected)}`;
 }
 
 function wizardAssertionSource(assertion) {
   if (assertion.type === 'visible') {
-    return `await expect(${assertion.locator}).toBeVisible();`;
+    return `await expect(${assertion.source}).toBeVisible();`;
   }
   if (assertion.type === 'text') {
-    return `await expect(${assertion.locator}).toHaveText(${JSON.stringify(assertion.expected)});`;
+    return `await expect(${assertion.source}).toHaveText(${JSON.stringify(assertion.expected)});`;
   }
   if (assertion.type === 'value') {
-    return `await expect(${assertion.locator}).toHaveValue(${JSON.stringify(assertion.expected)});`;
+    return `await expect(${assertion.source}).toHaveValue(${JSON.stringify(assertion.expected)});`;
   }
   return `await expect(page).toHaveURL(${JSON.stringify(assertion.expected)});`;
 }
 
 export function buildDataDrivenScript({ source, title, fields = [], assertions = [] } = {}) {
+  const fieldWarnings = validateFields(fields);
+  if (fieldWarnings.length) return { supported: false, warnings: fieldWarnings, source: '', script: '', schema: schemaFromFields([]) };
   const parsed = parseSingleTest(source);
   if (parsed.error) return { supported: false, warnings: [parsed.error], source: '', script: '', schema: schemaFromFields(fields) };
 
@@ -222,10 +269,10 @@ export function buildDataDrivenScript({ source, title, fields = [], assertions =
     const field = fieldsByCandidate.get(candidate.candidateId);
     if (!field?.key) continue;
     if (candidate.valueNode) {
-      rewritten.overwrite(candidate.valueNode.start, candidate.valueNode.end, `data.${field.key}`);
+      rewritten.overwrite(candidate.valueNode.start, candidate.valueNode.end, `data[${JSON.stringify(field.key)}]`);
     } else if (candidate.type === 'checkbox') {
       const locator = source.slice(candidate.callNode.callee.object.start, candidate.callNode.callee.object.end);
-      rewritten.overwrite(candidate.callNode.start, candidate.callNode.end, `${locator}.setChecked(data.${field.key})`);
+      rewritten.overwrite(candidate.callNode.start, candidate.callNode.end, `${locator}.setChecked(data[${JSON.stringify(field.key)}])`);
     }
   }
 
