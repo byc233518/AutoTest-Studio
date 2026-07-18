@@ -63,16 +63,17 @@ function staticValue(node) {
 
 function findSchemaInitializer(source) {
   const ast = parse(source, { ecmaVersion: 'latest', sourceType: 'module' });
+  const initializers = [];
   for (const statement of ast.body) {
     const declaration = statement.type === 'VariableDeclaration'
       ? statement
       : statement.type === 'ExportNamedDeclaration' && statement.declaration?.type === 'VariableDeclaration'
         ? statement.declaration
         : null;
-    const schema = declaration?.declarations.find((item) => item.id.type === 'Identifier' && item.id.name === 'testDataSchema');
-    if (schema) return schema.init;
+    const schema = declaration?.declarations.filter((item) => item.id.type === 'Identifier' && item.id.name === 'testDataSchema') || [];
+    initializers.push(...schema.map((item) => item.init));
   }
-  return null;
+  return initializers.length === 1 ? initializers[0] : null;
 }
 
 export function extractScriptDataSchema(source = '') {

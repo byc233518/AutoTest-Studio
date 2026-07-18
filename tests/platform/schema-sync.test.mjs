@@ -347,3 +347,67 @@ test('同步公共 API 对无效输入和抛错映射 getter 返回冲突而不�
   assert.equal(result.ok, false);
   assert.deepEqual(result.conflicts.map((item) => item.kind), ['invalid-mapping', 'invalid-mapping', 'invalid-mapping']);
 });
+
+test('fields-only 源模型校验映射并重写旧字段引用', () => {
+  const source = `const testDataSchema = {
+  fields: [{ key: 'old', label: '旧字段', type: 'text', required: true, example: 'OLD' }]
+};
+export function execute(data) { return data.old; }`;
+  const targetSchema = {
+    fields: [{ key: 'new', label: '新字段', type: 'text', required: true, example: 'NEW' }]
+  };
+  const success = synchronizeScriptSchema({ source, targetSchema, mappings: [{ from: 'old', to: 'new' }] });
+  assert.equal(success.ok, true);
+  assert.match(success.source, /data\['new'\]/);
+
+  const invalid = synchronizeScriptSchema({ source, targetSchema, mappings: [{ from: 'ghost', to: 'new' }] });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.conflicts[0].kind, 'unknown-from');
+});
+
+test('同步明确拒绝无效和混合冲突的目标模型', () => {
+  const source = `const testDataSchema = { columns: ['old'], required: [], example: { old: '' } };`;
+  for (const targetSchema of [null, 1, []]) {
+    const result = synchronizeScriptSchema({ source, targetSchema });
+    assert.equal(result.ok, false);
+    assert.equal(result.conflicts[0].kind, 'target-schema');
+  }
+  const mixed = synchronizeScriptSchema({
+    source,
+    targetSchema: {
+      columns: ['legacy'],
+      fields: [{ key: 'new', label: '新字段', type: 'text', required: false, example: '' }]
+    }
+  });
+  assert.equal(mixed.ok, false);
+  assert.equal(mixed.conflicts[0].kind, 'target-schema');
+
+  const dangerous = synchronizeScriptSchema({
+    source,
+    targetSchema: {
+      columns: ['safe', 'constructor'],
+      fields: [{ key: 'safe', label: '安全字段', type: 'text', required: false, example: '' }]
+    }
+  });
+  assert.equal(dangerous.ok, false);
+  assert.equal(dangerous.conflicts[0].kind, 'target-schema');
+});
+
+test('映射 Proxy 读取异常不会从 diff 或同步接口泄漏', () => {
+  const brokenMappings = new Proxy([], {
+    get(target, property, receiver) {
+      if (property === 'length') throw new Error('broken length');
+      return Reflect.get(target, property, receiver);
+    }
+  });
+  const platform = { columns: ['new'], required: [], example: { new: '' } };
+  const script = { columns: ['old'], required: [], example: { old: '' } };
+  assert.doesNotThrow(() => diffSchemas(platform, script, brokenMappings));
+  assert.equal(diffSchemas(platform, script, brokenMappings).invalidMappings[0].kind, 'invalid-mapping');
+
+  const source = `const testDataSchema = { columns: ['old'], required: [], example: { old: '' } };`;
+  assert.doesNotThrow(() => synchronizeScriptSchema({ source, targetSchema: platform, mappings: brokenMappings }));
+  const result = synchronizeScriptSchema({ source, targetSchema: platform, mappings: brokenMappings });
+  assert.equal(result.ok, false);
+  assert.equal(result.conflicts[0].kind, 'invalid-mapping');
+});

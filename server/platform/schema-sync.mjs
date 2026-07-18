@@ -42,48 +42,52 @@ function mappingEntry(mapping) {
 function analyzeMappings(mappings, scriptSchema, platformSchema) {
   const result = new Map();
   const invalidMappings = [];
-  const sources = scriptSchema ? new Set(scriptSchema.columns) : null;
-  const destinations = new Set(platformSchema.columns);
-  const seenFrom = new Set();
-  const seenTo = new Set();
-  if (!Array.isArray(mappings)) {
-    return { result, invalidMappings: [{ index: null, kind: 'invalid-mapping' }] };
-  }
-  for (let index = 0; index < mappings.length; index += 1) {
-    const entry = mappingEntry(mappings[index]);
-    if (!entry) {
-      invalidMappings.push({ index, kind: 'invalid-mapping' });
-      continue;
+  try {
+    const sources = scriptSchema ? new Set(scriptSchema.columns) : null;
+    const destinations = new Set(platformSchema.columns);
+    const seenFrom = new Set();
+    const seenTo = new Set();
+    if (!Array.isArray(mappings)) {
+      return { result, invalidMappings: [{ index: null, kind: 'invalid-mapping' }] };
     }
-    const { from, to } = entry;
-    if (!from || !to) {
-      invalidMappings.push({ index, kind: 'invalid-mapping', from, to });
-      continue;
-    }
-    if (DANGEROUS_KEYS.has(from) || DANGEROUS_KEYS.has(to)) {
-      invalidMappings.push({ index, kind: 'dangerous-key', from, to });
-      continue;
-    }
-    if (seenFrom.has(from)) {
-      invalidMappings.push({ index, kind: 'duplicate-from', from, to });
-      continue;
-    }
-    if (seenTo.has(to)) {
-      invalidMappings.push({ index, kind: 'duplicate-to', from, to });
+    for (let index = 0; index < mappings.length; index += 1) {
+      const entry = mappingEntry(mappings[index]);
+      if (!entry) {
+        invalidMappings.push({ index, kind: 'invalid-mapping' });
+        continue;
+      }
+      const { from, to } = entry;
+      if (!from || !to) {
+        invalidMappings.push({ index, kind: 'invalid-mapping', from, to });
+        continue;
+      }
+      if (DANGEROUS_KEYS.has(from) || DANGEROUS_KEYS.has(to)) {
+        invalidMappings.push({ index, kind: 'dangerous-key', from, to });
+        continue;
+      }
+      if (seenFrom.has(from)) {
+        invalidMappings.push({ index, kind: 'duplicate-from', from, to });
+        continue;
+      }
+      if (seenTo.has(to)) {
+        invalidMappings.push({ index, kind: 'duplicate-to', from, to });
+        seenFrom.add(from);
+        continue;
+      }
       seenFrom.add(from);
-      continue;
+      seenTo.add(to);
+      if (sources && !sources.has(from)) {
+        invalidMappings.push({ index, kind: 'unknown-from', from, to });
+        continue;
+      }
+      if (!destinations.has(to)) {
+        invalidMappings.push({ index, kind: 'unknown-to', from, to });
+        continue;
+      }
+      result.set(from, to);
     }
-    seenFrom.add(from);
-    seenTo.add(to);
-    if (sources && !sources.has(from)) {
-      invalidMappings.push({ index, kind: 'unknown-from', from, to });
-      continue;
-    }
-    if (!destinations.has(to)) {
-      invalidMappings.push({ index, kind: 'unknown-to', from, to });
-      continue;
-    }
-    result.set(from, to);
+  } catch {
+    return { result: new Map(), invalidMappings: [{ index: null, kind: 'invalid-mapping' }] };
   }
   return { result, invalidMappings };
 }
@@ -293,36 +297,69 @@ function propertyName(node) {
   return '';
 }
 
-function staticStringArray(node) {
-  if (node?.type !== 'ArrayExpression') return null;
-  const values = [];
-  for (const item of node.elements) {
-    if (item?.type !== 'Literal' || typeof item.value !== 'string') return null;
-    values.push(item.value);
+function staticSchemaValue(node) {
+  if (node?.type === 'Literal' && (node.value === null || ['string', 'number', 'boolean'].includes(typeof node.value))) {
+    return { ok: true, value: node.value };
   }
-  return values;
+  if (node?.type === 'ArrayExpression') {
+    const values = [];
+    for (const item of node.elements) {
+      const parsed = staticSchemaValue(item);
+      if (!parsed.ok) return parsed;
+      values.push(parsed.value);
+    }
+    return { ok: true, value: values };
+  }
+  if (node?.type === 'ObjectExpression') {
+    const value = Object.create(null);
+    for (const property of node.properties) {
+      if (property.type !== 'Property' || property.kind !== 'init' || property.method || property.computed || property.shorthand) {
+        return { ok: false };
+      }
+      const key = propertyName(property);
+      if (!key) return { ok: false };
+      const parsed = staticSchemaValue(property.value);
+      if (!parsed.ok) return parsed;
+      value[key] = parsed.value;
+    }
+    return { ok: true, value };
+  }
+  return { ok: false };
 }
 
 function sourceSchemaKeys(initializer) {
-  if (initializer?.type !== 'ObjectExpression') return null;
-  for (const property of initializer.properties) {
-    if (property.type !== 'Property' || propertyName(property) !== 'columns') continue;
-    const columns = staticStringArray(property.value);
-    return columns ? new Set(columns) : null;
+  const parsed = staticSchemaValue(initializer);
+  if (!parsed.ok) return null;
+  try {
+    return new Set(normalizeSchema(parsed.value).columns);
+  } catch {
+    return null;
   }
-  return null;
 }
 
-function schemaHasDangerousKey(schema) {
+function targetSchemaIsValid(schema) {
   try {
-    const keys = Array.isArray(schema?.columns)
-      ? schema.columns
-      : Array.isArray(schema?.fields)
-        ? schema.fields.map((field) => field?.key)
-        : [];
-    return keys.some((key) => DANGEROUS_KEYS.has(text(key)));
-  } catch {
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return false;
+    const hasColumns = Object.hasOwn(schema, 'columns');
+    const hasFields = Object.hasOwn(schema, 'fields');
+    if (!hasColumns && !hasFields) return false;
+    if (hasColumns && !Array.isArray(schema.columns)) return false;
+    if (hasFields && !Array.isArray(schema.fields)) return false;
+    const columns = hasColumns ? schema.columns.map((value) => text(value)) : [];
+    const fields = hasFields ? schema.fields.map((field) => {
+      if (!field || typeof field !== 'object' || Array.isArray(field)) return '';
+      return text(field.key);
+    }) : [];
+    const everyKeyIsSafe = (keys) => keys.every((key) => key && !DANGEROUS_KEYS.has(key) && keys.indexOf(key) === keys.lastIndexOf(key));
+    if (!everyKeyIsSafe(columns) || !everyKeyIsSafe(fields)) return false;
+    if (hasColumns && hasFields) {
+      if (columns.length !== fields.length) return false;
+      const columnSet = new Set(columns);
+      if (columnSet.size !== fields.length || fields.some((key) => !columnSet.has(key))) return false;
+    }
     return true;
+  } catch {
+    return false;
   }
 }
 
@@ -374,8 +411,8 @@ export function synchronizeScriptSchema(input = {}) {
   const conflicts = collectDataConflicts(ast);
   if (conflicts.length) return { ok: false, conflicts, source };
 
-  if (schemaHasDangerousKey(targetSchema)) {
-    return { ok: false, conflicts: [conflict('target-schema', null, '目标字段模型包含危险字段')], source };
+  if (!targetSchemaIsValid(targetSchema)) {
+    return { ok: false, conflicts: [conflict('target-schema', null, '目标字段模型无效或存在冲突字段')], source };
   }
   const target = normalizeSchema(targetSchema);
   const sourceKeys = sourceSchemaKeys(declaration.init);

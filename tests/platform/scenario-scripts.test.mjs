@@ -90,6 +90,12 @@ test('脚本字段解析公共 API 对非文本输入不抛异常', () => {
   }
 });
 
+test('脚本字段解析拒绝重复顶层 testDataSchema 声明', () => {
+  const source = `var testDataSchema = { columns: ['first'], required: [], example: { first: '' } };
+var testDataSchema = { columns: ['second'], required: [], example: { second: '' } };`;
+  assert.equal(extractScriptDataSchema(source), null);
+});
+
 test('脚本保存会保留最近 10 个版本并支持恢复', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
