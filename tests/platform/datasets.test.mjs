@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import test from 'node:test';
 import { createTestContext } from './helpers/test-context.mjs';
 
@@ -30,6 +31,15 @@ const migrationRequest = {
   mappings: [{ from: '客户编号', to: '客户编码' }],
   defaults: { 启用: '是' }
 };
+
+function migrationTargetDir(ctx, scenarioId) {
+  return path.resolve(ctx.app.locals.paths.uploadsDir, scenarioId);
+}
+
+function assertWithinUploads(ctx, filePath) {
+  const relative = path.relative(ctx.app.locals.paths.uploadsDir, filePath);
+  assert.ok(relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative), filePath);
+}
 
 test('测试人员可以上传 CSV 样本数据并创建执行任务', async (t) => {
   const ctx = await createTestContext(t);
@@ -249,7 +259,8 @@ test('任一数据集迁移校验失败时不创建数据库记录或文件', as
     uploadCustomerDataset(ctx, cookie, '301'),
     uploadCustomerDataset(ctx, cookie, '302')
   ]);
-  const targetDir = ctx.app.locals.paths.uploadsDir + '\\wms-customer-create';
+  const targetDir = migrationTargetDir(ctx, sources[0].scenarioId);
+  await mkdir(targetDir, { recursive: true });
   const filesBefore = new Set(await readdir(targetDir));
   const invalidRequest = {
     datasetIds: sources.map((dataset) => dataset.id),
@@ -293,7 +304,8 @@ test('迁移写入中断时回滚数据库并清理已创建文件', async (t) =
     uploadCustomerDataset(ctx, cookie, '501'),
     uploadCustomerDataset(ctx, cookie, '502')
   ]);
-  const targetDir = ctx.app.locals.paths.uploadsDir + '\\wms-customer-create';
+  const targetDir = migrationTargetDir(ctx, sources[0].scenarioId);
+  await mkdir(targetDir, { recursive: true });
   const filesBefore = new Set(await readdir(targetDir));
   const originalCreateDataset = ctx.app.locals.database.createDataset;
   let calls = 0;
@@ -313,4 +325,131 @@ test('迁移写入中断时回滚数据库并清理已创建文件', async (t) =
   const all = await ctx.fetch('/api/scenarios/wms-customer-create/datasets', { headers: { cookie } });
   assert.equal((await all.json()).length, 2);
   assert.deepEqual(new Set(await readdir(targetDir)), filesBefore);
+});
+
+test('创建场景拒绝非法业务 key', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+
+  const response = await ctx.fetch('/api/scenarios', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ key: '../outside', name: '非法场景' })
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).message, '场景 key 必须是小写字母、数字和单连字符组合');
+  assert.equal(ctx.app.locals.database.getScenarioByKey('../outside'), undefined);
+});
+
+test('迁移旧的非法场景 key 时文件仍限制在 uploads 目录内', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const source = await uploadCustomerDataset(ctx, cookie, '601');
+  const maliciousKey = '../outside';
+  ctx.app.locals.database.raw.prepare('UPDATE scenarios SET key = ? WHERE id = ?').run(maliciousKey, source.scenarioId);
+
+  const response = await ctx.fetch(`/api/scenarios/${encodeURIComponent(maliciousKey)}/datasets/migrate`, {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ ...migrationRequest, datasetIds: [source.id] })
+  });
+
+  assert.equal(response.status, 201);
+  const migrated = (await response.json()).datasets[0];
+  const row = ctx.app.locals.database.getDatasetById(migrated.id);
+  assertWithinUploads(ctx, row.rows_path);
+  assert.equal(path.dirname(row.rows_path), migrationTargetDir(ctx, source.scenarioId));
+});
+
+test('迁移文件 ID 首次碰撞时重试且不覆盖旧数据库和旧文件', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const source = await uploadCustomerDataset(ctx, cookie, '701');
+  const targetDir = migrationTargetDir(ctx, source.scenarioId);
+  await mkdir(targetDir, { recursive: true });
+  const collisionPath = path.join(targetDir, `${source.id}.json`);
+  await writeFile(collisionPath, '旧文件内容', { encoding: 'utf8', flag: 'wx' });
+  const originalNextId = ctx.app.locals.database.nextId;
+  let calls = 0;
+  ctx.app.locals.database.nextId = function nextIdWithCollision(prefix) {
+    calls += 1;
+    return calls === 1 ? source.id : originalNextId.call(this, prefix);
+  };
+
+  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ ...migrationRequest, datasetIds: [source.id] })
+  });
+
+  assert.equal(response.status, 201);
+  const migrated = (await response.json()).datasets[0];
+  assert.notEqual(migrated.id, source.id);
+  assert.equal(await readFile(collisionPath, 'utf8'), '旧文件内容');
+  assert.equal(ctx.app.locals.database.getDatasetById(source.id).name, source.name);
+});
+
+test('第二个迁移文件真实写入失败时仅清理本请求已创建文件', async (t) => {
+  const writtenPaths = [];
+  let writes = 0;
+  const ctx = await createTestContext(t, {
+    migrationWriteFile: async (...args) => {
+      writes += 1;
+      if (writes === 2) throw new Error('模拟第二个文件写入失败');
+      await writeFile(...args);
+      writtenPaths.push(args[0]);
+    }
+  });
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const sources = await Promise.all([
+    uploadCustomerDataset(ctx, cookie, '801'),
+    uploadCustomerDataset(ctx, cookie, '802')
+  ]);
+  const targetDir = migrationTargetDir(ctx, sources[0].scenarioId);
+  await mkdir(targetDir, { recursive: true });
+  const existingPath = path.join(targetDir, 'existing.json');
+  await writeFile(existingPath, '既有文件', { encoding: 'utf8', flag: 'wx' });
+
+  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ ...migrationRequest, datasetIds: sources.map((dataset) => dataset.id) })
+  });
+
+  assert.equal(response.status, 500);
+  assert.equal(ctx.app.locals.database.listDatasets(sources[0].scenarioId).length, 2);
+  assert.equal(await readFile(existingPath, 'utf8'), '既有文件');
+  assert.equal(writtenPaths.length, 1);
+  await assert.rejects(readFile(writtenPaths[0], 'utf8'), { code: 'ENOENT' });
+});
+
+test('两个并发迁移和一个常规数据集写入互不回滚', async (t) => {
+  const ctx = await createTestContext(t, {
+    migrationWriteFile: async (...args) => {
+      await new Promise((resolve) => setImmediate(resolve));
+      return writeFile(...args);
+    }
+  });
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const sources = await Promise.all([
+    uploadCustomerDataset(ctx, cookie, '901'),
+    uploadCustomerDataset(ctx, cookie, '902')
+  ]);
+  const migration = (datasetId) => ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ ...migrationRequest, datasetIds: [datasetId] })
+  });
+
+  const [first, second, regular] = await Promise.all([
+    migration(sources[0].id),
+    migration(sources[1].id),
+    uploadCustomerDataset(ctx, cookie, '903')
+  ]);
+
+  assert.equal(first.status, 201);
+  assert.equal(second.status, 201);
+  assert.equal(regular.name, '客户回归样本903');
+  assert.equal(ctx.app.locals.database.listDatasets(sources[0].scenarioId).length, 5);
 });

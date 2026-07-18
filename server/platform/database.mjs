@@ -1,6 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
+const SCENARIO_KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 function now() {
   return new Date().toISOString();
 }
@@ -252,6 +254,9 @@ export function createPlatformDatabase(filename) {
       );
     },
     createScenario(scenario) {
+      if (!SCENARIO_KEY_PATTERN.test(scenario.key || '')) {
+        throw new TypeError('场景 key 必须是小写字母、数字和单连字符组合');
+      }
       const id = scenario.id || this.nextId('SCN');
       const project = this.getDefaultProject();
       db.prepare(`
@@ -545,14 +550,16 @@ export function createPlatformDatabase(filename) {
     getDatasetById(id) {
       return db.prepare('SELECT * FROM datasets WHERE id = ?').get(id);
     },
-    beginTransaction() {
+    createDatasetsAtomically(datasets) {
       db.exec('BEGIN IMMEDIATE');
-    },
-    commitTransaction() {
-      db.exec('COMMIT');
-    },
-    rollbackTransaction() {
-      if (db.isTransaction) db.exec('ROLLBACK');
+      try {
+        const created = datasets.map((dataset) => this.createDataset(dataset));
+        db.exec('COMMIT');
+        return created;
+      } catch (error) {
+        if (db.isTransaction) db.exec('ROLLBACK');
+        throw error;
+      }
     },
     createRun(run) {
       db.prepare(`
