@@ -46,7 +46,7 @@ test('参数化脚本使用 defineRecordedTests 和 schema', () => {
       { key: 'customerName', label: '客户名称', type: 'text', required: false }
     ]
   });
-  assert.match(result.script, /const \{ defineRecordedTests \} = require\('\.\.\/support\/recorded-script'\);/);
+  assert.match(result.script, /const \{ defineRecordedTests \} = require\(process\.cwd\(\) \+ '\/tests\/support\/recorded-script'\);/);
   assert.match(result.script, /const testDataSchema = /);
   assert.match(result.script, /defineRecordedTests\(test, ["']客户录入["'], testDataSchema, async \(\{ page \}, data\) => \{/);
   assert.match(result.script, /\.fill\(data\["customerCode"\]\)/);

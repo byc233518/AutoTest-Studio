@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createTestContext } from './helpers/test-context.mjs';
+import { resolveScenarioScriptPath } from '../../server/platform/scenario-scripts.mjs';
+import { buildLocalExecutionBundle } from '../../server/platform/local-executions.mjs';
 
 const recordedSource = `const { test, expect } = require('@playwright/test');
 test('录制字段', async ({ page }) => {
@@ -75,6 +79,32 @@ test('apply 成功保存数据驱动脚本，非法映射返回 422 且不覆盖
   const firstScript = (await ctx.fetch(`/api/scenarios/${appliedBody.scenario.key}/script`, { headers: { cookie } })).json();
   const firstContent = (await firstScript).content;
   assert.equal(firstContent, appliedBody.script);
+  assert.match(firstContent, /require\(process\.cwd\(\) \+ '\/tests\/support\/recorded-script'\)/);
+  assert.doesNotThrow(() => new Function(firstContent));
+  const savedPath = resolveScenarioScriptPath({
+    workspaceRoot: ctx.app.locals.paths.workspaceRoot,
+    dataDir: ctx.app.locals.paths.dataDir,
+    scriptEntry: appliedBody.scenario.scriptEntry
+  });
+  const savedRequire = createRequire(savedPath);
+  const helperRequest = process.cwd() + '/tests/support/recorded-script';
+  assert.doesNotThrow(() => savedRequire.resolve(helperRequest));
+  const helper = savedRequire(helperRequest);
+  assert.equal(typeof helper.defineRecordedTests, 'function');
+
+  const supportPath = path.resolve(ctx.app.locals.paths.workspaceRoot, 'tests', 'support', 'recorded-script.js');
+  const rowsPath = path.resolve(ctx.app.locals.paths.dataDir, 'apply-rows.json');
+  await mkdir(path.dirname(supportPath), { recursive: true });
+  await writeFile(supportPath, "module.exports = { defineRecordedTests() {} };\n", 'utf8');
+  await writeFile(rowsPath, '[{"customerCode":"C-001"}]\n', 'utf8');
+  const bundle = await buildLocalExecutionBundle({
+    workspaceRoot: ctx.app.locals.paths.workspaceRoot,
+    dataDir: ctx.app.locals.paths.dataDir,
+    scenario: ctx.app.locals.database.getScenarioByKey('recording-apply-demo'),
+    dataset: { rows_path: rowsPath, name: 'apply rows' },
+    environment: ctx.app.locals.database.getEnvironmentByKey('test')
+  });
+  assert.ok(bundle.files.some((file) => file.path === 'tests/support/recorded-script.js'));
   const repeated = await ctx.fetch(`/api/recordings/${recording.id}/apply`, {
     method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(body)
   });

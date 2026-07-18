@@ -314,7 +314,7 @@ export function buildDataDrivenScript({ source, title, fields = [], assertions =
   const schema = schemaFromFields(fields);
   const script = [
     "const { test, expect } = require('@playwright/test');",
-    "const { defineRecordedTests } = require('../support/recorded-script');",
+    "const { defineRecordedTests } = require(process.cwd() + '/tests/support/recorded-script');",
     '',
     `const testDataSchema = ${JSON.stringify(schema, null, 2)};`,
     '',
