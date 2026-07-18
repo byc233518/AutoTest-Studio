@@ -196,6 +196,23 @@ function validateFields(fields) {
   return warnings;
 }
 
+function validateCandidateIds(fields, candidates) {
+  const known = new Set(candidates.map((candidate) => candidate.candidateId));
+  const seen = new Set();
+  const warnings = [];
+  for (const field of fields) {
+    if (field.candidateId === undefined) continue;
+    if (typeof field.candidateId !== 'string' || !field.candidateId.trim()) {
+      warnings.push('字段 candidateId 不能为空。');
+      continue;
+    }
+    if (seen.has(field.candidateId)) warnings.push(`字段 candidateId 不能重复：${field.candidateId}。`);
+    if (!known.has(field.candidateId)) warnings.push(`字段 candidateId 未对应录制候选：${field.candidateId}。`);
+    seen.add(field.candidateId);
+  }
+  return warnings;
+}
+
 function locatorSource(locator) {
   if (!locator || typeof locator !== 'object') return { error: '断言缺少 locator 定位器。' };
   const { value } = locator;
@@ -259,10 +276,13 @@ function wizardAssertionSource(assertion) {
 export function buildDataDrivenScript({ source, title, fields = [], assertions = [] } = {}) {
   const fieldWarnings = validateFields(fields);
   if (fieldWarnings.length) return { supported: false, warnings: fieldWarnings, source: '', script: '', schema: schemaFromFields([]) };
+  if (!Array.isArray(assertions)) return { supported: false, warnings: ['断言配置必须是数组。'], source: '', script: '', schema: schemaFromFields(fields) };
   const parsed = parseSingleTest(source);
   if (parsed.error) return { supported: false, warnings: [parsed.error], source: '', script: '', schema: schemaFromFields(fields) };
 
   const details = collectScriptDetails(parsed.callback);
+  const candidateWarnings = validateCandidateIds(fields, details.fields);
+  if (candidateWarnings.length) return { supported: false, warnings: candidateWarnings, source: '', script: '', schema: schemaFromFields(fields) };
   const fieldsByCandidate = new Map(fields.map((field) => [field.candidateId, field]));
   const rewritten = new MagicString(source);
   for (const candidate of details.fields) {
@@ -287,6 +307,7 @@ export function buildDataDrivenScript({ source, title, fields = [], assertions =
       warnings.push(normalized.error);
     } else if (!originalAssertionKeys.has(assertionKey(normalized))) {
       additions.push(wizardAssertionSource(normalized));
+      originalAssertionKeys.add(assertionKey(normalized));
     }
   }
   const callbackBody = [body, ...additions].filter(Boolean).join('\n  ');

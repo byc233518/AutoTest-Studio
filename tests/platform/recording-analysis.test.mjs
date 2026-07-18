@@ -236,3 +236,34 @@ test('非法字段配置返回中文 warnings 而不抛出', () => {
     assert.match(result.warnings.join('\n'), /字段/);
   }
 });
+
+test('非法 assertions 配置返回中文 warning 而不抛出', () => {
+  for (const assertions of [null, 1, {}]) {
+    const result = buildDataDrivenScript({ source: basicSource, fields: [], assertions });
+    assert.equal(result.supported, false);
+    assert.match(result.warnings.join('\n'), /断言/);
+  }
+});
+
+test('重复的向导新增断言只生成一次', () => {
+  const assertion = { type: 'visible', locator: { kind: 'text', value: '新增成功' } };
+  const result = buildDataDrivenScript({ source: basicSource, fields: [], assertions: [assertion, assertion] });
+
+  assert.equal(result.source.match(/getByText\("新增成功"\)\)\.toBeVisible/g)?.length, 1);
+});
+
+test('未知或重复 candidateId 返回 warning，手工字段可只进入 schema', () => {
+  const cases = [
+    [{ candidateId: 'field-1', key: 'a' }, { candidateId: 'field-1', key: 'b' }],
+    [{ candidateId: 'unknown', key: 'a' }]
+  ];
+  for (const fields of cases) {
+    const result = buildDataDrivenScript({ source: basicSource, fields });
+    assert.equal(result.supported, false);
+    assert.match(result.warnings.join('\n'), /candidateId/);
+  }
+
+  const manual = buildDataDrivenScript({ source: basicSource, fields: [{ key: 'note', example: '说明' }] });
+  assert.equal(manual.supported, true);
+  assert.deepEqual(manual.schema.example, { note: '说明' });
+});
