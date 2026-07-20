@@ -19,27 +19,13 @@ test('环境列表包含两个种子环境且密码脱敏', async (t) => {
   assert.equal(body.environments.find((env) => env.key === 'test').isDefault, true);
 });
 
-test('管理员可以创建新环境，测试员不能', async (t) => {
+test('任意登录用户都可以创建新环境', async (t) => {
   const ctx = await createTestContext(t);
-  const adminCookie = await ctx.loginCookie('admin', 'Admin123!');
   const testerCookie = await ctx.loginCookie('tester', 'Tester123!');
-
-  const forbidden = await ctx.fetch('/api/environments', {
-    method: 'POST',
-    headers: { cookie: testerCookie, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      key: 'dev',
-      name: '开发环境',
-      baseUrl: 'http://127.0.0.1:3000',
-      username: 'byc',
-      password: 'Abcd1234'
-    })
-  });
-  assert.equal(forbidden.status, 403);
 
   const created = await ctx.fetch('/api/environments', {
     method: 'POST',
-    headers: { cookie: adminCookie, 'content-type': 'application/json' },
+    headers: { cookie: testerCookie, 'content-type': 'application/json' },
     body: JSON.stringify({
       key: 'dev',
       name: '开发环境',

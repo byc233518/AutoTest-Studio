@@ -112,6 +112,49 @@ export function compareScenarioRelease(database, scenarioId, releaseId, toReleas
   };
 }
 
+export function compareScenarioDraft({ database, scenario, scriptContent = '', releaseId } = {}) {
+  if (!database || !scenario) return null;
+  const releases = listScenarioReleases(database, scenario.id);
+  const release = releaseId
+    ? getScenarioRelease(database, scenario.id, releaseId)
+    : releases[0];
+  if (!release) return null;
+
+  const draft = snapshotFromScenario(scenario, {
+    scriptEntry: scenario.script_entry || scenario.scriptEntry || '',
+    scriptContent
+  });
+  const published = release.snapshot || {};
+  const equal = (left, right) => JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
+  const scriptChanged = draft.scriptHash !== release.scriptHash || draft.scriptEntry !== published.scriptEntry;
+  const schemaChanged = !equal(draft.dataSchema || {}, published.dataSchema || {});
+  const scenarioKeys = ['name', 'description', 'module', 'appId', 'moduleId', 'priority', 'owner', 'dependsOn'];
+  const scenarioChangedKeys = scenarioKeys.filter((key) => !equal(draft[key], published[key]));
+  const scenarioChanged = scenarioChangedKeys.length > 0;
+  const labels = [scriptChanged && '脚本', schemaChanged && '字段', scenarioChanged && '基本信息'].filter(Boolean);
+
+  return {
+    release,
+    version: release.version,
+    changed: labels.length > 0,
+    summary: labels.length ? `${labels.join('、')}有变化` : '内容一致',
+    scriptChanged,
+    schemaChanged,
+    scenarioChanged,
+    changedKeys: [
+      ...(scriptChanged ? ['script'] : []),
+      ...(schemaChanged ? ['dataSchema'] : []),
+      ...scenarioChangedKeys
+    ],
+    changes: {
+      script: { changed: scriptChanged },
+      schema: { changed: schemaChanged },
+      scenario: { changed: scenarioChanged, keys: scenarioChangedKeys }
+    },
+    snapshots: { draft, release: published }
+  };
+}
+
 export function restoreScenarioRelease({ database, scenarioId, releaseId, scriptEntry }) {
   const row = database?.getScenarioReleaseById(releaseId);
   if (!row || row.scenario_id !== scenarioId) return null;

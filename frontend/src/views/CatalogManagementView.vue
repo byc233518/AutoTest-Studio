@@ -1,4 +1,4 @@
-<template><ManagementTable :title="config.title" :description="config.description" :item-name="config.itemName" :rows="config.rows" :columns="config.columns" :fields="config.fields" :readonly="readonly" :on-save="save" :on-delete="remove" /></template>
+<template><ManagementTable :title="config.title" :description="config.description" :item-name="config.itemName" :rows="config.rows" :columns="config.columns" :fields="config.fields" :on-save="save" :on-delete="remove" /></template>
 <script setup>
 import { computed } from 'vue';
 import { api } from '../api';
@@ -6,7 +6,7 @@ import { usePlatformStore } from '../stores/platform';
 import ManagementTable from '../components/ManagementTable.vue';
 
 const props=defineProps({type:{type:String,required:true}}), store=usePlatformStore();
-const readonly=computed(()=>store.user?.role==='tester'), appOptions=computed(()=>store.apps.map(item=>({label:item.name,value:item.id})));
+const appOptions=computed(()=>store.apps.map(item=>({label:item.name,value:item.id})));
 const config=computed(()=>props.type==='apps'?{
   title:'应用管理',description:'维护测试场景所属的业务应用',itemName:'应用',rows:store.apps,
   columns:[{prop:'name',label:'应用名称',minWidth:180},{prop:'key',label:'标识',minWidth:150},{prop:'description',label:'说明',minWidth:260},{prop:'sort',label:'排序',width:90}],

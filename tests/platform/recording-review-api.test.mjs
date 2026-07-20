@@ -14,7 +14,7 @@ test('录制字段', async ({ page }) => {
 });
 `;
 
-async function createRecording(ctx, cookie, key = 'recording-review-demo') {
+async function createRecording(ctx, cookie, key = 'recording-review-demo', source = recordedSource) {
   const created = await ctx.fetch('/api/scenarios', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
@@ -30,7 +30,7 @@ async function createRecording(ctx, cookie, key = 'recording-review-demo') {
   const recording = await started.json();
   const form = new FormData();
   form.append('token', recording.uploadToken);
-  form.append('file', new Blob([recordedSource], { type: 'text/javascript' }), `${recording.id}.spec.js`);
+  form.append('file', new Blob([source], { type: 'text/javascript' }), `${recording.id}.spec.js`);
   const uploaded = await ctx.fetch(`/api/recordings/${recording.id}/upload`, { method: 'POST', body: form });
   assert.equal(uploaded.status, 200);
   return { recording, uploaded: await uploaded.json() };
@@ -146,6 +146,52 @@ test('apply 成功保存数据驱动脚本，非法映射返回 422 且不覆盖
   });
   assert.equal(merged.status, 200);
   assert.deepEqual((await merged.json()).scenario.dataSchema.columns, ['mergedCode']);
+});
+
+test('preview 返回真实参数化脚本且不会保存、改状态或创建版本', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const { recording, uploaded } = await createRecording(ctx, cookie, 'recording-preview-demo');
+  const beforeScenario = await (await ctx.fetch('/api/scenarios/recording-preview-demo', { headers: { cookie } })).json();
+  const beforeVersions = await (await ctx.fetch('/api/scenarios/recording-preview-demo/script/versions', { headers: { cookie } })).json();
+  const body = {
+    title: '预览客户脚本',
+    fields: [{ candidateId: uploaded.analysis.fields[0].candidateId, candidateIds: [uploaded.analysis.fields[0].candidateId], key: 'customerCode', label: '客户编号', required: true }],
+    assertions: uploaded.analysis.assertions
+  };
+
+  const preview = await ctx.fetch(`/api/recordings/${recording.id}/preview`, {
+    method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(body)
+  });
+  assert.equal(preview.status, 200);
+  const result = await preview.json();
+  assert.match(result.source, /data\["customerCode"\]/);
+  assert.deepEqual(result.schema.columns, ['customerCode']);
+  assert.deepEqual(result.warnings, []);
+
+  const afterScenario = await (await ctx.fetch('/api/scenarios/recording-preview-demo', { headers: { cookie } })).json();
+  const afterVersions = await (await ctx.fetch('/api/scenarios/recording-preview-demo/script/versions', { headers: { cookie } })).json();
+  const meta = JSON.parse(await readFile(`${ctx.app.locals.paths.recordingsDir}/${recording.id}.meta.json`, 'utf8'));
+  assert.deepEqual(afterScenario, beforeScenario);
+  assert.deepEqual(afterVersions, beforeVersions);
+  assert.equal(meta.status, 'draft');
+  assert.equal(meta.applied, undefined);
+});
+
+test('apply 使用 candidateIds 将两个固定输入合并到同一字段', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const source = `const { test } = require('@playwright/test');\ntest('合并字段', async ({ page }) => {\n  await page.getByLabel('客户编码').fill('C-001');\n  await page.getByLabel('客户名称').fill('客户一');\n});\n`;
+  const { recording, uploaded } = await createRecording(ctx, cookie, 'recording-merge-demo', source);
+  const candidateIds = uploaded.analysis.fields.map((field) => field.candidateId);
+  const response = await ctx.fetch(`/api/recordings/${recording.id}/apply`, {
+    method: 'POST', headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ title: '合并字段', fields: [{ candidateId: candidateIds[0], candidateIds, key: 'customer', label: '客户', required: true }], assertions: [] })
+  });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.deepEqual(result.scenario.dataSchema.columns, ['customer']);
+  assert.equal(result.script.match(/data\["customer"\]/g)?.length, 2);
 });
 
 test('重复上传原始录制不会回绑覆盖已应用脚本，且 apply 校验录制归属', async (t) => {
@@ -306,6 +352,42 @@ test('merge 在脚本已匹配目标但平台 schema 不同时仍同步平台 sc
   });
   assert.equal(merged.status, 200);
   assert.deepEqual((await merged.json()).scenario.dataSchema.columns, ['targetCode']);
+});
+
+test('已有数据集时字段合约变更要求先走数据迁移', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const key = 'contract-requires-migration';
+  assert.equal((await ctx.fetch('/api/scenarios', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ key, name: key, dataSchema: { columns: ['platformCode'], required: [], example: { platformCode: 'P' } } })
+  })).status, 201);
+  const dataset = new FormData();
+  dataset.append('name', '旧字段数据');
+  dataset.append('file', new Blob(['platformCode\nP-001\n'], { type: 'text/csv' }), 'data.csv');
+  assert.equal((await ctx.fetch(`/api/scenarios/${key}/datasets`, { method: 'POST', headers: { cookie }, body: dataset })).status, 201);
+  const source = `const testDataSchema = { columns: ['scriptCode'], required: [], example: { scriptCode: 'S' } };\nconst { test } = require('@playwright/test');\ntest('migration required', async ({ page }) => { await page.getByLabel('编号').fill(data.scriptCode); });\n`;
+  const form = new FormData();
+  form.append('file', new Blob([source], { type: 'text/javascript' }), `${key}.spec.js`);
+  assert.equal((await ctx.fetch(`/api/scenarios/${key}/script`, { method: 'POST', headers: { cookie }, body: form })).status, 201);
+  assert.equal((await ctx.fetch(`/api/scenarios/${key}`, {
+    method: 'PUT',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ dataSchema: { columns: ['platformCode'], required: [], example: { platformCode: 'P' } } })
+  })).status, 200);
+
+  const result = await ctx.fetch(`/api/scenarios/${key}/contract`, {
+    method: 'PUT',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ resolution: 'script', mappings: [] })
+  });
+
+  assert.equal(result.status, 409);
+  const body = await result.json();
+  assert.equal(body.code, 'MIGRATION_REQUIRED');
+  assert.deepEqual(body.targetSchema.columns, ['scriptCode']);
+  assert.deepEqual((await (await ctx.fetch(`/api/scenarios/${key}`, { headers: { cookie } })).json()).dataSchema.columns, ['platformCode']);
 });
 
 test('script 相同 schema 和 raw 相同上传都保持已发布场景不变', async (t) => {

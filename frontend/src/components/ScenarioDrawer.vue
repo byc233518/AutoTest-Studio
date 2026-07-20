@@ -1,9 +1,18 @@
 <template>
-  <el-drawer v-model="visible" size="min(860px, 96%)">
+  <el-drawer v-model="visible" size="min(1040px, 96%)" :before-close="beforeDrawerClose">
     <template #header>
-      <div>
-        <h2>{{ scenario?.name }}</h2>
-        <span class="muted">维护测试数据、脚本与录制</span>
+      <div class="workspace-header">
+        <div class="workspace-title"><div><h2>{{ scenario?.name }}</h2><span class="muted">维护测试数据、脚本与录制</span></div><el-tag :type="scenario?.status === 'published' ? 'success' : 'warning'">{{ scenarioStatusLabel }}</el-tag></div>
+        <div class="workspace-summary">
+          <div><span>场景状态</span><strong>{{ scenarioStatusLabel }}</strong></div>
+          <div><span>当前脚本</span><strong :title="scenario?.scriptEntry">{{ currentScriptLabel }}</strong></div>
+          <div><span>字段数量</span><strong>{{ dataColumns.length }}</strong></div>
+          <div><span>最近执行</span><strong>{{ recentRunLabel }}</strong></div>
+        </div>
+        <div class="workspace-actions">
+          <el-button type="primary" :disabled="!scenario" @click="runRef.open(scenario)">执行</el-button>
+          <el-button type="success" :disabled="!scenario?.scriptEntry" @click="publishCurrent">立即发布</el-button>
+        </div>
       </div>
     </template>
 
@@ -43,6 +52,7 @@
           <el-button :loading="dataGenerating" @click="generate(false)">自动生成</el-button>
           <el-button :loading="dataGenerating" @click="openAiGeneration">AI 生成</el-button>
           <el-button :icon="Plus" @click="addDataRow">增加一行</el-button>
+          <el-button @click="migrationRef?.open()">字段迁移</el-button>
         </div>
 
         <el-table v-loading="dataLoading" :data="dataRows" border max-height="430" class="editable-grid" empty-text="暂无数据，请增加一行、导入文件或自动生成">
@@ -72,7 +82,7 @@
         <section class="script-section" v-loading="scriptLoading">
           <div class="section-header">
             <div class="section-title">
-              <strong>测试脚本</strong>
+              <div class="script-title-line"><strong>测试脚本</strong><el-tag v-if="scriptDirty" type="warning" effect="plain">未保存</el-tag></div>
               <el-text class="script-entry" truncated>{{ scenario?.scriptEntry || '尚未绑定脚本' }}</el-text>
             </div>
             <div class="drawer-actions">
@@ -88,13 +98,15 @@
               <el-input v-model="scriptFileName" placeholder="scenario.spec.js" />
             </el-form-item>
             <el-form-item label="脚本源码">
-              <el-input v-model="scriptSource" class="script-editor" type="textarea" :rows="18" resize="vertical" spellcheck="false" placeholder="输入 Playwright 测试脚本" />
+              <ScriptEditor v-model="scriptSource" :readonly="scriptLoading || scriptSaving" :errors="scriptErrors" />
             </el-form-item>
           </el-form>
 
           <div class="editor-actions">
-            <el-button :icon="Refresh" :disabled="!scenario?.scriptEntry" @click="loadScript">重新加载</el-button>
+            <el-button :icon="Refresh" :disabled="!scenario?.scriptEntry" @click="reloadScript">重新加载</el-button>
             <el-button type="primary" :icon="DocumentChecked" :loading="scriptSaving" :disabled="!scriptSource.trim() || !scriptFileName.trim()" @click="saveScript">保存脚本</el-button>
+            <el-button :disabled="!scenario?.scriptEntry" @click="schemaRef?.open()">字段合约同步</el-button>
+            <el-button :disabled="!scenario?.scriptEntry" @click="comparePublished">与发布版比较</el-button>
           </div>
         </section>
 
@@ -110,18 +122,33 @@
         <el-button type="primary" :icon="VideoCamera" :loading="recordLoading" @click="startRecord">开始录制</el-button>
         <div v-if="recording" class="record-command">
           <strong>录制状态：{{ recordStatus }}</strong>
-          <div v-if="recording.recordCode">
-            <el-text tag="code" size="large">{{ recording.recordCode }}</el-text>
+          <div class="record-fallback">
+            <el-text tag="code" size="large">{{ recording.recordCode || '等待录制码' }}</el-text>
             <p>录制码有效期：{{ formatDate(recording.recordCodeExpires) }}</p>
             <div class="drawer-actions">
-              <el-button type="primary" @click="copyRecordCode">复制录制码</el-button>
-              <el-button @click="downloadRecorder">下载免安装录制器</el-button>
+              <el-button type="primary" :disabled="!recording.recordCode" @click="copyRecordCode">复制录制码</el-button>
+              <el-button :disabled="!recording.recorderDownloadUrl" @click="downloadRecorder">下载免安装录制器</el-button>
             </div>
           </div>
-          <p v-if="recording.status !== 'finished'">在免安装录制器中输入录制码；关闭 Inspector 后脚本会自动上传并绑定。</p>
-          <p v-else>脚本已绑定：{{ recording.scriptEntry }}</p>
+          <p v-if="recording.status !== 'finished' && recording.status !== 'draft'">在免安装录制器中输入录制码；关闭 Inspector 后脚本会自动上传并绑定。</p>
+          <p v-else>脚本已上传：{{ recording.scriptEntry || '等待复核' }}</p>
           <el-button :loading="recordLoading" @click="refresh">刷新状态</el-button>
         </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="发布版本" name="releases">
+        <ScenarioReleases ref="releaseRef" :scenario-key="scenario?.key" :current-script="scriptSource" :current-scenario="scenario" :before-change="guardReleaseChange" @published="scenarioSaved" @restored="scenarioRestored" />
+      </el-tab-pane>
+
+      <el-tab-pane label="执行记录" name="runs">
+        <div class="runs-toolbar"><strong>执行记录</strong><el-button @click="store.loadRuns">刷新记录</el-button></div>
+        <el-table :data="scenarioRuns" border max-height="420" empty-text="暂无执行记录">
+          <el-table-column prop="runId" label="任务" min-width="180" />
+          <el-table-column prop="status" label="状态" width="110" />
+          <el-table-column prop="executionLocation" label="执行位置" width="130" />
+          <el-table-column prop="startedAt" label="开始时间" min-width="180" />
+          <el-table-column label="报告 / 过程证据" width="150" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="runDetailRef.open(row)">查看报告与证据</el-button></template></el-table-column>
+        </el-table>
       </el-tab-pane>
     </el-tabs>
 
@@ -144,16 +171,28 @@
     </el-dialog>
 
     <ScenarioFormDialog ref="formRef" @saved="scenarioSaved" />
+    <RecordingReviewDialog v-model="reviewVisible" :recording="reviewRecording" @applied="reviewApplied" />
+    <SchemaSyncDialog ref="schemaRef" v-model="schemaVisible" :scenario-key="scenario?.key" @synced="schemaSynced" @migration-required="schemaMigrationRequired" />
+    <DatasetMigrationDialog ref="migrationRef" v-model="migrationVisible" :scenario-key="scenario?.key" :scenario-schema="scenario?.dataSchema" :datasets="datasets" @migrated="datasetsMigrated" />
+    <RunDialog ref="runRef" @started="handleRunStarted" />
+    <RunDetailDrawer ref="runDetailRef" />
   </el-drawer>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Delete, DocumentChecked, Download, Plus, Refresh, Upload, VideoCamera } from '@element-plus/icons-vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { api } from '../api';
 import { usePlatformStore } from '../stores/platform';
 import ScenarioFormDialog from './ScenarioFormDialog.vue';
+import ScriptEditor from './ScriptEditor.vue';
+import RecordingReviewDialog from './RecordingReviewDialog.vue';
+import SchemaSyncDialog from './SchemaSyncDialog.vue';
+import DatasetMigrationDialog from './DatasetMigrationDialog.vue';
+import ScenarioReleases from './ScenarioReleases.vue';
+import RunDialog from './RunDialog.vue';
+import RunDetailDrawer from './RunDetailDrawer.vue';
 
 const emit = defineEmits(['changed']);
 const store = usePlatformStore();
@@ -181,10 +220,30 @@ const scriptSaving = ref(false);
 const scriptUploading = ref(false);
 const scriptUploadFile = ref(null);
 const scriptUploadRef = ref();
+const savedScriptSource = ref('');
+const scriptErrors = ref([]);
+const reviewVisible = ref(false);
+const reviewRecording = ref(null);
+const schemaVisible = ref(false);
+const migrationVisible = ref(false);
+const reviewOpenedFor = ref('');
+const schemaRef = ref();
+const migrationRef = ref();
+const releaseRef = ref();
+const runRef = ref();
+const runDetailRef = ref();
+let recordTimer;
+let recordRequestGeneration = 0;
 
-const recordStatus = computed(() => recording.value?.status === 'finished' ? '已完成并绑定' : '录制中');
+const recordStatus = computed(() => recording.value?.status === 'finished' || recording.value?.status === 'draft' ? '已完成待复核' : '录制中');
 const dataColumns = computed(() => scenario.value?.dataSchema?.columns || []);
 const requiredColumns = computed(() => new Set(scenario.value?.dataSchema?.required || []));
+const scenarioRuns = computed(() => store.runs.filter((run) => run.scenarioId === scenario.value?.id || run.scenarioKey === scenario.value?.key));
+const scriptDirty = computed(() => scriptSource.value !== savedScriptSource.value);
+const scenarioStatusLabel = computed(() => scenario.value?.status === 'published' ? '已发布' : '草稿');
+const currentScriptLabel = computed(() => scenario.value?.scriptEntry?.split(/[\\/]/).pop() || '尚未绑定');
+const recentRun = computed(() => scenarioRuns.value[0]);
+const recentRunLabel = computed(() => ({ passed: '通过', failed: '失败', running: '执行中', queued: '排队中', skipped: '已跳过' })[recentRun.value?.status] || '暂无记录');
 
 function blankDataRow() {
   return Object.fromEntries(dataColumns.value.map((column) => [
@@ -212,33 +271,56 @@ async function loadDataset(datasetId) {
   }
 }
 
-async function loadScript(showMessage = true) {
+async function loadScript(showMessage = true, isCurrent = () => true) {
+  const scenarioKey = scenario.value?.key;
   if (!scenario.value?.scriptEntry) {
+    if (!isCurrent()) return false;
     scriptSource.value = '';
-    scriptFileName.value = `${scenario.value.key}.spec.js`;
-    return;
+    savedScriptSource.value = '';
+    scriptErrors.value = [];
+    scriptFileName.value = `${scenarioKey}.spec.js`;
+    return true;
   }
   scriptLoading.value = true;
   try {
-    const result = await api(`/api/scenarios/${scenario.value.key}/script`);
+    const result = await api(`/api/scenarios/${scenarioKey}/script`);
+    if (!isCurrent()) return false;
     scriptSource.value = result.content;
+    savedScriptSource.value = result.content;
+    scriptErrors.value = [];
     scriptFileName.value = result.fileName;
     if (showMessage) ElMessage.success('脚本已重新加载');
+    return true;
   } catch (error) {
-    ElMessage.error(error.message);
+    if (isCurrent()) ElMessage.error(error.message);
+    return false;
   } finally {
-    scriptLoading.value = false;
+    if (isCurrent()) scriptLoading.value = false;
   }
 }
 
+async function reloadScript() {
+  if (scriptDirty.value) {
+    try { await ElMessageBox.confirm('重新加载会丢失未保存的脚本修改。', '确认重新加载', { type: 'warning' }); }
+    catch { return; }
+  }
+  await loadScript(true);
+}
+
 async function open(item) {
+  stopRecordPolling();
   scenario.value = item;
   tab.value = 'base';
   recording.value = null;
+  reviewRecording.value = null;
+  reviewVisible.value = false;
+  reviewOpenedFor.value = '';
   selectedDatasetId.value = '';
   dataRows.value = [];
   scriptUploadFile.value = null;
   scriptSource.value = '';
+  savedScriptSource.value = '';
+  scriptErrors.value = [];
   scriptFileName.value = `${item.key}.spec.js`;
   datasetName.value = `${item.name}数据`;
   try {
@@ -369,7 +451,7 @@ async function uploadScript() {
   scriptUploading.value = true;
   try {
     const result = await api(`/api/scenarios/${scenario.value.key}/script`, { method: 'POST', body });
-    scenario.value = { ...scenario.value, scriptEntry: result.scriptEntry };
+    scenario.value = { ...scenario.value, scriptEntry: result.scriptEntry, ...(result.dataSchema ? { dataSchema: result.dataSchema } : {}) };
     scriptUploadRef.value.clearFiles();
     scriptUploadFile.value = null;
     await loadScript(false);
@@ -385,15 +467,18 @@ async function uploadScript() {
 async function saveScript() {
   scriptSaving.value = true;
   try {
+    scriptErrors.value = [];
     const result = await api(`/api/scenarios/${scenario.value.key}/script`, {
       method: 'PUT',
       body: JSON.stringify({ fileName: scriptFileName.value.trim(), content: scriptSource.value })
     });
     scriptFileName.value = result.fileName;
-    scenario.value = { ...scenario.value, scriptEntry: result.scriptEntry };
+    scenario.value = { ...scenario.value, scriptEntry: result.scriptEntry, ...(result.dataSchema ? { dataSchema: result.dataSchema } : {}) };
+    savedScriptSource.value = scriptSource.value;
     emit('changed');
     ElMessage.success('脚本保存成功');
   } catch (error) {
+    scriptErrors.value = [error.message];
     ElMessage.error(error.message);
   } finally {
     scriptSaving.value = false;
@@ -401,13 +486,19 @@ async function saveScript() {
 }
 
 async function startRecord() {
+  invalidateRecordingRequests();
+  const request = { generation: recordRequestGeneration, scenarioKey: scenario.value?.key };
   recordLoading.value = true;
   try {
-    recording.value = await api('/api/recordings/start', { method: 'POST', body: JSON.stringify({ scenarioKey: scenario.value.key, environmentKey: environment.value }) });
+    const result = await api('/api/recordings/start', { method: 'POST', body: JSON.stringify({ scenarioKey: request.scenarioKey, environmentKey: environment.value, location: 'local' }) });
+    if (!isCurrentRecordingRequest(request)) return;
+    recording.value = result;
+    startRecordPolling();
+    if (recording.value.desktopLaunchUrl) window.location.href = recording.value.desktopLaunchUrl;
   } catch (error) {
-    ElMessage.error(error.message);
+    if (isCurrentRecordingRequest(request)) ElMessage.error(error.message);
   } finally {
-    recordLoading.value = false;
+    if (isCurrentRecordingRequest(request)) recordLoading.value = false;
   }
 }
 
@@ -424,26 +515,68 @@ function formatDate(value) {
   return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-';
 }
 
-async function refresh() {
+function stopRecordPolling() {
+  invalidateRecordingRequests();
+  clearInterval(recordTimer);
+  recordTimer = undefined;
+}
+
+function invalidateRecordingRequests() {
+  recordRequestGeneration += 1;
+  recordLoading.value = false;
+}
+
+function isCurrentRecordingRequest({ generation, recordingId, scenarioKey }) {
+  return generation === recordRequestGeneration
+    && (!recordingId || recording.value?.id === recordingId)
+    && scenario.value?.key === scenarioKey;
+}
+
+function startRecordPolling() {
+  stopRecordPolling();
+  if (!['waiting', 'recording'].includes(recording.value?.status)) return;
+  recordTimer = setInterval(() => refresh({ silent: true }), 2000);
+}
+
+async function refresh({ silent = false } = {}) {
+  if (!recording.value?.id || recordLoading.value) return;
+  const request = {
+    generation: recordRequestGeneration,
+    recordingId: recording.value.id,
+    scenarioKey: scenario.value?.key
+  };
   recordLoading.value = true;
   try {
-    const result = await api(`/api/recordings/${recording.value.id}`);
+    const result = await api(`/api/recordings/${request.recordingId}`);
+    if (!isCurrentRecordingRequest(request)) return;
     recording.value = { ...recording.value, ...result };
-    if (result.status === 'finished') {
-      await syncScenario(result);
-      await loadScript(false);
+    if (result.status === 'finished' || result.status === 'draft') {
+      stopRecordPolling();
+      const completionRequest = { ...request, generation: recordRequestGeneration };
+      if (!isCurrentRecordingRequest(completionRequest)) return;
+      await syncScenario(result, () => isCurrentRecordingRequest(completionRequest));
+      if (!isCurrentRecordingRequest(completionRequest)) return;
+      const scriptLoaded = await loadScript(false, () => isCurrentRecordingRequest(completionRequest));
+      if (!scriptLoaded || !isCurrentRecordingRequest(completionRequest)) return;
+      if (recording.value.analysis && reviewOpenedFor.value !== result.id) {
+        reviewOpenedFor.value = result.id;
+        reviewRecording.value = recording.value;
+        reviewVisible.value = true;
+      }
     }
-    ElMessage.success('录制状态已刷新');
+    if (!silent) ElMessage.success('录制状态已刷新');
   } catch (error) {
-    ElMessage.error(error.message);
+    if (!silent && isCurrentRecordingRequest(request)) ElMessage.error(error.message);
   } finally {
-    recordLoading.value = false;
+    if (isCurrentRecordingRequest(request)) recordLoading.value = false;
   }
 }
 
-async function syncScenario(result) {
+async function syncScenario(result, isCurrent = () => true) {
+  if (!isCurrent()) return;
   if (result.scenario) scenario.value = { ...scenario.value, ...result.scenario };
   else if (result.scriptEntry) scenario.value = { ...scenario.value, scriptEntry: result.scriptEntry };
+  if (!isCurrent()) return;
   emit('changed');
 }
 
@@ -452,10 +585,104 @@ function scenarioSaved(result) {
   emit('changed');
 }
 
+function scenarioRestored(result) {
+  scenario.value = { ...scenario.value, ...result, status: 'draft' };
+  tab.value = 'base';
+  loadScript(false);
+  emit('changed');
+}
+
+function reviewApplied(result) {
+  if (result?.scenario) scenario.value = { ...scenario.value, ...result.scenario, status: 'draft' };
+  if (result?.script) {
+    scriptSource.value = result.script;
+    savedScriptSource.value = result.script;
+  }
+  emit('changed');
+}
+
+function schemaSynced(result) {
+  if (result?.scenario) scenario.value = { ...scenario.value, ...result.scenario };
+  if (result?.script) {
+    scriptSource.value = result.script;
+    savedScriptSource.value = result.script;
+  }
+  emit('changed');
+}
+
+function datasetsMigrated() {
+  loadDatasets();
+  emit('changed');
+}
+
+function schemaMigrationRequired(payload = {}) {
+  tab.value = 'data';
+  migrationRef.value?.open({
+    scenarioSchema: payload.targetSchema || scenario.value?.dataSchema,
+    datasets: payload.datasets || datasets.value
+  });
+}
+
+function guardReleaseChange() {
+  if (!scriptDirty.value) return true;
+  tab.value = 'record';
+  ElMessage.warning('请先保存脚本，再发布或恢复场景版本');
+  return false;
+}
+
+async function publishCurrent() {
+  if (!guardReleaseChange()) return;
+  tab.value = 'releases';
+  await nextTick();
+  releaseRef.value?.publish();
+}
+
+async function comparePublished() {
+  tab.value = 'releases';
+  await nextTick();
+  releaseRef.value?.compareDraft();
+}
+
+async function handleRunStarted(run) {
+  await store.loadRuns().catch(() => {});
+  const detail = store.runs.find((item) => item.runId === run.runId) || run;
+  runDetailRef.value?.open(detail);
+}
+
+function beforeDrawerClose(done) {
+  const close = () => { stopRecordPolling(); done(); };
+  if (!scriptDirty.value) return close();
+  ElMessageBox.confirm('脚本还有未保存修改，关闭后将丢失这些修改。', '确认关闭', { type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' })
+    .then(close)
+    .catch(() => {});
+}
+
+function warnBeforeUnload(event) {
+  if (!visible.value || !scriptDirty.value) return;
+  event.preventDefault();
+  event.returnValue = '';
+}
+
+watch(visible, (value) => { if (!value) stopRecordPolling(); });
+onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload));
+onBeforeUnmount(() => {
+  stopRecordPolling();
+  window.removeEventListener('beforeunload', warnBeforeUnload);
+});
+
 defineExpose({ open });
 </script>
 
 <style scoped>
+.workspace-header { display: grid; width: 100%; gap: 10px; padding-right: 6px; }
+.workspace-title, .workspace-actions, .script-title-line { display: flex; align-items: center; gap: 10px; }
+.workspace-title { justify-content: space-between; min-width: 0; }
+.workspace-title h2 { margin: 0; }
+.workspace-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.workspace-summary > div { display: grid; min-width: 0; gap: 2px; }
+.workspace-summary span { color: var(--el-text-color-secondary); font-size: 12px; }
+.workspace-summary strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-actions { justify-content: flex-end; }
 .drawer-actions { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
 .dataset-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto; gap: 10px; margin-bottom: 12px; }
 .dataset-toolbar .el-select { width: 100%; }
@@ -467,15 +694,21 @@ defineExpose({ open });
 .section-title { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 6px; }
 .script-entry { display: block; max-width: 420px; }
 .script-form :deep(.el-form-item:last-child) { margin-bottom: 12px; }
-.script-editor :deep(textarea) { min-height: 320px; font-family: Consolas, "Courier New", monospace; font-size: 13px; line-height: 1.55; tab-size: 2; }
+.script-editor { min-height: 320px; }
 .editor-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .record-form { margin-top: 16px; max-width: 420px; }
+.record-fallback { display: grid; gap: 4px; margin: 10px 0; }
+.runs-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 @media (max-width: 700px) {
+  .workspace-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace-actions { align-items: stretch; }
+  .workspace-actions .el-button { flex: 1; }
   .section-header { flex-direction: column; }
   .dataset-toolbar { grid-template-columns: 1fr; }
   .data-entry-toolbar { align-items: stretch; }
   .script-entry { max-width: 84vw; }
   .editor-actions { justify-content: stretch; }
   .editor-actions .el-button { flex: 1; }
+  .runs-toolbar { align-items: stretch; flex-direction: column; }
 }
 </style>

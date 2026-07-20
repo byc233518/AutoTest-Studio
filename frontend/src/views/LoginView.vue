@@ -48,6 +48,6 @@
 <script setup>
 import { reactive, ref } from 'vue';import { usePlatformStore } from '../stores/platform';
 const store=usePlatformStore(),loading=ref(false),error=ref('');
-const accounts=[{role:'测试人员',description:'执行场景、维护测试数据',username:'tester',password:'Tester123!'},{role:'场景维护员',description:'管理场景、应用和模块',username:'maintainer',password:'Maintainer123!'},{role:'管理员',description:'管理环境和全部平台配置',username:'admin',password:'Admin123!'}];
+const accounts=[{role:'演示账号',description:'具备平台全部操作能力',username:'tester',password:'Tester123!'},{role:'演示账号',description:'具备平台全部操作能力',username:'maintainer',password:'Maintainer123!'},{role:'演示账号',description:'具备平台全部操作能力',username:'admin',password:'Admin123!'}];
 const form=reactive({username:accounts[0].username,password:accounts[0].password});function selectAccount(account){form.username=account.username;form.password=account.password;error.value=''}async function submit(){loading.value=true;error.value='';try{await store.login(form)}catch(e){error.value=e.message}finally{loading.value=false}}
 </script>

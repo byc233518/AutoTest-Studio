@@ -8,6 +8,8 @@ import { createReadStream, existsSync } from 'node:fs';
 import { createPlatformDatabase } from './platform/database.mjs';
 import { seedPlatform } from './platform/seed.mjs';
 import { parseDatasetFile, validateRows } from './platform/datasets.mjs';
+import { migrateRows } from './platform/dataset-migration.mjs';
+import { diffSchemas, normalizeSchema, synchronizeScriptSchema } from './platform/schema-sync.mjs';
 import {
   completeLocalRun,
   createRun,
@@ -33,12 +35,25 @@ import {
   saveScenarioScriptContent
 } from './platform/scenario-scripts.mjs';
 import {
+  createScenarioRelease,
+  buildScenarioReleaseInput,
+  getScenarioRelease,
+  listScenarioReleases,
+  compareScenarioDraft,
+  compareScenarioRelease,
+  restoreScenarioRelease,
+  validateScenarioReleaseScript
+} from './platform/scenario-releases.mjs';
+import {
   buildLocalRecordCommand,
   createRecordingUploadToken,
   resolveRecordingScriptEntry,
   startRecordingProcess,
   stopRecordingProcess,
-  writeRecordingStub
+  writeRecordingStub,
+  analyzeRecordingScript,
+  buildRecordingReviewScript,
+  isManagedScriptEntry
 } from './platform/recordings.mjs';
 import {
   createRecordingCode,
@@ -54,15 +69,36 @@ import {
   resolveLocalExecutionTicket,
   writeLocalExecutionMeta
 } from './platform/local-executions.mjs';
+import { buildDesktopLaunchUrl } from './platform/desktop-launch.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(__dirname, '..');
 const legacyPublicDir = path.resolve(workspaceRoot, 'web');
 const builtPublicDir = path.resolve(workspaceRoot, 'web-dist');
 const publicDir = existsSync(builtPublicDir) ? builtPublicDir : legacyPublicDir;
+const SCENARIO_KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const MIGRATION_FILE_ATTEMPTS = 8;
 
 function jsonError(response, status, message, extra = {}) {
   return response.status(status).json({ message, ...extra });
+}
+
+function isValidScenarioKey(value) {
+  return typeof value === 'string' && SCENARIO_KEY_PATTERN.test(value);
+}
+
+function resolveWithinUploads(uploadsDir, ...segments) {
+  const target = path.resolve(uploadsDir, ...segments);
+  const relative = path.relative(uploadsDir, target);
+  if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error('迁移文件路径超出上传目录');
+  }
+  return target;
+}
+
+function isDatasetIdConflict(error) {
+  return error?.code === 'DATASET_ID_CONFLICT'
+    || String(error?.message || '').includes('UNIQUE constraint failed: datasets.id');
 }
 
 function sessionCookie(request) {
@@ -75,19 +111,10 @@ function requireAuth(request, response, next) {
   const token = sessionCookie(request);
   const session = token ? request.app.locals.database.getSession(token) : null;
   if (!session) {
-    return jsonError(response, 401, '璇峰厛鐧诲綍');
+    return jsonError(response, 401, '\u8bf7\u5148\u767b\u5f55');
   }
   request.user = session;
   return next();
-}
-
-function requireRole(...roles) {
-  return (request, response, next) => {
-    if (!roles.includes(request.user.role)) {
-      return jsonError(response, 403, '\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u6743\u9650\u6267\u884c\u8be5\u64cd\u4f5c');
-    }
-    return next();
-  };
 }
 
 function toPublicScenario(row) {
@@ -135,8 +162,69 @@ function toPublicDataset(row) {
     validationStatus: row.validation_status,
     uploadedBy: row.uploaded_by,
     createdAt: row.created_at,
-    errors: JSON.parse(row.errors || '[]')
+    errors: JSON.parse(row.errors || '[]'),
+    dataSchema: JSON.parse(row.schema_snapshot || '{}'),
+    sourceDatasetId: row.source_dataset_id || null,
+    migration: JSON.parse(row.migration_json || '{}')
   };
+}
+
+function migrationPayload(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const { datasetIds, targetSchema, mappings, defaults } = body;
+  if (!Array.isArray(datasetIds) || !datasetIds.length) return null;
+  if (datasetIds.some((id) => typeof id !== 'string' || !id.trim())) return null;
+  if (new Set(datasetIds).size !== datasetIds.length) return null;
+  return { datasetIds, targetSchema, mappings, defaults };
+}
+
+async function loadDatasetMigrationPreviews(database, scenario, payload) {
+  const sources = [];
+  for (const datasetId of payload.datasetIds) {
+    const dataset = database.getDatasetById(datasetId);
+    if (!dataset || dataset.scenario_id !== scenario.id) return null;
+    const rows = JSON.parse(await readFile(dataset.rows_path, 'utf8'));
+    const result = migrateRows({
+      rows,
+      targetSchema: payload.targetSchema,
+      mappings: payload.mappings,
+      defaults: payload.defaults
+    });
+    sources.push({ dataset, rows: result.rows, errors: result.errors });
+  }
+  return sources;
+}
+
+function publicMigrationPreviews(sources) {
+  return sources.map(({ dataset, rows, errors }) => ({
+    sourceDatasetId: dataset.id,
+    sourceDatasetName: dataset.name,
+    rowCount: rows.length,
+    rows,
+    errors
+  }));
+}
+
+async function writeExclusiveMigrationFile({ database, uploadsDir, scenarioId, rows, writer }) {
+  const targetDir = resolveWithinUploads(uploadsDir, scenarioId);
+  await mkdir(targetDir, { recursive: true });
+  for (let attempt = 0; attempt < MIGRATION_FILE_ATTEMPTS; attempt += 1) {
+    const datasetId = database.nextId('DS');
+    if (database.getDatasetById(datasetId)) continue;
+    const fileName = `${datasetId}.json`;
+    const rowsPath = resolveWithinUploads(uploadsDir, scenarioId, fileName);
+    try {
+      await writer(rowsPath, `${JSON.stringify(rows, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+      return { datasetId, fileName, rowsPath };
+    } catch (error) {
+      if (error?.code === 'EEXIST') continue;
+      await rm(rowsPath, { force: true });
+      throw error;
+    }
+  }
+  const error = new Error('无法生成唯一的数据集迁移文件');
+  error.code = 'DATASET_ID_CONFLICT';
+  throw error;
 }
 
 function scenarioReadiness(database, scenario, environmentKey = 'test') {
@@ -344,6 +432,7 @@ export async function createApp(options = {}) {
   const recordingsDir = path.resolve(dataDir, 'recordings');
   const recordingScriptsDir = options.recordingScriptsDir || path.resolve(appWorkspaceRoot, 'tests', 'recordings');
   const scriptsDir = path.resolve(dataDir, 'scripts');
+  const migrationWriteFile = options.migrationWriteFile || writeFile;
   const recorderPackagePath = options.recorderPackagePath
     || process.env.JMOM_RECORDER_PACKAGE
     || path.resolve(workspaceRoot, 'dist', 'JMOM鏈湴褰曞埗鍣?win-x64.zip');
@@ -358,6 +447,12 @@ export async function createApp(options = {}) {
 
   const app = express();
   const upload = multer({ dest: path.resolve(dataDir, 'tmp') });
+  const recordingFiles = multer({ dest: path.resolve(dataDir, 'tmp'), limits: { fileSize: 1024 * 1024 } });
+  const recordingUpload = (request, response, next) => recordingFiles.single('file')(request, response, (error) => {
+    if (!error) return next();
+    const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    return jsonError(response, status, error.code === 'LIMIT_FILE_SIZE' ? '录制脚本不能超过 1 MB' : '上传文件无效');
+  });
 
   app.locals.database = database;
   app.locals.paths = {
@@ -435,11 +530,17 @@ export async function createApp(options = {}) {
     return response.json(toPublicScenario(scenario));
   });
 
-  // 鍒涘缓鍦烘櫙瀵规墍鏈夌櫥褰曡鑹插紑鏀撅紱鍙戝竷/涓嬫灦浠嶉渶 maintainer/admin
+  // 平台不再区分测试人员、维护员和管理员；所有登录用户能力一致。
   app.post('/api/scenarios', requireAuth, (request, response) => {
     const body = request.body || {};
     if (!body.key || !body.name) {
       return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
+    }
+    if (!isValidScenarioKey(body.key)) {
+      return jsonError(response, 400, '场景 key 必须是小写字母、数字和单连字符组合');
+    }
+    if (body.scriptEntry && !isManagedScriptEntry(body.scriptEntry)) {
+      return jsonError(response, 400, '脚本入口必须位于受管目录');
     }
     if (database.getScenarioByKey(body.key)) {
       return jsonError(response, 409, '\u6570\u636e\u51b2\u7a81');
@@ -462,12 +563,16 @@ export async function createApp(options = {}) {
     return response.status(201).json(toPublicScenario(scenario));
   });
 
-  app.put('/api/scenarios/:key', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+  app.put('/api/scenarios/:key', requireAuth, (request, response) => {
     const scenario = database.getScenarioByKey(request.params.key);
     if (!scenario) {
       return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
-    const updated = database.updateScenario(request.params.key, request.body || {});
+    const body = request.body || {};
+    if (Object.hasOwn(body, 'scriptEntry') && body.scriptEntry !== '' && !isManagedScriptEntry(body.scriptEntry)) {
+      return jsonError(response, 400, '脚本入口必须位于受管目录');
+    }
+    const updated = database.updateScenario(request.params.key, body);
     return response.json(toPublicScenario(updated));
   });
 
@@ -475,7 +580,7 @@ export async function createApp(options = {}) {
     response.json({ apps: database.listApps().map(toPublicApp) });
   });
 
-  app.post('/api/apps', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+  app.post('/api/apps', requireAuth, (request, response) => {
     const body = request.body || {};
     if (!body.key || !body.name) {
       return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
@@ -492,7 +597,7 @@ export async function createApp(options = {}) {
     return response.status(201).json(toPublicApp(created));
   });
 
-  app.put('/api/apps/:id', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+  app.put('/api/apps/:id', requireAuth, (request, response) => {
     const existing = database.getAppById(request.params.id);
     if (!existing) {
       return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
@@ -504,7 +609,7 @@ export async function createApp(options = {}) {
     return response.json(toPublicApp(database.updateApp(existing.id, request.body || {})));
   });
 
-  app.delete('/api/apps/:id', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+  app.delete('/api/apps/:id', requireAuth, (request, response) => {
     const existing = database.getAppById(request.params.id);
     if (!existing) {
       return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
@@ -526,7 +631,7 @@ export async function createApp(options = {}) {
     response.json({ modules: database.listModules(request.query.appId).map(toPublicModule) });
   });
 
-  app.post('/api/modules', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+  app.post('/api/modules', requireAuth, (request, response) => {
     const body = request.body || {};
     if (!body.appId || !body.name || !body.prefix) {
       return jsonError(response, 400, '璇峰～鍐欐墍灞炲簲鐢ㄣ€佹ā鍧楀悕绉板拰鍓嶇紑');
@@ -543,7 +648,7 @@ export async function createApp(options = {}) {
     return response.status(201).json(toPublicModule(created));
   });
 
-  app.put('/api/modules/:id', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+  app.put('/api/modules/:id', requireAuth, (request, response) => {
     const existing = database.getModuleById(request.params.id);
     if (!existing) {
       return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
@@ -554,7 +659,7 @@ export async function createApp(options = {}) {
     return response.json(toPublicModule(database.updateModule(existing.id, request.body || {})));
   });
 
-  app.delete('/api/modules/:id', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+  app.delete('/api/modules/:id', requireAuth, (request, response) => {
     const existing = database.getModuleById(request.params.id);
     if (!existing) {
       return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
@@ -571,7 +676,7 @@ export async function createApp(options = {}) {
     response.json({ environments: database.listEnvironments().map(toPublicEnvironment) });
   });
 
-  app.post('/api/environments', requireAuth, requireRole('admin'), (request, response) => {
+  app.post('/api/environments', requireAuth, (request, response) => {
     const body = request.body || {};
     if (!body.key || !body.name || !body.baseUrl || !body.username || !body.password) {
       return jsonError(response, 400, '璇峰～鍐欑幆澧?key銆佸悕绉般€佸湴鍧€銆佽处鍙峰拰瀵嗙爜');
@@ -591,7 +696,7 @@ export async function createApp(options = {}) {
     return response.status(201).json(toPublicEnvironment(env));
   });
 
-  app.put('/api/environments/:id', requireAuth, requireRole('admin'), (request, response) => {
+  app.put('/api/environments/:id', requireAuth, (request, response) => {
     const existing = database.getEnvironmentById(request.params.id);
     if (!existing) {
       return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
@@ -604,7 +709,7 @@ export async function createApp(options = {}) {
     return response.json(toPublicEnvironment(updated));
   });
 
-  app.delete('/api/environments/:id', requireAuth, requireRole('admin'), (request, response) => {
+  app.delete('/api/environments/:id', requireAuth, (request, response) => {
     const existing = database.getEnvironmentById(request.params.id);
     if (!existing) {
       return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
@@ -719,6 +824,81 @@ export async function createApp(options = {}) {
     response.json(database.listDatasets(scenario.id).map(toPublicDataset));
   });
 
+  app.post('/api/scenarios/:key/datasets/migration-preview', requireAuth, async (request, response, next) => {
+    try {
+      const scenario = database.getScenarioByKey(request.params.key);
+      if (!scenario) return jsonError(response, 404, '测试场景不存在');
+      const payload = migrationPayload(request.body);
+      if (!payload) return jsonError(response, 400, '迁移参数无效');
+      const sources = await loadDatasetMigrationPreviews(database, scenario, payload);
+      if (!sources) return jsonError(response, 404, '测试数据集不属于当前场景');
+      return response.json({ datasets: publicMigrationPreviews(sources) });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post('/api/scenarios/:key/datasets/migrate', requireAuth, async (request, response, next) => {
+    const ownedPaths = [];
+    let committed = false;
+    try {
+      const scenario = database.getScenarioByKey(request.params.key);
+      if (!scenario) return jsonError(response, 404, '测试场景不存在');
+      const payload = migrationPayload(request.body);
+      if (!payload) return jsonError(response, 400, '迁移参数无效');
+      const sources = await loadDatasetMigrationPreviews(database, scenario, payload);
+      if (!sources) return jsonError(response, 404, '测试数据集不属于当前场景');
+      const previews = publicMigrationPreviews(sources);
+      if (previews.some((preview) => preview.errors.length)) {
+        return jsonError(response, 422, '测试数据迁移校验失败', { datasets: previews });
+      }
+
+      const targetSchema = normalizeSchema(payload.targetSchema);
+      const migration = {
+        targetSchema,
+        mappings: payload.mappings,
+        defaults: payload.defaults
+      };
+      const pendingDatasets = [];
+      for (const source of sources) {
+        const { datasetId, fileName, rowsPath } = await writeExclusiveMigrationFile({
+          database,
+          uploadsDir: app.locals.paths.uploadsDir,
+          scenarioId: scenario.id,
+          rows: source.rows,
+          writer: migrationWriteFile
+        });
+        ownedPaths.push(rowsPath);
+        pendingDatasets.push({
+          id: datasetId,
+          scenarioId: scenario.id,
+          name: `${source.dataset.name}（字段迁移）`,
+          fileName,
+          filePath: rowsPath,
+          rowsPath,
+          rowCount: source.rows.length,
+          validationStatus: 'valid',
+          uploadedBy: request.user.user_id,
+          errors: [],
+          schemaSnapshot: targetSchema,
+          sourceDatasetId: source.dataset.id,
+          migration
+        });
+      }
+      const createdDatasets = database.createDatasetsAtomically(pendingDatasets);
+      committed = true;
+      return response.status(201).json({ datasets: createdDatasets.map(toPublicDataset) });
+    } catch (error) {
+      if (!committed) {
+        await Promise.all(ownedPaths.map((filePath) => rm(filePath, { force: true }).catch(() => {})));
+      }
+      if (isDatasetIdConflict(error)) {
+        return jsonError(response, 409, '数据集 ID 冲突，请重试');
+      }
+      return next(error);
+    }
+  });
+
   app.get('/api/scenarios/:key/datasets/:datasetId', requireAuth, async (request, response, next) => {
     try {
       const scenario = database.getScenarioByKey(request.params.key);
@@ -799,7 +979,10 @@ export async function createApp(options = {}) {
         rowCount: parsed.rows.length,
         validationStatus: 'valid',
         uploadedBy: request.user.user_id,
-        errors: []
+        errors: [],
+        schemaSnapshot: schema,
+        sourceDatasetId: null,
+        migration: {}
       });
       return response.status(201).json(toPublicDataset(dataset));
     } catch (error) {
@@ -815,6 +998,9 @@ export async function createApp(options = {}) {
       }
       if (!scenario.script_entry) {
         return jsonError(response, 404, '鍦烘櫙灏氭湭缁戝畾鑴氭湰');
+      }
+      if (!isManagedScriptEntry(scenario.script_entry)) {
+        return jsonError(response, 400, '脚本入口必须位于受管目录');
       }
       const script = await readScenarioScript({
         workspaceRoot: app.locals.paths.workspaceRoot,
@@ -843,6 +1029,9 @@ export async function createApp(options = {}) {
       const scenario = database.getScenarioByKey(request.params.key);
       if (!scenario) {
         return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
+      }
+      if (scenario.script_entry && !isManagedScriptEntry(scenario.script_entry)) {
+        return jsonError(response, 400, '脚本入口必须位于受管目录');
       }
       if (!request.file) {
         return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
@@ -886,6 +1075,9 @@ export async function createApp(options = {}) {
       const scenario = database.getScenarioByKey(request.params.key);
       if (!scenario) {
         return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
+      }
+      if (scenario.script_entry && !isManagedScriptEntry(scenario.script_entry)) {
+        return jsonError(response, 400, '脚本入口必须位于受管目录');
       }
       const content = typeof request.body.content === 'string' ? request.body.content : '';
       if (!content.trim()) {
@@ -984,20 +1176,126 @@ export async function createApp(options = {}) {
     }
   });
 
-  app.post('/api/scenarios/:key/publish', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
-    const scenario = database.getScenarioByKey(request.params.key);
-    if (!scenario) {
-      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
+  app.post('/api/scenarios/:key/publish', requireAuth, async (request, response, next) => {
+    try {
+      const scenario = database.getScenarioByKey(request.params.key);
+      if (!scenario) return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
+      if (!scenario.script_entry) return jsonError(response, 400, '\u573a\u666f\u5c1a\u672a\u7ed1\u5b9a\u811a\u672c');
+      const script = await readScenarioScript({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        dataDir: app.locals.paths.dataDir,
+        scriptEntry: scenario.script_entry
+      }).catch(() => null);
+      if (!script?.content) return jsonError(response, 400, '\u573a\u666f\u811a\u672c\u65e0\u6cd5\u8bfb\u53d6');
+      const validation = validateScenarioReleaseScript(script.content);
+      if (!validation.valid) return jsonError(response, 400, `\u811a\u672c\u8bed\u6cd5\u65e0\u6548: ${validation.error}`);
+      const input = buildScenarioReleaseInput({
+        scenario,
+        scriptEntry: scenario.script_entry,
+        scriptContent: script.content,
+        createdBy: request.user.user_id
+      });
+      const result = database.createScenarioReleaseAndPublish(input);
+      return response.json(toPublicScenario(result.scenario));
+    } catch (error) {
+      return next(error);
     }
-    response.json(toPublicScenario(database.updateScenarioStatus(scenario.id, 'published')));
   });
 
-  app.post('/api/scenarios/:key/unpublish', requireAuth, requireRole('maintainer', 'admin'), (request, response) => {
+  app.post('/api/scenarios/:key/unpublish', requireAuth, (request, response) => {
     const scenario = database.getScenarioByKey(request.params.key);
-    if (!scenario) {
-      return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
-    }
+    if (!scenario) return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     response.json(toPublicScenario(database.updateScenarioStatus(scenario.id, 'draft')));
+  });
+
+  app.get('/api/scenarios/:key/releases', requireAuth, (request, response) => {
+    const scenario = database.getScenarioByKey(request.params.key);
+    if (!scenario) return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
+    return response.json(listScenarioReleases(database, scenario.id));
+  });
+
+  app.get('/api/scenarios/:key/releases/draft-compare', requireAuth, async (request, response, next) => {
+    try {
+      const scenario = database.getScenarioByKey(request.params.key);
+      if (!scenario) return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
+      if (!scenario.script_entry) return jsonError(response, 404, '\u573a\u666f\u5c1a\u672a\u7ed1\u5b9a\u811a\u672c');
+      const script = await readScenarioScript({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        dataDir: app.locals.paths.dataDir,
+        scriptEntry: scenario.script_entry
+      }).catch(() => null);
+      if (!script) return jsonError(response, 404, '\u811a\u672c\u4e0d\u5b58\u5728');
+      const comparison = compareScenarioDraft({
+        database,
+        scenario,
+        scriptContent: script.content,
+        releaseId: request.query.releaseId
+      });
+      return comparison ? response.json(comparison) : jsonError(response, 404, '\u53d1\u5e03\u7248\u672c\u4e0d\u5b58\u5728');
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get('/api/scenarios/:key/releases/:releaseId', requireAuth, (request, response) => {
+    const scenario = database.getScenarioByKey(request.params.key);
+    if (!scenario) return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
+    const release = getScenarioRelease(database, scenario.id, request.params.releaseId);
+    return release ? response.json(release) : jsonError(response, 404, '\u53d1\u5e03\u7248\u672c\u4e0d\u5b58\u5728');
+  });
+
+  app.get('/api/scenarios/:key/releases/:releaseId/compare', requireAuth, (request, response) => {
+    const scenario = database.getScenarioByKey(request.params.key);
+    if (!scenario) return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
+    const comparison = compareScenarioRelease(database, scenario.id, request.params.releaseId, request.query.to || request.query.toReleaseId);
+    return comparison ? response.json(comparison) : jsonError(response, 404, '\u53d1\u5e03\u7248\u672c\u4e0d\u5b58\u5728');
+  });
+
+  app.post('/api/scenarios/:key/releases/:releaseId/restore', requireAuth, async (request, response, next) => {
+    const scenario = database.getScenarioByKey(request.params.key);
+    if (!scenario) return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
+    const release = getScenarioRelease(database, scenario.id, request.params.releaseId);
+    if (!release) return jsonError(response, 404, '\u53d1\u5e03\u7248\u672c\u4e0d\u5b58\u5728');
+    const releaseRow = database.getScenarioReleaseById(request.params.releaseId);
+    const scriptEntry = release.snapshot.scriptEntry || scenario.script_entry;
+    const fileName = path.basename(scriptEntry || `${scenario.key}.spec.js`);
+    const beforeScript = scenario.script_entry
+      ? await readScenarioScript({ workspaceRoot: app.locals.paths.workspaceRoot, dataDir: app.locals.paths.dataDir, scriptEntry: scenario.script_entry }).catch(() => null)
+      : null;
+    let saved = null;
+    try {
+      saved = await saveScenarioScriptContent({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        scriptsDir: app.locals.paths.scriptsDir,
+        dataDir: app.locals.paths.dataDir,
+        scenarioKey: scenario.key,
+        existingScriptEntry: scenario.script_entry,
+        fileName,
+        content: releaseRow.script_content
+      });
+      const restored = restoreScenarioRelease({ database, scenarioId: scenario.id, releaseId: request.params.releaseId, scriptEntry: saved.scriptEntry });
+      return restored ? response.json(toPublicScenario(restored.scenario)) : jsonError(response, 404, '\u53d1\u5e03\u7248\u672c\u4e0d\u5b58\u5728');
+    } catch (error) {
+      try {
+        if (saved?.storedPath && saved.storedPath !== beforeScript?.storedPath) {
+          await rm(saved.storedPath, { force: true });
+        }
+        if (beforeScript) {
+          await saveScenarioScriptContent({
+            workspaceRoot: app.locals.paths.workspaceRoot,
+            scriptsDir: app.locals.paths.scriptsDir,
+            dataDir: app.locals.paths.dataDir,
+            scenarioKey: scenario.key,
+            existingScriptEntry: beforeScript.scriptEntry || scenario.script_entry,
+            fileName: beforeScript.fileName,
+            content: beforeScript.content
+          });
+        } else if (saved?.storedPath) {
+          await rm(saved.storedPath, { force: true });
+        }
+      } catch {}
+      return next(error);
+    }
   });
 
   app.post('/api/runs', requireAuth, async (request, response, next) => {
@@ -1023,9 +1321,6 @@ export async function createApp(options = {}) {
       const dataset = database.getDatasetById(datasetId);
       if (!scenario || !dataset || dataset.scenario_id !== scenario.id) {
         return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
-      }
-      if (scenario.status !== 'published') {
-        return jsonError(response, 400, '浠呭凡鍙戝竷鍦烘櫙鍙互鎵ц');
       }
       const envRow = database.getEnvironmentByKey(environment);
       if (!envRow) {
@@ -1060,7 +1355,12 @@ export async function createApp(options = {}) {
           localExecution: {
             code: ticket.code,
             expiresAt: ticket.expiresAt,
-            toolDownloadUrl: '/api/recorder/download'
+            toolDownloadUrl: '/api/recorder/download',
+            desktopLaunchUrl: buildDesktopLaunchUrl({
+              mode: 'execute',
+              platformUrl: `${request.protocol}://${request.get('host')}`,
+              code: ticket.code
+            })
           }
         });
       }
@@ -1245,8 +1545,7 @@ export async function createApp(options = {}) {
       const scenarioKey = request.body?.scenarioKey || '';
       const environmentKey = request.body?.environmentKey || 'test';
       const location = request.body?.location === 'server' ? 'server' : 'local';
-      const platformUrl = request.body?.platformUrl
-        || `${request.protocol}://${request.get('host')}`;
+      const platformUrl = `${request.protocol}://${request.get('host')}`;
       const environment = database.getEnvironmentByKey(environmentKey) || database.getDefaultEnvironment();
       if (!environment) {
         return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
@@ -1311,7 +1610,10 @@ export async function createApp(options = {}) {
         uploadToken: location === 'local' ? uploadToken : null,
         recordCode: recordCode?.code || null,
         recordCodeExpires: recordCode?.expiresAt || null,
-        recorderDownloadUrl: location === 'local' ? '/api/recorder/download' : null
+        recorderDownloadUrl: location === 'local' ? '/api/recorder/download' : null,
+        desktopLaunchUrl: location === 'local'
+          ? buildDesktopLaunchUrl({ mode: 'record', platformUrl, code: recordCode.code })
+          : null
       });
     } catch (error) {
       return next(error);
@@ -1370,6 +1672,7 @@ export async function createApp(options = {}) {
         location: meta.location || 'server',
         scenarioKey: meta.scenarioKey || null,
         scriptEntry: meta.scriptEntry || null,
+        analysis: meta.analysis || null,
         startUrl: meta.startUrl || null,
         finishedAt: meta.finishedAt || null
       });
@@ -1378,7 +1681,8 @@ export async function createApp(options = {}) {
     }
   });
 
-  app.post('/api/recordings/:id/upload', upload.single('file'), async (request, response, next) => {
+  app.post('/api/recordings/:id/upload', recordingUpload, async (request, response, next) => {
+    let temporaryUploadPath = request.file?.path || '';
     try {
       const id = request.params.id;
       const metaPath = path.resolve(app.locals.paths.recordingsDir, `${id}.meta.json`);
@@ -1395,53 +1699,291 @@ export async function createApp(options = {}) {
         && (!meta.uploadTokenExpires || meta.uploadTokenExpires >= new Date().toISOString());
       const sessionValid = session && session.user_id === meta.createdBy;
       if (!tokenValid && !sessionValid) {
+        if (request.file?.path) await rm(request.file.path, { force: true });
+        temporaryUploadPath = '';
         return jsonError(response, 401, '褰曞埗涓婁紶鍑瘉鏃犳晥鎴栧凡杩囨湡');
       }
       if (!request.file) {
         return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
       }
+      temporaryUploadPath = request.file.path;
       const outputPath = meta.outputPath
         ? path.resolve(meta.outputPath)
         : path.resolve(app.locals.paths.recordingScriptsDir, `${id}.spec.js`);
-      await rename(request.file.path, outputPath);
-      const scriptEntry = resolveRecordingScriptEntry(
+      const incomingContent = await readFile(request.file.path, 'utf8');
+      const existingContent = existsSync(outputPath) ? await readFile(outputPath, 'utf8').catch(() => null) : null;
+      const scenarioKey = meta.scenarioKey || request.body?.scenarioKey || '';
+      let archivedBeforeReplace = false;
+      if (scenarioKey && existingContent !== null && existingContent !== incomingContent) {
+        const existingRawEntry = resolveRecordingScriptEntry(app.locals.paths.workspaceRoot, outputPath, app.locals.paths.dataDir);
+        const currentScenario = database.getScenarioByKey(scenarioKey);
+        if (existingRawEntry && currentScenario?.script_entry === existingRawEntry) {
+          await archiveScenarioScriptVersion({
+            workspaceRoot: app.locals.paths.workspaceRoot,
+            scriptsDir: app.locals.paths.scriptsDir,
+            dataDir: app.locals.paths.dataDir,
+            scenarioKey: currentScenario.key,
+            scriptEntry: existingRawEntry,
+            actor: meta.createdBy || '',
+            reason: 'recording'
+          });
+          archivedBeforeReplace = true;
+        }
+      }
+      if (existingContent !== incomingContent) {
+        await rename(request.file.path, outputPath);
+        temporaryUploadPath = '';
+      } else {
+        await rm(request.file.path, { force: true });
+        temporaryUploadPath = '';
+      }
+      const content = existingContent === incomingContent ? existingContent : incomingContent;
+      const analysis = analyzeRecordingScript(content);
+      const uploadScriptEntry = resolveRecordingScriptEntry(
         app.locals.paths.workspaceRoot,
         outputPath,
         app.locals.paths.dataDir
       );
-      if (!scriptEntry) {
+      if (!uploadScriptEntry) {
         return jsonError(response, 400, '褰曞埗鑴氭湰鏃犳晥');
       }
+      let scriptEntry = uploadScriptEntry;
       let scenario = null;
-      const scenarioKey = meta.scenarioKey || request.body?.scenarioKey || '';
       if (scenarioKey) {
         scenario = database.getScenarioByKey(scenarioKey);
         if (!scenario) {
           return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
         }
+        const preserveApplied = Boolean(meta.applied?.scriptEntry)
+          && scenario.script_entry === meta.applied.scriptEntry
+          && existingContent === incomingContent;
+        const preserveRawBinding = scenario.script_entry === uploadScriptEntry && existingContent === incomingContent;
+        const preserveBinding = preserveApplied || preserveRawBinding;
+        if (!archivedBeforeReplace && !preserveBinding && scenario.script_entry && (scenario.script_entry !== uploadScriptEntry || existingContent !== incomingContent)) {
+          await archiveScenarioScriptVersion({
+            workspaceRoot: app.locals.paths.workspaceRoot,
+            scriptsDir: app.locals.paths.scriptsDir,
+            dataDir: app.locals.paths.dataDir,
+            scenarioKey: scenario.key,
+            scriptEntry: scenario.script_entry,
+            actor: meta.createdBy || '',
+            reason: 'recording'
+          });
+        }
+        if (!preserveBinding) {
+          scenario = database.updateScenario(scenarioKey, { scriptEntry: uploadScriptEntry, ...scriptSchemaPatch(content) });
+        } else {
+          scriptEntry = scenario.script_entry;
+        }
+      }
+      meta.status = 'draft';
+      meta.finishedAt = meta.finishedAt || new Date().toISOString();
+      meta.scriptEntry = scriptEntry;
+      meta.rawScriptEntry = uploadScriptEntry;
+      meta.analysis = analysis;
+      await writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
+      return response.json({
+        id,
+        status: 'draft',
+        scriptEntry,
+        scenario: scenario ? toPublicScenario(scenario) : null,
+        analysis
+      });
+    } catch (error) {
+      return next(error);
+    } finally {
+      if (temporaryUploadPath) await rm(temporaryUploadPath, { force: true }).catch(() => {});
+    }
+  });
+
+  async function prepareRecordingReview(request, response) {
+    const metaPath = path.resolve(app.locals.paths.recordingsDir, `${request.params.id}.meta.json`);
+    if (!existsSync(metaPath)) {
+      jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
+      return null;
+    }
+    const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+    if (meta.createdBy && meta.createdBy !== request.user.user_id) {
+      jsonError(response, 403, '无权处理其他用户的录制');
+      return null;
+    }
+    const scenarioKey = meta.scenarioKey || request.body?.scenarioKey || '';
+    const scenario = scenarioKey ? database.getScenarioByKey(scenarioKey) : null;
+    if (!scenario) {
+      jsonError(response, 404, '\u573a\u666f\u4e0d\u5b58\u5728');
+      return null;
+    }
+    if (!meta.scriptEntry || !meta.outputPath || !existsSync(meta.outputPath)) {
+      jsonError(response, 404, '\u5f55\u5236\u811a\u672c\u5c1a\u672a\u4e0a\u4f20');
+      return null;
+    }
+    const body = request.body || {};
+    if (!Array.isArray(body.fields) || !Array.isArray(body.assertions)) {
+      jsonError(response, 422, '\u5b57\u6bb5\u548c\u65ad\u8a00\u914d\u7f6e\u5fc5\u987b\u662f\u6570\u7ec4');
+      return null;
+    }
+    const source = await readFile(meta.outputPath, 'utf8');
+    const built = buildRecordingReviewScript({ source, title: body.title, fields: body.fields, assertions: body.assertions });
+    if (!built.supported) {
+      jsonError(response, 422, '\u5f55\u5236\u811a\u672c\u53c2\u6570\u65e0\u6548', { warnings: built.warnings });
+      return null;
+    }
+    return { metaPath, meta, scenario, source, built };
+  }
+
+  app.post('/api/recordings/:id/preview', requireAuth, async (request, response, next) => {
+    try {
+      const review = await prepareRecordingReview(request, response);
+      if (!review) return;
+      return response.json({ source: review.built.source, schema: review.built.schema, warnings: review.built.warnings });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post('/api/recordings/:id/apply', requireAuth, async (request, response, next) => {
+    try {
+      const review = await prepareRecordingReview(request, response);
+      if (!review) return;
+      const { metaPath, meta, scenario, source, built } = review;
+      if (built.warnings.length) return jsonError(response, 422, '\u5f55\u5236\u811a\u672c\u53c2\u6570\u65e0\u6548', { warnings: built.warnings });
+      const existingScriptEntry = meta.applied?.scriptEntry || '';
+      const previousScript = existingScriptEntry
+        ? await readScenarioScript({ workspaceRoot: app.locals.paths.workspaceRoot, dataDir: app.locals.paths.dataDir, scriptEntry: existingScriptEntry }).catch(() => null)
+        : null;
+      if (previousScript?.content === built.script && scenario.script_entry === existingScriptEntry) {
+        return response.json({ scenario: toPublicScenario(scenario), script: built.script, analysis: meta.analysis || analyzeRecordingScript(source) });
+      }
+      if (existingScriptEntry && !isManagedScriptEntry(existingScriptEntry)) return jsonError(response, 400, '脚本入口必须位于受管目录');
+      if (scenario.script_entry && existingScriptEntry && scenario.script_entry === existingScriptEntry) {
         await archiveScenarioScriptVersion({
           workspaceRoot: app.locals.paths.workspaceRoot,
           scriptsDir: app.locals.paths.scriptsDir,
           dataDir: app.locals.paths.dataDir,
           scenarioKey: scenario.key,
           scriptEntry: scenario.script_entry,
-          actor: meta.createdBy || '',
-          reason: 'recording'
+          actor: request.user.user_id,
+          reason: 'recording-apply'
         });
-        const content = await readFile(outputPath, 'utf8').catch(() => '');
-        scenario = database.updateScenario(scenarioKey, { scriptEntry, ...scriptSchemaPatch(content) });
       }
-      meta.status = 'finished';
-      meta.finishedAt = new Date().toISOString();
-      meta.scriptEntry = scriptEntry;
-      meta.uploadToken = null;
-      await writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
-      return response.json({
-        id,
-        status: 'finished',
-        scriptEntry,
-        scenario: scenario ? toPublicScenario(scenario) : null
+      const saved = await saveScenarioScriptContent({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        scriptsDir: app.locals.paths.scriptsDir,
+        dataDir: app.locals.paths.dataDir,
+        scenarioKey: scenario.key,
+        existingScriptEntry,
+        fileName: `${scenario.key}.spec.js`,
+        content: built.script
       });
+      const updated = database.updateScenario(scenario.key, { scriptEntry: saved.scriptEntry, dataSchema: built.schema });
+      meta.applied = { at: new Date().toISOString(), by: request.user.user_id, scriptEntry: saved.scriptEntry };
+      meta.status = 'draft';
+      await writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
+      return response.json({ scenario: toPublicScenario(updated), script: built.script, analysis: meta.analysis || analyzeRecordingScript(source) });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get('/api/scenarios/:key/contract', requireAuth, async (request, response, next) => {
+    try {
+      const scenario = database.getScenarioByKey(request.params.key);
+      if (!scenario) return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
+      if (!scenario.script_entry) return jsonError(response, 404, '\u573a\u666f\u5c1a\u672a\u7ed1\u5b9a\u811a\u672c');
+      if (!isManagedScriptEntry(scenario.script_entry)) return jsonError(response, 400, '脚本入口必须位于受管目录');
+      const script = await readScenarioScript({ workspaceRoot: app.locals.paths.workspaceRoot, dataDir: app.locals.paths.dataDir, scriptEntry: scenario.script_entry }).catch(() => null);
+      if (!script) return jsonError(response, 404, '\u811a\u672c\u4e0d\u5b58\u5728');
+      const platformSchema = normalizeSchema(JSON.parse(scenario.data_schema));
+      const scriptSchema = normalizeSchema(extractScriptDataSchema(script.content) || {});
+      const diff = diffSchemas(platformSchema, scriptSchema);
+      const probe = scriptSchema.fields.length ? synchronizeScriptSchema({ source: script.content, targetSchema: platformSchema }) : { conflicts: [] };
+      return response.json({ platformSchema, scriptSchema, diff, conflicts: probe.conflicts || [] });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.put('/api/scenarios/:key/contract', requireAuth, async (request, response, next) => {
+    try {
+      const scenario = database.getScenarioByKey(request.params.key);
+      if (!scenario) return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
+      if (!scenario.script_entry) return jsonError(response, 404, '\u573a\u666f\u5c1a\u672a\u7ed1\u5b9a\u811a\u672c');
+      if (!isManagedScriptEntry(scenario.script_entry)) return jsonError(response, 400, '脚本入口必须位于受管目录');
+      const script = await readScenarioScript({ workspaceRoot: app.locals.paths.workspaceRoot, dataDir: app.locals.paths.dataDir, scriptEntry: scenario.script_entry }).catch(() => null);
+      if (!script) return jsonError(response, 404, '\u811a\u672c\u4e0d\u5b58\u5728');
+      const { resolution, targetSchema, mappings = [] } = request.body || {};
+      if (!['platform', 'script', 'merge'].includes(resolution) || !Array.isArray(mappings)) return jsonError(response, 422, '\u5408\u540c\u53c2\u6570\u65e0\u6548');
+      if (resolution === 'merge' && (!targetSchema || typeof targetSchema !== 'object' || Array.isArray(targetSchema)
+        || (!Array.isArray(targetSchema.columns) && !Array.isArray(targetSchema.fields)))) {
+        return jsonError(response, 422, '\u76ee\u6807 schema \u65e0\u6548');
+      }
+      const platformSchema = normalizeSchema(JSON.parse(scenario.data_schema));
+      const scriptSchema = normalizeSchema(extractScriptDataSchema(script.content) || {});
+      const requireMigrationWhenDataExists = (target) => {
+        if (!diffSchemas(platformSchema, target).hasChanges) return null;
+        const datasets = database.listDatasets(scenario.id);
+        if (!datasets.length) return null;
+        return jsonError(response, 409, '字段已变化，请先通过数据迁移向导生成新数据集', {
+          code: 'MIGRATION_REQUIRED',
+          targetSchema: target,
+          datasetCount: datasets.length,
+          datasets: datasets.map(toPublicDataset)
+        });
+      };
+      if (resolution === 'script') {
+        if (!scriptSchema.fields.length) return jsonError(response, 422, '\u811a\u672c schema \u65e0\u6548');
+        if (!diffSchemas(platformSchema, scriptSchema).hasChanges) {
+          return response.json({ scenario: toPublicScenario(scenario), script: script.content, analysis: analyzeRecordingScript(script.content) });
+        }
+        const migrationRequired = requireMigrationWhenDataExists(scriptSchema);
+        if (migrationRequired) return migrationRequired;
+        const updated = database.updateScenario(scenario.key, { dataSchema: scriptSchema });
+        return response.json({ scenario: toPublicScenario(updated), script: script.content, analysis: analyzeRecordingScript(script.content) });
+      }
+      const target = resolution === 'platform' ? platformSchema : normalizeSchema(targetSchema);
+      const scriptMatchesTarget = !diffSchemas(target, scriptSchema).hasChanges;
+      if (scriptMatchesTarget) {
+        const platformMatchesTarget = !diffSchemas(target, platformSchema).hasChanges;
+        if (resolution === 'merge' && !platformMatchesTarget) {
+          const migrationRequired = requireMigrationWhenDataExists(target);
+          if (migrationRequired) return migrationRequired;
+        }
+        const updated = resolution === 'merge' && !platformMatchesTarget
+          ? database.updateScenario(scenario.key, { dataSchema: target })
+          : scenario;
+        return response.json({ scenario: toPublicScenario(updated), script: script.content, analysis: analyzeRecordingScript(script.content) });
+      }
+      const synced = synchronizeScriptSchema({ source: script.content, targetSchema: target, mappings });
+      if (!synced.ok) return jsonError(response, 409, '\u811a\u672c schema \u5b58\u5728\u51b2\u7a81', { conflicts: synced.conflicts || [] });
+      if (synced.source === script.content) {
+        return response.json({ scenario: toPublicScenario(scenario), script: script.content, analysis: analyzeRecordingScript(script.content) });
+      }
+      if (resolution !== 'platform') {
+        const migrationRequired = requireMigrationWhenDataExists(target);
+        if (migrationRequired) return migrationRequired;
+      }
+      await archiveScenarioScriptVersion({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        scriptsDir: app.locals.paths.scriptsDir,
+        dataDir: app.locals.paths.dataDir,
+        scenarioKey: scenario.key,
+        scriptEntry: scenario.script_entry,
+        actor: request.user.user_id,
+        reason: `contract-${resolution}`
+      });
+      const saved = await saveScenarioScriptContent({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        scriptsDir: app.locals.paths.scriptsDir,
+        dataDir: app.locals.paths.dataDir,
+        scenarioKey: scenario.key,
+        existingScriptEntry: scenario.script_entry,
+        fileName: script.fileName,
+        content: synced.source
+      });
+      const updated = database.updateScenario(scenario.key, resolution === 'platform'
+        ? { scriptEntry: saved.scriptEntry }
+        : { scriptEntry: saved.scriptEntry, dataSchema: target });
+      return response.json({ scenario: toPublicScenario(updated), script: synced.source, analysis: analyzeRecordingScript(synced.source) });
     } catch (error) {
       return next(error);
     }
@@ -1458,7 +2000,7 @@ export async function createApp(options = {}) {
       const outputPath = meta.outputPath
         ? path.resolve(meta.outputPath)
         : path.resolve(app.locals.paths.recordingScriptsDir, `${id}.spec.js`);
-      if (meta.location === 'local' && meta.status !== 'finished') {
+      if (meta.location === 'local' && !['finished', 'draft'].includes(meta.status)) {
         return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
       }
       stopRecordingProcess(meta.pid);
@@ -1503,7 +2045,7 @@ export async function createApp(options = {}) {
           scenario: toPublicScenario(updated)
         });
       }
-      const key = `draft-recording-${id}`;
+      const key = `draft-recording-${id.toLowerCase()}`;
       const content = await readFile(outputPath, 'utf8').catch(() => '');
       const scenario = database.createScenario({
         key,
@@ -1610,4 +2152,3 @@ export async function createApp(options = {}) {
 
   return app;
 }
-

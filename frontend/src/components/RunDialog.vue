@@ -23,17 +23,19 @@
     </div>
     <template #footer><el-button @click="visible=false">取消</el-button><el-button v-if="step" @click="step--">上一步</el-button><el-button v-if="step<2" type="primary" :disabled="step===0&&blockingChecks.length>0" @click="next">下一步</el-button><el-button v-else type="primary" :loading="loading" @click="run">开始执行</el-button></template>
   </el-dialog>
+  <DesktopLaunchDialog ref="desktopLaunchRef" />
 </template>
 
 <script setup>
 import { computed, ref } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import { CircleCheck, Warning, UploadFilled } from '@element-plus/icons-vue';
 import { api } from '../api';
 import { usePlatformStore } from '../stores/platform';
+import DesktopLaunchDialog from './DesktopLaunchDialog.vue';
 
 const emit=defineEmits(['started']), store=usePlatformStore();
-const visible=ref(false), scenario=ref(null), step=ref(0), source=ref('history'), datasets=ref([]), rows=ref([]), preflight=ref({checks:[]}), loading=ref(false), uploadFile=ref(null), form=ref({environment:'test',executionLocation:'server',executionMode:'ui',datasetId:'',dataName:''});
+const visible=ref(false), scenario=ref(null), step=ref(0), source=ref('history'), datasets=ref([]), rows=ref([]), preflight=ref({checks:[]}), loading=ref(false), uploadFile=ref(null), desktopLaunchRef=ref(null), form=ref({environment:'test',executionLocation:'server',executionMode:'ui',datasetId:'',dataName:''});
 const columns=computed(()=>scenario.value?.dataSchema?.columns||[]), required=computed(()=>new Set(scenario.value?.dataSchema?.required||[]));
 const environmentName=computed(()=>store.environments.find(e=>e.key===form.value.environment)?.name||form.value.environment);
 const sourceLabel=computed(()=>({history:'历史数据集',upload:'上传文件',manual:'在线填写'})[source.value]);
@@ -50,7 +52,6 @@ function validateData(){if(source.value==='history'&&!form.value.datasetId)throw
 function next(){try{if(step.value===1)validateData();step.value++}catch(e){ElMessage.warning(e.message)}}
 function csv(){const esc=v=>`"${String(v??'').replaceAll('"','""')}"`;return columns.value.map(esc).join(',')+'\n'+rows.value.map(r=>columns.value.map(c=>esc(r[c])).join(',')).join('\n')}
 async function createDataset(){if(source.value==='history')return form.value.datasetId;const body=new FormData();body.append('name',form.value.dataName||`${scenario.value.name}样本`);body.append('file',source.value==='upload'?uploadFile.value:new Blob([csv()],{type:'text/csv'}),source.value==='upload'?uploadFile.value.name:'manual.csv');return(await api(`/api/scenarios/${scenario.value.key}/datasets`,{method:'POST',body})).id}
-async function copyText(value){try{if(navigator.clipboard){await navigator.clipboard.writeText(value);return true}}catch{}const input=document.createElement('textarea');input.value=value;input.style.position='fixed';input.style.opacity='0';document.body.appendChild(input);input.select();const copied=document.execCommand('copy');input.remove();return copied}
-async function run(){loading.value=true;try{validateData();const id=await createDataset();const result=await api('/api/runs',{method:'POST',body:JSON.stringify({scenarioId:scenario.value.id,datasetId:id,environment:form.value.environment,executionLocation:form.value.executionLocation,executionMode:form.value.executionMode})});visible.value=false;emit('started',result);if(result.localExecution){const code=result.localExecution.code;await ElMessageBox.alert(`<p>在绿色本地测试工具中选择“执行场景”，输入以下执行码：</p><p style="font-size:26px;font-weight:700;letter-spacing:0;text-align:center">${code}</p><p>执行码 30 分钟内有效，且只能使用一次。</p><p><a href="${result.localExecution.toolDownloadUrl}" target="_blank" rel="noopener">下载绿色本地测试工具</a></p>`,'本机执行任务已创建',{dangerouslyUseHTMLString:true,confirmButtonText:'复制执行码'});const copied=await copyText(code);ElMessage[copied?'success':'warning'](copied?'执行码已复制':'请手工复制执行码')}else{ElMessage.success('执行任务已创建')}}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(e.message||e)}finally{loading.value=false}}
+async function run(){loading.value=true;try{validateData();const id=await createDataset();const result=await api('/api/runs',{method:'POST',body:JSON.stringify({scenarioId:scenario.value.id,datasetId:id,environment:form.value.environment,executionLocation:form.value.executionLocation,executionMode:form.value.executionMode})});visible.value=false;emit('started',result);if(result.localExecution){desktopLaunchRef.value?.open(result.localExecution)}else{ElMessage.success('执行任务已创建')}}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(e.message||e)}finally{loading.value=false}}
 defineExpose({open});
 </script>

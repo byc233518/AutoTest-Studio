@@ -201,16 +201,33 @@ function validateCandidateIds(fields, candidates) {
   const seen = new Set();
   const warnings = [];
   for (const field of fields) {
-    if (field.candidateId === undefined) continue;
-    if (typeof field.candidateId !== 'string' || !field.candidateId.trim()) {
-      warnings.push('字段 candidateId 不能为空。');
+    const candidateIds = field.candidateIds ?? (field.candidateId === undefined ? [] : [field.candidateId]);
+    if (!Array.isArray(candidateIds)) {
+      warnings.push('字段 candidateIds 必须是数组。');
       continue;
     }
-    if (seen.has(field.candidateId)) warnings.push(`字段 candidateId 不能重复：${field.candidateId}。`);
-    if (!known.has(field.candidateId)) warnings.push(`字段 candidateId 未对应录制候选：${field.candidateId}。`);
-    seen.add(field.candidateId);
+    if (field.candidateId !== undefined && !candidateIds.includes(field.candidateId)) {
+      warnings.push(`字段 candidateId 与 candidateIds 不一致：${field.candidateId}。`);
+    }
+    for (const candidateId of candidateIds) {
+      if (typeof candidateId !== 'string' || !candidateId.trim()) {
+        warnings.push('字段 candidateId 不能为空。');
+        continue;
+      }
+      if (seen.has(candidateId)) warnings.push(`字段 candidateId 不能重复或被多个字段占用：${candidateId}。`);
+      if (!known.has(candidateId)) warnings.push(`字段 candidateId 未对应录制候选：${candidateId}。`);
+      seen.add(candidateId);
+    }
   }
   return warnings;
+}
+
+function fieldsByCandidateId(fields) {
+  const entries = fields.flatMap((field) => {
+    const candidateIds = field.candidateIds ?? (field.candidateId === undefined ? [] : [field.candidateId]);
+    return Array.isArray(candidateIds) ? candidateIds.map((candidateId) => [candidateId, field]) : [];
+  });
+  return new Map(entries);
 }
 
 function locatorSource(locator) {
@@ -283,7 +300,7 @@ export function buildDataDrivenScript({ source, title, fields = [], assertions =
   const details = collectScriptDetails(parsed.callback);
   const candidateWarnings = validateCandidateIds(fields, details.fields);
   if (candidateWarnings.length) return { supported: false, warnings: candidateWarnings, source: '', script: '', schema: schemaFromFields(fields) };
-  const fieldsByCandidate = new Map(fields.map((field) => [field.candidateId, field]));
+  const fieldsByCandidate = fieldsByCandidateId(fields);
   const rewritten = new MagicString(source);
   for (const candidate of details.fields) {
     const field = fieldsByCandidate.get(candidate.candidateId);

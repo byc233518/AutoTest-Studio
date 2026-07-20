@@ -16,6 +16,32 @@ test('场景抽屉优先展示短录制码和免安装录制器下载入口', as
   assert.doesNotMatch(source, /finishRecord/);
 });
 
+test('本地录制创建成功时优先唤起桌面协议，且完成分析自动打开复核', async () => {
+  const source = await readFile('frontend/src/components/ScenarioDrawer.vue', 'utf8');
+  assert.match(source, /recording\.value\.desktopLaunchUrl/);
+  assert.match(source, /window\.location\.href\s*=\s*recording\.value\.desktopLaunchUrl/);
+  assert.match(source, /recording\.value\.analysis/);
+  assert.match(source, /reviewVisible|reviewDialog|RecordingReviewDialog/);
+  assert.match(source, /setInterval/);
+  assert.match(source, /clearInterval/);
+});
+
+test('录制复核向导覆盖候选处理、手工断言和脚本式预览', async () => {
+  const source = await readFile('frontend/src/components/RecordingReviewDialog.vue', 'utf8');
+  for (const type of ['select', 'checkbox', 'file']) assert.match(source, new RegExp(type));
+  assert.match(source, /忽略/);
+  assert.match(source, /合并/);
+  assert.match(source, /删除/);
+  assert.match(source, /addAssertion|新增成功条件/);
+  assert.match(source, /testDataSchema/);
+  assert.match(source, /expect\(/);
+  assert.match(source, /示例数据/);
+  assert.match(source, /警告/);
+  assert.match(source, /\/api\/recordings\/\$\{[^}]+\}\/preview/);
+  assert.match(source, /previewResult/);
+  assert.doesNotMatch(source, /原始录制操作将在服务端安全参数化/);
+});
+
 test('场景抽屉支持上传和在线编辑脚本', async () => {
   const source = await readFile('frontend/src/components/ScenarioDrawer.vue', 'utf8');
 
@@ -24,6 +50,22 @@ test('场景抽屉支持上传和在线编辑脚本', async () => {
   assert.match(source, /保存脚本/);
   assert.match(source, /method: 'PUT'/);
   assert.match(source, /\/api\/scenarios\/\$\{scenario\.value\.key\}\/script/);
+});
+
+test('本地执行使用专门启动弹窗而不是 HTML alert', async () => {
+  const [runDialog, launchDialog] = await Promise.all([
+    readFile('frontend/src/components/RunDialog.vue', 'utf8'),
+    readFile('frontend/src/components/DesktopLaunchDialog.vue', 'utf8').catch(() => '')
+  ]);
+
+  assert.match(runDialog, /DesktopLaunchDialog/);
+  assert.doesNotMatch(runDialog, /ElMessageBox\.alert/);
+  assert.match(launchDialog, /desktopLaunchUrl/);
+  assert.match(launchDialog, /recordCode|code/);
+  assert.match(launchDialog, /expiresAt|recordCodeExpires/);
+  assert.match(launchDialog, /toolDownloadUrl/);
+  assert.match(launchDialog, /再次打开|openDesktop/);
+  assert.match(launchDialog, /复制/);
 });
 
 test('登录用户可以下载已构建的免安装录制器', async (t) => {

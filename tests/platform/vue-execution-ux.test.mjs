@@ -38,10 +38,14 @@ test('场景执行创建成功后留在当前页并直接打开详情抽屉', as
 });
 
 test('场景执行支持选择测试人员本机并显示一次性执行码', async () => {
-  const source = await readFile('frontend/src/components/RunDialog.vue', 'utf8');
+  const [source, launch] = await Promise.all([
+    readFile('frontend/src/components/RunDialog.vue', 'utf8'),
+    readFile('frontend/src/components/DesktopLaunchDialog.vue', 'utf8')
+  ]);
 
   assert.match(source, /executionLocation/);
   assert.match(source, /本机执行/);
-  assert.match(source, /localExecution\.code/);
-  assert.match(source, /下载绿色本地测试工具/);
+  assert.match(source, /DesktopLaunchDialog/);
+  assert.match(launch, /recordCode|code/);
+  assert.match(launch, /下载绿色工具/);
 });

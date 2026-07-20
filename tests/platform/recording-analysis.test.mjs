@@ -54,6 +54,47 @@ test('参数化脚本使用 defineRecordedTests 和 schema', () => {
   assert.match(result.script, /await expect\(page\.getByText\('保存成功'\)\)\.toBeVisible\(\);/);
 });
 
+test('candidateIds 将多个录制候选合并到同一个数据字段', () => {
+  const result = buildDataDrivenScript({
+    source: basicSource,
+    title: '合并客户字段',
+    fields: [{
+      candidateId: 'field-1',
+      candidateIds: ['field-1', 'field-2'],
+      key: 'customerName',
+      label: '客户名称',
+      example: '测试客户',
+      required: true
+    }]
+  });
+
+  assert.equal(result.supported, true);
+  assert.deepEqual(result.schema.columns, ['customerName']);
+  assert.equal(result.script.match(/data\["customerName"\]/g)?.length, 2);
+});
+
+test('candidateIds 拒绝未知、重复和跨字段占用的候选', () => {
+  for (const fields of [
+    [{ candidateIds: ['field-1', 'missing'], key: 'shared' }],
+    [{ candidateIds: ['field-1', 'field-1'], key: 'shared' }],
+    [{ candidateIds: ['field-1'], key: 'first' }, { candidateIds: ['field-1'], key: 'second' }]
+  ]) {
+    const result = buildDataDrivenScript({ source: basicSource, fields });
+    assert.equal(result.supported, false);
+    assert.match(result.warnings.join('\n'), /candidateId/);
+  }
+});
+
+test('candidateIds 与旧 candidateId 同时提供时必须指向同一候选', () => {
+  const result = buildDataDrivenScript({
+    source: basicSource,
+    fields: [{ candidateId: 'field-2', candidateIds: ['field-1'], key: 'customer' }]
+  });
+
+  assert.equal(result.supported, false);
+  assert.match(result.warnings.join('\n'), /candidateId/);
+});
+
 test('生成脚本可被场景 schema 提取器和字段同步器直接消费', () => {
   const built = buildDataDrivenScript({
     source: basicSource,
