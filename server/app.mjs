@@ -53,7 +53,8 @@ import {
   writeRecordingStub,
   analyzeRecordingScript,
   buildRecordingReviewScript,
-  isManagedScriptEntry
+  isManagedScriptEntry,
+  moveRecordingUpload
 } from './platform/recordings.mjs';
 import {
   createRecordingCode,
@@ -1732,7 +1733,7 @@ export async function createApp(options = {}) {
         }
       }
       if (existingContent !== incomingContent) {
-        await rename(request.file.path, outputPath);
+        await moveRecordingUpload(request.file.path, outputPath);
         temporaryUploadPath = '';
       } else {
         await rm(request.file.path, { force: true });
@@ -2148,7 +2149,7 @@ export async function createApp(options = {}) {
     if (!app.locals.silent) {
       console.error(error);
     }
-    response.status(500).json({ message: '骞冲彴鏈嶅姟寮傚父', detail: error.message });
+    response.status(500).json({ message: '\u5e73\u53f0\u670d\u52a1\u5f02\u5e38', detail: error.message });
   });
 
   return app;

@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { copyFile, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { toWorkspaceScriptEntry } from './scenario-scripts.mjs';
@@ -12,6 +12,20 @@ function trimTrailingSlash(value = '') {
 
 export function createRecordingUploadToken() {
   return randomBytes(16).toString('hex');
+}
+
+export async function moveRecordingUpload(sourcePath, targetPath, {
+  renameImpl = rename,
+  copyImpl = copyFile,
+  removeImpl = rm
+} = {}) {
+  try {
+    await renameImpl(sourcePath, targetPath);
+  } catch (error) {
+    if (error?.code !== 'EXDEV') throw error;
+    await copyImpl(sourcePath, targetPath);
+    await removeImpl(sourcePath, { force: true });
+  }
 }
 
 export function buildLocalRecordCommand({ recordingId, uploadToken, startUrl, platformUrl }) {

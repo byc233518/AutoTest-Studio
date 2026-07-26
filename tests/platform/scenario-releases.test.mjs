@@ -125,6 +125,7 @@ test('恢复数据库失败时回滚脚本文件和场景入口', async (t) => {
   const response = await ctx.fetch(`/api/scenarios/release-atomic/releases/${releases[0].id}/restore`, { method: 'POST', headers: { cookie } });
   ctx.app.locals.database.restoreScenarioRelease = original;
   assert.equal(response.status, 500);
+  assert.equal((await response.json()).message, '平台服务异常');
   const after = await (await ctx.fetch('/api/scenarios/release-atomic', { headers: { cookie } })).json();
   assert.equal(after.scriptEntry, before.scriptEntry);
   assert.deepEqual(after.dataSchema, before.dataSchema);
