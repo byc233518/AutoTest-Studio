@@ -80,7 +80,12 @@ test('登录用户可以下载已构建的免安装录制器', async (t) => {
 
   const response = await ctx.fetch('/api/recorder/download', { headers: { cookie } });
   assert.equal(response.status, 200);
-  assert.match(response.headers.get('content-disposition') || '', /JMOM/);
+  const disposition = response.headers.get('content-disposition') || '';
+  assert.match(disposition, /filename\*=UTF-8''([^;]+)/i);
+  assert.equal(
+    decodeURIComponent(disposition.match(/filename\*=UTF-8''([^;]+)/i)[1]),
+    'JMOM本地录制器-win-x64.zip'
+  );
   assert.equal(await response.text(), 'portable-recorder');
 
   const partial = await ctx.fetch('/api/recorder/download', {
@@ -98,4 +103,13 @@ test('录制器未构建时下载接口返回明确错误', async (t) => {
   const response = await ctx.fetch('/api/recorder/download', { headers: { cookie } });
   assert.equal(response.status, 404);
   assert.equal((await response.json()).message, '免安装录制器尚未构建');
+});
+
+test('默认录制器路径使用构建产物的正确中文文件名', async (t) => {
+  const ctx = await createTestContext(t);
+
+  assert.equal(
+    path.basename(ctx.app.locals.paths.recorderPackagePath),
+    'JMOM本地录制器-win-x64.zip'
+  );
 });

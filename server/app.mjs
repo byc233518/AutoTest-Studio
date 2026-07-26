@@ -76,6 +76,7 @@ const workspaceRoot = path.resolve(__dirname, '..');
 const legacyPublicDir = path.resolve(workspaceRoot, 'web');
 const builtPublicDir = path.resolve(workspaceRoot, 'web-dist');
 const publicDir = existsSync(builtPublicDir) ? builtPublicDir : legacyPublicDir;
+const RECORDER_ARCHIVE_NAME = 'JMOM\u672c\u5730\u5f55\u5236\u5668-win-x64.zip';
 const SCENARIO_KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MIGRATION_FILE_ATTEMPTS = 8;
 
@@ -435,7 +436,7 @@ export async function createApp(options = {}) {
   const migrationWriteFile = options.migrationWriteFile || writeFile;
   const recorderPackagePath = options.recorderPackagePath
     || process.env.JMOM_RECORDER_PACKAGE
-    || path.resolve(workspaceRoot, 'dist', 'JMOM鏈湴褰曞埗鍣?win-x64.zip');
+    || path.resolve(workspaceRoot, 'dist', RECORDER_ARCHIVE_NAME);
   await mkdir(uploadsDir, { recursive: true });
   await mkdir(reportsDir, { recursive: true });
   await mkdir(recordingsDir, { recursive: true });
@@ -485,7 +486,7 @@ export async function createApp(options = {}) {
     }
     return response.download(
       app.locals.paths.recorderPackagePath,
-      'JMOM鏈湴褰曞埗鍣?win-x64.zip',
+      RECORDER_ARCHIVE_NAME,
       { dotfiles: 'allow' }
     );
   });
