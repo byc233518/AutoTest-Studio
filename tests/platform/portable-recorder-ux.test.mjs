@@ -69,10 +69,10 @@ test('本地执行使用专门启动弹窗而不是 HTML alert', async () => {
 });
 
 test('登录用户可以下载已构建的免安装录制器', async (t) => {
-  const root = await mkdtemp(path.join(tmpdir(), 'jmom-recorder-package-'));
+  const root = await mkdtemp(path.join(tmpdir(), 'autotest-recorder-package-'));
   const packageDir = path.join(root, '.绿色录制包');
   await mkdir(packageDir, { recursive: true });
-  const recorderPackagePath = path.join(packageDir, 'JMOM本地录制器-win-x64.zip');
+  const recorderPackagePath = path.join(packageDir, 'AutoTest-Studio本地录制器-win-x64.zip');
   await writeFile(recorderPackagePath, 'portable-recorder');
   t.after(() => rm(root, { recursive: true, force: true }));
   const ctx = await createTestContext(t, { recorderPackagePath });
@@ -84,7 +84,7 @@ test('登录用户可以下载已构建的免安装录制器', async (t) => {
   assert.match(disposition, /filename\*=UTF-8''([^;]+)/i);
   assert.equal(
     decodeURIComponent(disposition.match(/filename\*=UTF-8''([^;]+)/i)[1]),
-    'JMOM本地录制器-win-x64.zip'
+    'AutoTest-Studio本地录制器-win-x64.zip'
   );
   assert.equal(await response.text(), 'portable-recorder');
 
@@ -110,6 +110,6 @@ test('默认录制器路径使用构建产物的正确中文文件名', async (t
 
   assert.equal(
     path.basename(ctx.app.locals.paths.recorderPackagePath),
-    'JMOM本地录制器-win-x64.zip'
+    'AutoTest-Studio本地录制器-win-x64.zip'
   );
 });

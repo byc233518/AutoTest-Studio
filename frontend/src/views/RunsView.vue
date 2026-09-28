@@ -34,14 +34,14 @@
       <el-table :data="filteredRuns" height="calc(100vh - 285px)" empty-text="暂无符合条件的执行记录">
         <el-table-column prop="runId" label="执行编号" min-width="210" />
         <el-table-column label="场景" min-width="190">
-          <template #default="{ row }">{{ scenarioName(row.scenarioId) }}</template>
+          <template #default="{ row }">{{ scenarioName(row) }}</template>
         </el-table-column>
         <el-table-column label="状态" width="105">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="environment" label="环境" width="100" />
         <el-table-column label="执行位置" width="105">
-          <template #default="{ row }">{{ row.executionLocation === 'local' ? '测试人员本机' : '平台服务器' }}</template>
+          <template #default="{ row }">{{ store.desktopMode ? '当前电脑' : row.executionLocation === 'local' ? '测试人员本机' : '平台服务器' }}</template>
         </el-table-column>
         <el-table-column label="模式" width="100">
           <template #default="{ row }">{{ row.executionMode === 'ui' ? 'UI 模式' : row.executionMode }}</template>
@@ -96,8 +96,8 @@ onBeforeUnmount(() => clearInterval(timer));
 function resetFilters() {
   Object.assign(filters, createRunFilters());
 }
-function scenarioName(id) {
-  return store.scenarios.find((scenario) => scenario.id === id)?.name || id;
+function scenarioName(run) {
+  return run.scenarioName || store.scenarios.find((scenario) => scenario.id === run.scenarioId)?.name || run.scenarioId;
 }
 function statusType(status) {
   return ({ passed: 'success', failed: 'danger', running: 'warning', queued: 'info' })[status] || 'info';

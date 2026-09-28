@@ -11,43 +11,43 @@ const repositories = [
     key: 'base',
     label: '基座系统',
     appId: 'APP-BASE',
-    frontend: process.env.JMOM_BASE_FRONTEND || 'F:\\workspace\\jmom\\jmom.vue',
-    backend: process.env.JMOM_BASE_BACKEND || 'F:\\workspace\\jmom\\ims-jmom'
+    frontend: process.env.AUTOTEST_BASE_FRONTEND || 'F:\\workspace\\jmom\\jmom.vue',
+    backend: process.env.AUTOTEST_BASE_BACKEND || 'F:\\workspace\\jmom\\ims-jmom'
   },
   {
     key: 'mes',
     label: '制造执行',
     appId: 'APP-MES',
-    frontend: process.env.JMOM_MES_FRONTEND || 'F:\\workspace\\jmom\\imes.vue',
-    backend: process.env.JMOM_MES_BACKEND || 'F:\\workspace\\jmom\\imes.api'
+    frontend: process.env.AUTOTEST_MES_FRONTEND || 'F:\\workspace\\jmom\\imes.vue',
+    backend: process.env.AUTOTEST_MES_BACKEND || 'F:\\workspace\\jmom\\imes.api'
   },
   {
     key: 'wms',
     label: '仓储管理',
     appId: 'APP-WMS',
-    frontend: process.env.JMOM_WMS_FRONTEND || 'F:\\workspace\\jmom\\iWMS5.Vue',
-    backend: process.env.JMOM_WMS_BACKEND || 'F:\\workspace\\jmom\\iWMS5'
+    frontend: process.env.AUTOTEST_WMS_FRONTEND || 'F:\\workspace\\jmom\\iWMS5.Vue',
+    backend: process.env.AUTOTEST_WMS_BACKEND || 'F:\\workspace\\jmom\\iWMS5'
   },
   {
     key: 'qms',
     label: '质量管理',
     appId: 'APP-QMS',
-    frontend: process.env.JMOM_QMS_FRONTEND || 'F:\\workspace\\jmom\\IQMS.VUE',
-    backend: process.env.JMOM_QMS_BACKEND || 'F:\\workspace\\IQMS'
+    frontend: process.env.AUTOTEST_QMS_FRONTEND || 'F:\\workspace\\jmom\\IQMS.VUE',
+    backend: process.env.AUTOTEST_QMS_BACKEND || 'F:\\workspace\\IQMS'
   },
   {
     key: 'tpm',
     label: '设备管理',
     appId: 'APP-TPM',
-    frontend: process.env.JMOM_TPM_FRONTEND || 'F:\\workspace\\jmom\\itpm.vue',
-    backend: process.env.JMOM_TPM_BACKEND || 'F:\\workspace\\jmom\\ITPM.API'
+    frontend: process.env.AUTOTEST_TPM_FRONTEND || 'F:\\workspace\\jmom\\itpm.vue',
+    backend: process.env.AUTOTEST_TPM_BACKEND || 'F:\\workspace\\jmom\\ITPM.API'
   },
   {
     key: 'legacyMes',
     label: '旧版制造执行',
     appId: 'APP-LEGACY-MES',
-    frontend: process.env.JMOM_LEGACY_MES_FRONTEND || 'F:\\workspace\\ims.vue.d2',
-    backend: process.env.JMOM_LEGACY_MES_BACKEND || 'F:\\workspace\\jz.ims'
+    frontend: process.env.AUTOTEST_LEGACY_MES_FRONTEND || 'F:\\workspace\\ims.vue.d2',
+    backend: process.env.AUTOTEST_LEGACY_MES_BACKEND || 'F:\\workspace\\jz.ims'
   }
 ];
 
@@ -767,7 +767,7 @@ async function discoverRepository(repository, menuCatalog) {
 
 export function repositoryScenarioMarkdown(catalog) {
   const lines = [
-    '# JMOM 代码仓库全量测试场景',
+    '# AutoTest Studio 代码仓库全量测试场景',
     '',
     '> 本文件由 `npm.cmd run scenarios:generate` 根据真实中文菜单、六套前端页面逻辑和六套后端 Controller 生成。已有专项手工场景不会重复生成；自动发现项以草稿状态进入平台。',
     '',

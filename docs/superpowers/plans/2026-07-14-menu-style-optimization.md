@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将 JMOM 自动化测试平台改造成与参考截图一致的浅色管理后台框架，并保留现有页面切换和业务功能。
+**Goal:** 将 AutoTest Studio改造成与参考截图一致的浅色管理后台框架，并保留现有页面切换和业务功能。
 
 **Architecture:** 在现有 Vue 3 `App.vue` 中重组应用外壳，继续使用 `view` 状态驱动页面内容；新增独立的 `shell.css` 承担侧边栏、顶部栏、页签栏和响应式样式，避免干扰业务组件样式。使用现有 Node 测试风格增加源码契约测试，再通过 Vite 构建和浏览器交互验证视觉与行为。
 
@@ -95,7 +95,7 @@ Expected: FAIL，错误指向缺少 `frontend/src/shell.css`，证明测试覆�
       <div class="shell-brand">
         <div class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></div>
         <div class="brand-copy">
-          <strong>JMOM</strong>
+          <strong>AutoTest Studio</strong>
           <span>自动化测试平台</span>
         </div>
       </div>
@@ -503,7 +503,7 @@ git commit -m "[build] 更新菜单样式前端产物"
 
 ```text
 URL: http://localhost:5174/
-Title: JMOM 自动化测试平台
+Title: AutoTest Studio
 ```
 
 - [ ] **Step 2: 完成桌面端视觉检查**
@@ -541,14 +541,14 @@ Title: JMOM 自动化测试平台
 ### Task 5: 适配 ElephasCRM 风格的登录页左侧视觉
 
 **Files:**
-- Create: `frontend/src/assets/jmom-login-visual.svg`
+- Create: `frontend/src/assets/autotest-login-visual.svg`
 - Modify: `frontend/src/views/LoginView.vue`
 - Modify: `frontend/src/login.css`
 - Create: `tests/platform/vue-login-style.test.mjs`
 
 - [ ] **Step 1: 写入失败的登录页视觉契约测试**
 
-测试读取登录组件、登录样式和本地 SVG，验证 `login-visual`、`login-visual-brand`、`login-capabilities`、`login-panel-shell`、三张 JMOM 能力卡、SVG 背景引用和 768px 响应式隐藏规则。读取缺失 SVG 时安全返回空字符串，使 RED 阶段由断言失败而不是 `ENOENT` 结束。
+测试读取登录组件、登录样式和本地 SVG，验证 `login-visual`、`login-visual-brand`、`login-capabilities`、`login-panel-shell`、三张 AutoTest Studio 能力卡、SVG 背景引用和 768px 响应式隐藏规则。读取缺失 SVG 时安全返回空字符串，使 RED 阶段由断言失败而不是 `ENOENT` 结束。
 
 - [ ] **Step 2: 运行测试并确认 RED**
 
@@ -560,7 +560,7 @@ Expected: 断言因登录页尚未包含参考结构而失败。
 
 - [ ] **Step 3: 复制本地视觉素材**
 
-将 `F:\workspace\ElephasCRM\web\src\assets\brand\client-login-bg.svg` 的完整内容写入 `frontend/src/assets/jmom-login-visual.svg`。素材必须进入当前仓库，不允许在 Vite 代码中使用跨仓库绝对路径。
+将 `F:\workspace\ElephasCRM\web\src\assets\brand\client-login-bg.svg` 的完整内容写入 `frontend/src/assets/autotest-login-visual.svg`。素材必须进入当前仓库，不允许在 Vite 代码中使用跨仓库绝对路径。
 
 - [ ] **Step 4: 调整登录页结构**
 
@@ -568,10 +568,10 @@ Expected: 断言因登录页尚未包含参考结构而失败。
 
 ```vue
 <div class="login-page">
-  <section class="login-visual" aria-label="JMOM 自动化测试平台介绍">
+  <section class="login-visual" aria-label="AutoTest Studio 介绍">
     <div class="login-visual-brand">
       <div class="login-brand-symbol" aria-hidden="true"><i/><i/><i/></div>
-      <div><h1>JMOM 自动化测试平台</h1><p>场景、数据、执行与证据的一体化工作台</p></div>
+      <div><h1>AutoTest Studio</h1><p>场景、数据、执行与证据的一体化工作台</p></div>
     </div>
     <div class="login-capabilities">
       <article><strong>场景管理</strong><small>脚本、数据、环境与依赖统一沉淀</small></article>
@@ -587,7 +587,7 @@ Expected: 断言因登录页尚未包含参考结构而失败。
 
 - [ ] **Step 5: 实现参考布局样式**
 
-`login.css` 覆盖旧登录样式：`.login-page` 使用 `jmom-login-visual.svg` 居中覆盖；`.login-panel-shell` 固定右侧 44.444444%；`.login-visual` 预留右侧面板宽度；品牌区和能力卡使用半透明白色、细边框、模糊和轻阴影；768px 以下隐藏 `.login-visual`，面板恢复普通文档流并占满视口。
+`login.css` 覆盖旧登录样式：`.login-page` 使用 `autotest-login-visual.svg` 居中覆盖；`.login-panel-shell` 固定右侧 44.444444%；`.login-visual` 预留右侧面板宽度；品牌区和能力卡使用半透明白色、细边框、模糊和轻阴影；768px 以下隐藏 `.login-visual`，面板恢复普通文档流并占满视口。
 
 - [ ] **Step 6: 验证与提交**
 
@@ -596,7 +596,7 @@ node --test tests/platform/vue-login-style.test.mjs
 node --test tests/platform/login-accounts.test.mjs
 npm.cmd test
 npm.cmd run build:web
-git add frontend/src/assets/jmom-login-visual.svg frontend/src/views/LoginView.vue frontend/src/login.css tests/platform/vue-login-style.test.mjs
+git add frontend/src/assets/autotest-login-visual.svg frontend/src/views/LoginView.vue frontend/src/login.css tests/platform/vue-login-style.test.mjs
 git commit -m "[feat] 优化登录页品牌视觉"
 ```
 

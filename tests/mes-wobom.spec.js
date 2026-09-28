@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { login, gotoBusinessPage, buttonTextPattern } = require('./support/jmom-ui');
+const { login, gotoBusinessPage, buttonTextPattern } = require('./support/autotest-ui');
 const { shouldRun } = require('./support/dataset');
 
 test.beforeEach(async ({ page }) => {

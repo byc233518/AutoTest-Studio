@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildScenarioDirectoryTree,
   buildScenarioTree,
+  collectScenarioDirectories,
   filterScenariosByTree,
   findScenarioTreeNode,
   splitScenarioMenuPath
@@ -119,4 +121,22 @@ test('搜索关键字会与菜单层级过滤条件叠加', () => {
   });
 
   assert.deepEqual(filtered.map((item) => item.key), ['wms-vendor-create']);
+});
+
+test('目录树直接使用用例目录路径并汇总父级数量', () => {
+  const tree = buildScenarioDirectoryTree([
+    { id: 'A', module: 'WMS / 基础资料 / 客户' },
+    { id: 'B', directory: 'WMS/基础资料/供应商' },
+    { id: 'C', module: 'MES / 生产执行' }
+  ]);
+
+  assert.equal(tree[0].label, 'MES');
+  assert.equal(tree[1].label, 'WMS');
+  assert.equal(tree[1].scenarioCount, 2);
+  assert.deepEqual(tree[1].children[0].scenarioIds, ['A', 'B']);
+  assert.deepEqual(collectScenarioDirectories([{ module: 'WMS / 基础资料 / 客户' }]), [
+    'WMS',
+    'WMS / 基础资料',
+    'WMS / 基础资料 / 客户'
+  ]);
 });

@@ -24,7 +24,7 @@ function collectSpecs(suite, items = []) {
 
 function toMarkdown(summary) {
   const lines = [
-    `# JMOM UI 自动化测试结果`,
+    `# AutoTest Studio 测试结果`,
     ``,
     `- 运行时间: ${summary.generatedAt}`,
     `- 结果目录: ${summary.resultDir}`,
@@ -52,7 +52,7 @@ function toMarkdown(summary) {
   return `${lines.join('\n')}\n`;
 }
 
-export async function summarizeResults(resultDir = process.env.JMOM_RESULT_DIR || path.join('test-results', 'latest')) {
+export async function summarizeResults(resultDir = process.env.AUTOTEST_RESULT_DIR || path.join('test-results', 'latest')) {
   const absoluteResultDir = path.resolve(resultDir);
   const resultsPath = path.join(absoluteResultDir, 'results.json');
   const raw = await fs.readFile(resultsPath, 'utf8').catch(() => null);

@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { buttonTextPattern } = require('../support/jmom-ui.js');
+const { buttonTextPattern } = require('../support/autotest-ui.js');
 
 test('Element UI 按钮匹配允许中文字符之间存在空格', () => {
   assert.equal(buttonTextPattern('确定').test('确 定'), true);

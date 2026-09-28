@@ -12,7 +12,7 @@ const scenarios = [
     moduleId: 'MOD-BASE-AUTH',
     module: '系统入口 / 登录认证',
     name: '登录验证',
-    description: '验证 JMOM 测试环境账号可登录并进入首页。',
+    description: '验证被测系统测试环境账号可登录并进入首页。',
     priority: 'P0',
     status: 'published',
     version: '1.0.0',
@@ -485,12 +485,12 @@ const scenarios = [
 ];
 
 const apps = [
-  { id: 'APP-BASE', key: 'jmom-base', name: '基座系统', description: 'JMOM 登录、权限、导入导出与平台能力。', sort: 1 },
-  { id: 'APP-WMS', key: 'jmom-wms', name: '仓储管理', description: '客户、供应商、物料、库位、采购和销售业务。', sort: 2 },
-  { id: 'APP-MES', key: 'jmom-mes', name: '制造执行', description: '工单、投料、工艺路线、流程卡与生产执行。', sort: 3 },
-  { id: 'APP-QMS', key: 'jmom-qms', name: '质量管理', description: '抽样方案、检验作业、SPC 分析与质量报表。', sort: 4 },
-  { id: 'APP-TPM', key: 'jmom-tpm', name: '设备管理', description: '模具、钢网、刮刀、飞达与设备互联管理。', sort: 5 },
-  { id: 'APP-LEGACY-MES', key: 'jmom-legacy-mes', name: '旧版制造执行', description: '旧版 MES 的生产、质量、设备和报表功能。', sort: 6 }
+  { id: 'APP-BASE', key: 'autotest-base', name: '基座系统', description: '基座登录、权限、导入导出与平台能力。', sort: 1 },
+  { id: 'APP-WMS', key: 'autotest-wms', name: '仓储管理', description: '客户、供应商、物料、库位、采购和销售业务。', sort: 2 },
+  { id: 'APP-MES', key: 'autotest-mes', name: '制造执行', description: '工单、投料、工艺路线、流程卡与生产执行。', sort: 3 },
+  { id: 'APP-QMS', key: 'autotest-qms', name: '质量管理', description: '抽样方案、检验作业、SPC 分析与质量报表。', sort: 4 },
+  { id: 'APP-TPM', key: 'autotest-tpm', name: '设备管理', description: '模具、钢网、刮刀、飞达与设备互联管理。', sort: 5 },
+  { id: 'APP-LEGACY-MES', key: 'autotest-legacy-mes', name: '旧版制造执行', description: '旧版 MES 的生产、质量、设备和报表功能。', sort: 6 }
 ];
 
 const modules = [
@@ -511,7 +511,10 @@ const modules = [
   { id: 'MOD-MES-WOBOM', appId: 'APP-MES', name: '生产 BOM', prefix: 'WoBom', sort: 5 }
 ];
 
-export function seedPlatform(database) {
+export function seedPlatform(database, {
+  preserveExisting = false,
+  includeRepositoryCatalog = true
+} = {}) {
   if (!database.getUserByUsername('admin')) {
     database.createUser({
       id: 'USR-ADMIN',
@@ -541,8 +544,8 @@ export function seedPlatform(database) {
   }
 
   database.ensureProject({
-    id: 'PRJ-JMOM',
-    name: 'JMOM',
+    id: 'PRJ-AUTOTEST',
+    name: 'AutoTest Studio',
     description: '制造业 MES + WMS 一体化平台自动化测试项目'
   });
   for (const env of [
@@ -567,21 +570,29 @@ export function seedPlatform(database) {
       sort: 2
     }
   ]) {
-    database.ensureEnvironment(env);
+    const existing = database.getEnvironmentById(env.id) || database.getEnvironmentByKey(env.key);
+    if (!preserveExisting || !existing) database.ensureEnvironment(env);
   }
   for (const app of apps) {
     database.ensureApp(app);
   }
-  for (const module of [...modules, ...repositoryCatalog.modules]) {
+  const seedModules = includeRepositoryCatalog ? [...modules, ...repositoryCatalog.modules] : modules;
+  for (const module of seedModules) {
     database.ensureModule(module);
   }
-  for (const scenario of [...scenarios, ...repositoryCatalog.scenarios]) {
-    database.ensureScenario({ ...scenario, projectId: 'PRJ-JMOM' });
+  const seedScenarios = includeRepositoryCatalog ? [...scenarios, ...repositoryCatalog.scenarios] : scenarios;
+  for (const scenario of seedScenarios) {
+    const existing = database.getScenarioById(scenario.id) || database.getScenarioByKey(scenario.key);
+    if (!preserveExisting || !existing) {
+      database.ensureScenario({ ...scenario, projectId: 'PRJ-AUTOTEST' });
+    }
   }
-  database.syncGeneratedCatalog({
-    scenarioIds: repositoryCatalog.scenarios.map((scenario) => scenario.id),
-    moduleIds: repositoryCatalog.modules.map((module) => module.id)
-  });
+  if (includeRepositoryCatalog && !preserveExisting) {
+    database.syncGeneratedCatalog({
+      scenarioIds: repositoryCatalog.scenarios.map((scenario) => scenario.id),
+      moduleIds: repositoryCatalog.modules.map((module) => module.id)
+    });
+  }
   if (!database.listEntities('suite').length) {
     database.createEntity({ id: 'STE-SMOKE', type: 'suite', name: '核心冒烟测试', payload: { description: '登录、主数据和核心生产链快速验证', scenarioKeys: ['auth-login', 'wms-customer-create', 'wms-part-create', 'mes-workorder-create'], executionMode: 'headless' }, createdBy: 'system', prefix: 'STE' });
     database.createEntity({ id: 'STE-WMS-MASTER', type: 'suite', name: 'WMS 主数据初始化', payload: { description: '按依赖顺序准备客户、供应商、物料和库位', scenarioKeys: ['wms-customer-create', 'wms-vendor-create', 'wms-part-create', 'wms-locator-create'], executionMode: 'headless' }, createdBy: 'system', prefix: 'STE' });

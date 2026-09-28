@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { login, openImportConfig, recordProcessStep } = require('./support/jmom-ui');
+const { login, openImportConfig, recordProcessStep } = require('./support/autotest-ui');
 const { rowsFor, shouldRun, testRowTitle } = require('./support/dataset');
 
 test.describe.configure({ mode: 'serial' });

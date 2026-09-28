@@ -23,7 +23,7 @@ test('录制器规范化平台地址和录制码', () => {
 });
 
 test('便携路径只根据绿色包根目录解析', () => {
-  const paths = resolvePortablePaths('D:/JMOM录制器');
+  const paths = resolvePortablePaths('D:/AutoTest-Studio录制器');
   assert.match(paths.nodeExecutable, /runtime[\\/]node\.exe$/);
   assert.match(paths.playwrightCli, /app[\\/]node_modules[\\/]playwright[\\/]cli\.js$/);
   assert.match(paths.browserPath, /browsers$/);
@@ -58,7 +58,7 @@ test('录制码通过真实 HTTP 请求换取录制参数', async (t) => {
 });
 
 test('codegen 使用指定 Node 和 CLI 写入输出脚本', async (t) => {
-  const root = await mkdtemp(path.join(tmpdir(), 'jmom-recorder-'));
+  const root = await mkdtemp(path.join(tmpdir(), 'autotest-recorder-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const fakeCli = path.join(root, 'fake-cli.mjs');
   const outputPath = path.join(root, 'recorded.spec.js');
@@ -83,7 +83,7 @@ await writeFile(process.argv[outputIndex + 1], '// recorded', 'utf8');
 });
 
 test('离线录制只生成脚本不需要平台录制码', async (t) => {
-  const root = await mkdtemp(path.join(tmpdir(), 'jmom-recorder-offline-'));
+  const root = await mkdtemp(path.join(tmpdir(), 'autotest-recorder-offline-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const fakeCli = path.join(root, 'fake-cli.mjs');
   const outputPath = path.join(root, 'offline.spec.js');
@@ -112,7 +112,7 @@ await writeFile(process.argv[outputIndex + 1], 'const { test } = require("@playw
 });
 
 test('上传失败后可在同一录制进程内重试而不重新消费录制码', async (t) => {
-  const root = await mkdtemp(path.join(tmpdir(), 'jmom-recorder-retry-'));
+  const root = await mkdtemp(path.join(tmpdir(), 'autotest-recorder-retry-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const fakeCli = path.join(root, 'fake-cli.mjs');
   await writeFile(fakeCli, `

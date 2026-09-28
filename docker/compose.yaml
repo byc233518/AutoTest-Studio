@@ -3,8 +3,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: jmom-qtp:local
-    container_name: jmom-qtp
+    image: autotest-studio:local
+    container_name: autotest-studio
     restart: unless-stopped
     init: true
     ports:

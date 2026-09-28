@@ -1,5 +1,7 @@
 export {
+  buildScenarioDirectoryTree,
   buildScenarioTree,
+  collectScenarioDirectories,
   filterScenariosByTree,
   findScenarioTreeNode,
   splitScenarioMenuPath

@@ -46,6 +46,14 @@ export async function parseDatasetFile(filePath, originalName) {
     return { rows };
   }
   const raw = await readFile(filePath, 'utf8');
+  if (ext === '.json') {
+    const parsed = JSON.parse(raw.replace(/^\uFEFF/, ''));
+    const rows = Array.isArray(parsed) ? parsed : parsed?.rows;
+    if (!Array.isArray(rows) || rows.some((row) => !row || typeof row !== 'object' || Array.isArray(row))) {
+      throw new TypeError('JSON 测试数据必须是对象数组或包含 rows 对象数组');
+    }
+    return { rows };
+  }
   return { rows: parseCsv(raw) };
 }
 

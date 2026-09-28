@@ -1,12 +1,19 @@
 const { defineConfig, devices } = require('@playwright/test');
 const path = require('node:path');
 
-const resultDir = process.env.JMOM_RESULT_DIR || path.join('test-results', 'latest');
-const baseURL = process.env.JMOM_BASE_URL || 'http://172.16.100.11:46069';
+const resultDir = process.env.AUTOTEST_RESULT_DIR || path.join('test-results', 'latest');
+const baseURL = process.env.AUTOTEST_BASE_URL || 'http://172.16.100.11:46069';
 const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+const browserChannel = ['chrome', 'msedge'].includes(process.env.AUTOTEST_BROWSER_CHANNEL)
+  ? process.env.AUTOTEST_BROWSER_CHANNEL
+  : '';
+const scenarioScript = process.env.AUTOTEST_SCENARIO_SCRIPT
+  ? path.resolve(process.env.AUTOTEST_SCENARIO_SCRIPT)
+  : null;
 
 module.exports = defineConfig({
-  testDir: './tests',
+  testDir: scenarioScript ? path.dirname(scenarioScript) : './tests',
+  ...(scenarioScript ? { testMatch: path.basename(scenarioScript) } : {}),
   timeout: 90_000,
   expect: {
     timeout: 20_000
@@ -35,8 +42,10 @@ module.exports = defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        ...(chromiumExecutablePath ? {
-          launchOptions: { executablePath: chromiumExecutablePath }
+        ...(browserChannel || chromiumExecutablePath ? {
+          launchOptions: chromiumExecutablePath
+            ? { executablePath: chromiumExecutablePath }
+            : { channel: browserChannel }
         } : {})
       }
     }

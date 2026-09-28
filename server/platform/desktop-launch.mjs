@@ -32,5 +32,5 @@ export function buildDesktopLaunchUrl({ mode, platformUrl, code } = {}) {
     platform: normalizePlatformOrigin(platformUrl),
     code: normalizeOperationCode(code)
   });
-  return `jmom-recorder://${mode}?${query}`;
+  return `autotest-recorder://${mode}?${query}`;
 }

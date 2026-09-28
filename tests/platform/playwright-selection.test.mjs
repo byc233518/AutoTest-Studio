@@ -13,8 +13,8 @@ function listScenarioTests(scenarioKey) {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      JMOM_SCENARIO_KEY: scenarioKey,
-      JMOM_DATASET_PATH: ''
+      AUTOTEST_SCENARIO_KEY: scenarioKey,
+      AUTOTEST_DATASET_PATH: ''
     },
     encoding: 'utf8'
   });

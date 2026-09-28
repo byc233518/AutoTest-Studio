@@ -2,8 +2,8 @@ import { chromium } from '@playwright/test';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { login } = require('../tests/support/jmom-ui.js');
-const baseURL = process.env.JMOM_BASE_URL || 'http://172.16.100.11:46069';
+const { login } = require('../tests/support/autotest-ui.js');
+const baseURL = process.env.AUTOTEST_BASE_URL || 'http://172.16.100.11:46069';
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });

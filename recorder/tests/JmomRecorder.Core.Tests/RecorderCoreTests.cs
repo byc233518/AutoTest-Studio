@@ -34,10 +34,10 @@ public sealed class RecorderCoreTests
     [TestMethod]
     public void ProcessSpec_UsesPathsRelativeToPortableRoot()
     {
-        var spec = RecorderProcessSpec.Create(@"D:\JMOM录制器", "http://host:3050/", "7k3p w9qm");
+        var spec = RecorderProcessSpec.Create(@"D:\AutoTest-Studio录制器", "http://host:3050/", "7k3p w9qm");
 
         Assert.IsTrue(spec.FileName.EndsWith(@"runtime\node.exe", StringComparison.OrdinalIgnoreCase));
-        Assert.AreEqual(Path.GetFullPath(@"D:\JMOM录制器"), spec.WorkingDirectory);
+        Assert.AreEqual(Path.GetFullPath(@"D:\AutoTest-Studio录制器"), spec.WorkingDirectory);
         CollectionAssert.Contains(spec.Arguments.ToList(), Path.Combine(spec.WorkingDirectory, "app", "portable-record-runner.mjs"));
         CollectionAssert.Contains(spec.Arguments.ToList(), "http://host:3050");
         CollectionAssert.Contains(spec.Arguments.ToList(), "7K3P-W9QM");
@@ -46,7 +46,7 @@ public sealed class RecorderCoreTests
     [TestMethod]
     public void ExecutionProcessSpec_UsesPortableExecutionRunner()
     {
-        var spec = RecorderProcessSpec.CreateExecution(@"D:\JMOM录制器", "http://host:3050/", "7k3p w9qm");
+        var spec = RecorderProcessSpec.CreateExecution(@"D:\AutoTest-Studio录制器", "http://host:3050/", "7k3p w9qm");
 
         CollectionAssert.Contains(spec.Arguments.ToList(), Path.Combine(spec.WorkingDirectory, "app", "portable-execution-runner.mjs"));
         CollectionAssert.Contains(spec.Arguments.ToList(), "7K3P-W9QM");
@@ -55,12 +55,12 @@ public sealed class RecorderCoreTests
     [TestMethod]
     public void LaunchRequest_ParsesRecordAndExecuteUris()
     {
-        var executeRequest = RecorderLaunchRequest.Parse("jmom-recorder://execute?platform=http%3A%2F%2Fhost%3A3050&code=7K3P-W9QM");
+        var executeRequest = RecorderLaunchRequest.Parse("autotest-recorder://execute?platform=http%3A%2F%2Fhost%3A3050&code=7K3P-W9QM");
         Assert.AreEqual(RecorderLaunchMode.Execute, executeRequest.Mode);
         Assert.AreEqual("http://host:3050", executeRequest.PlatformUrl);
         Assert.AreEqual("7K3P-W9QM", executeRequest.Code);
 
-        var recordRequest = RecorderLaunchRequest.Parse("jmom-recorder://record?platform=http%3A%2F%2Fhost%3A3050%2F&code=7k3p%20w9qm");
+        var recordRequest = RecorderLaunchRequest.Parse("autotest-recorder://record?platform=http%3A%2F%2Fhost%3A3050%2F&code=7k3p%20w9qm");
         Assert.AreEqual(RecorderLaunchMode.Record, recordRequest.Mode);
         Assert.AreEqual("http://host:3050", recordRequest.PlatformUrl);
         Assert.AreEqual("7K3P-W9QM", recordRequest.Code);
@@ -71,7 +71,7 @@ public sealed class RecorderCoreTests
     {
         Assert.IsFalse(RecorderLaunchRequest.TryParse("https://host:3050", out var wrongScheme));
         Assert.IsNull(wrongScheme);
-        Assert.IsFalse(RecorderLaunchRequest.TryParse("jmom-recorder://delete?platform=http://host:3050&code=7K3P-W9QM", out var wrongMode));
+        Assert.IsFalse(RecorderLaunchRequest.TryParse("autotest-recorder://delete?platform=http://host:3050&code=7K3P-W9QM", out var wrongMode));
         Assert.IsNull(wrongMode);
     }
 
@@ -79,26 +79,26 @@ public sealed class RecorderCoreTests
     public void LaunchRequest_RejectsExtraFieldsAndNonOriginPlatform()
     {
         Assert.ThrowsExactly<ArgumentException>(() => RecorderLaunchRequest.Parse(
-            "jmom-recorder://execute?platform=https%3A%2F%2Fhost%2Fprivate%3Ftoken%3Dsecret&code=7K3P-W9QM"));
+            "autotest-recorder://execute?platform=https%3A%2F%2Fhost%2Fprivate%3Ftoken%3Dsecret&code=7K3P-W9QM"));
         Assert.ThrowsExactly<ArgumentException>(() => RecorderLaunchRequest.Parse(
-            "jmom-recorder://execute?platform=https%3A%2F%2Fhost&code=7K3P-W9QM&script=secret"));
+            "autotest-recorder://execute?platform=https%3A%2F%2Fhost&code=7K3P-W9QM&script=secret"));
         Assert.ThrowsExactly<ArgumentException>(() => RecorderLaunchRequest.Parse(
-            "jmom-recorder://execute/path?platform=https%3A%2F%2Fhost&code=7K3P-W9QM"));
+            "autotest-recorder://execute/path?platform=https%3A%2F%2Fhost&code=7K3P-W9QM"));
     }
 
     [TestMethod]
     public void ProtocolRegistration_UsesCurrentUserAndQuotedExecutable()
     {
-        var spec = ProtocolRegistration.CreateSpec(@"D:\JMOM录制器\JMOM录制器.exe");
+        var spec = ProtocolRegistration.CreateSpec(@"D:\AutoTest-Studio录制器\AutoTest-Studio录制器.exe");
 
-        Assert.AreEqual(@"Software\Classes\jmom-recorder", spec.RootKeyPath);
-        Assert.AreEqual("\"D:\\JMOM录制器\\JMOM录制器.exe\" \"%1\"", spec.Command);
+        Assert.AreEqual(@"Software\Classes\autotest-recorder", spec.RootKeyPath);
+        Assert.AreEqual("\"D:\\AutoTest-Studio录制器\\AutoTest-Studio录制器.exe\" \"%1\"", spec.Command);
     }
 
     [TestMethod]
     public async Task SettingsStore_RoundTripsPlatformUrl()
     {
-        var root = Path.Combine(Path.GetTempPath(), $"jmom-recorder-{Guid.NewGuid():N}");
+        var root = Path.Combine(Path.GetTempPath(), $"autotest-recorder-{Guid.NewGuid():N}");
         try
         {
             var store = new RecorderSettingsStore(root);

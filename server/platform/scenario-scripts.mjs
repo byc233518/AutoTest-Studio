@@ -79,7 +79,7 @@ function findSchemaInitializer(source) {
 export function extractScriptDataSchema(source = '') {
   try {
     if (typeof source !== 'string') return null;
-    const marker = source.match(/\/\*\s*@jmom-data-schema\s*([\s\S]*?)\*\//);
+    const marker = source.match(/\/\*\s*@(?:autotest|jmom)-data-schema\s*([\s\S]*?)\*\//);
     if (marker) {
       return normalizeDataSchema(JSON.parse(marker[1].trim()));
     }
@@ -147,6 +147,72 @@ export function resolveScenarioScriptPath({ workspaceRoot, dataDir, scriptEntry 
     : path.resolve(workspaceRoot, normalizedEntry);
   if (isDataEntry ? !isWithin(dataDir, candidate) : !isWithin(workspaceRoot, candidate)) return null;
   return candidate;
+}
+
+function comparablePath(value) {
+  const resolved = path.resolve(value);
+  return process.platform === 'win32' ? resolved.toLocaleLowerCase('en-US') : resolved;
+}
+
+export async function removeScenarioScriptAssets({
+  workspaceRoot,
+  dataDir,
+  scriptsDir,
+  scenarios = [],
+  remainingScenarios = []
+}) {
+  const managedRoot = path.resolve(scriptsDir);
+  const remainingPaths = remainingScenarios
+    .map((scenario) => resolveScenarioScriptPath({ workspaceRoot, dataDir, scriptEntry: scenario.script_entry }))
+    .filter((scriptPath) => scriptPath && isWithin(managedRoot, scriptPath));
+  const remainingPathKeys = new Set(remainingPaths.map(comparablePath));
+  const directoryTargets = new Set();
+  const fileTargets = new Set();
+  const preservedShared = [];
+  const skippedExternal = [];
+
+  for (const scenario of scenarios) {
+    const versionDirectory = versionsDir(managedRoot, scenario.key);
+    if (isWithin(managedRoot, versionDirectory)) directoryTargets.add(versionDirectory);
+
+    const scriptPath = resolveScenarioScriptPath({ workspaceRoot, dataDir, scriptEntry: scenario.script_entry });
+    if (!scriptPath) continue;
+    if (!isWithin(managedRoot, scriptPath)) {
+      skippedExternal.push(scriptPath);
+      continue;
+    }
+    if (remainingPathKeys.has(comparablePath(scriptPath))) {
+      preservedShared.push(scriptPath);
+      continue;
+    }
+
+    const scenarioDirectory = path.resolve(managedRoot, scenario.key);
+    const remainingUsesScenarioDirectory = remainingPaths.some((remainingPath) => isWithin(scenarioDirectory, remainingPath));
+    if (isWithin(scenarioDirectory, scriptPath) && !remainingUsesScenarioDirectory) {
+      directoryTargets.add(scenarioDirectory);
+    } else {
+      fileTargets.add(scriptPath);
+    }
+  }
+
+  const recursiveTargets = [...directoryTargets];
+  const targets = [
+    ...recursiveTargets.map((target) => ({ target, recursive: true })),
+    ...[...fileTargets]
+      .filter((target) => !recursiveTargets.some((directory) => isWithin(directory, target)))
+      .map((target) => ({ target, recursive: false }))
+  ];
+  const removed = [];
+  const failed = [];
+  for (const entry of targets) {
+    try {
+      await rm(entry.target, { recursive: entry.recursive, force: true });
+      removed.push(entry.target);
+    } catch (error) {
+      failed.push({ path: entry.target, message: error.message });
+    }
+  }
+  return { removed, preservedShared, skippedExternal, failed };
 }
 
 export async function readScenarioScript(options) {
@@ -269,9 +335,12 @@ export async function saveScenarioScriptContent({
   const existingPath = existingScriptEntry
     ? resolveScenarioScriptPath({ workspaceRoot, dataDir, scriptEntry: existingScriptEntry })
     : null;
+  const managedExistingPath = existingPath && isWithin(scriptsDir, existingPath)
+    ? existingPath
+    : null;
   let storedPath;
-  if (existingPath && path.basename(existingPath) === safeFileName) {
-    storedPath = existingPath;
+  if (managedExistingPath && path.basename(managedExistingPath) === safeFileName) {
+    storedPath = managedExistingPath;
   } else {
     const targetDir = path.resolve(scriptsDir, scenarioKey);
     if (!isWithin(scriptsDir, targetDir)) {
@@ -286,7 +355,7 @@ export async function saveScenarioScriptContent({
   return {
     storedPath,
     fileName: safeFileName,
-    scriptEntry: existingPath === storedPath
+    scriptEntry: managedExistingPath === storedPath
       ? existingScriptEntry
       : toWorkspaceScriptEntry(workspaceRoot, storedPath, dataDir)
   };

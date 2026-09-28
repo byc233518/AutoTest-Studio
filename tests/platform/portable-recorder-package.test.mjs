@@ -26,9 +26,9 @@ test('便携包不把 CommonJS 场景脚本强制解释为 ESM', async () => {
 });
 
 test('绿色包布局包含 EXE、Node、Playwright、浏览器和数据目录', () => {
-  const layout = portableLayout('D:/dist/JMOM录制器');
-  assert.equal(layout.root, path.resolve('D:/dist/JMOM录制器'));
-  assert.match(layout.executable, /JMOM录制器\.exe$/);
+  const layout = portableLayout('D:/dist/AutoTest-Studio录制器');
+  assert.equal(layout.root, path.resolve('D:/dist/AutoTest-Studio录制器'));
+  assert.match(layout.executable, /AutoTest-Studio录制器\.exe$/);
   assert.match(layout.nodeExecutable, /runtime[\\/]node\.exe$/);
   assert.match(layout.runner, /app[\\/]portable-record-runner\.mjs$/);
   assert.match(layout.executionRunner, /app[\\/]portable-execution-runner\.mjs$/);

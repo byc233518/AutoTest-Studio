@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
-const { login, buttonTextPattern, recordProcessStep } = require('./jmom-ui');
+const { login, buttonTextPattern, recordProcessStep } = require('./autotest-ui');
 const { config } = require('./config');
 
 const resultSurfaceSelector = [
@@ -40,7 +40,7 @@ function fieldLabelCandidates(label) {
 
 function scenarioTestData(definition) {
   const fallback = definition.dataSchema?.example || {};
-  const datasetPath = process.env.JMOM_DATASET_PATH || '';
+  const datasetPath = process.env.AUTOTEST_DATASET_PATH || '';
   if (!datasetPath) return fallback;
   try {
     const rows = JSON.parse(fs.readFileSync(datasetPath, 'utf8'));

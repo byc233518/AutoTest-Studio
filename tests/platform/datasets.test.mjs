@@ -113,6 +113,29 @@ test('Excel 或 CSV 导入先解析到统一表格且不会直接创建数据集
   assert.equal((await datasets.json()).length, 0);
 });
 
+test('JSON 对象数组可以导入统一表格', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const form = new FormData();
+  const rows = [{
+    客户编号: 'AT-CUST-JSON',
+    客户名称: 'JSON 客户',
+    联系人: '测试员',
+    客户类别: '自动化',
+    客户地址: '深圳'
+  }];
+  form.append('file', new Blob([JSON.stringify({ rows })], { type: 'application/json' }), 'customers.json');
+
+  const preview = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/preview', {
+    method: 'POST',
+    headers: { cookie },
+    body: form
+  });
+
+  assert.equal(preview.status, 200);
+  assert.deepEqual((await preview.json()).rows, rows);
+});
+
 test('可以下载包含当前场景字段和示例行的 Excel 模板', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
@@ -338,7 +361,7 @@ test('创建场景拒绝非法业务 key', async (t) => {
   });
 
   assert.equal(response.status, 400);
-  assert.equal((await response.json()).message, '场景 key 必须是小写字母、数字和单连字符组合');
+  assert.equal((await response.json()).message, '场景 key 只能包含小写字母、数字和连字符，且不能以连字符开头或结尾');
   assert.equal(ctx.app.locals.database.getScenarioByKey('../outside'), undefined);
 });
 

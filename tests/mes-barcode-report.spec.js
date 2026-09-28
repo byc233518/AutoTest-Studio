@@ -1,5 +1,5 @@
 const { test } = require('@playwright/test');
-const { login, runBarcodeReportScenario } = require('./support/jmom-ui');
+const { login, runBarcodeReportScenario } = require('./support/autotest-ui');
 const { rowsFor, shouldRun, testRowTitle } = require('./support/dataset');
 
 test.describe.configure({ mode: 'serial' });
@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 const barcodeReportRows = rowsFor('mes-barcode-report', (runTag) => ({
-  物料编码: process.env.JMOM_PART_CODE || 'AT-PART-REAL0902',
+  物料编码: process.env.AUTOTEST_PART_CODE || 'AT-PART-REAL0902',
   工单类型: '正常',
   工单状态: '已创建',
   目标量: '10',
@@ -17,16 +17,16 @@ const barcodeReportRows = rowsFor('mes-barcode-report', (runTag) => ({
   条码前缀: `AT-SN-${runTag}`,
   变化位数: '4',
   车间编码: `AT-WS-${runTag}`,
-  车间名称: process.env.JMOM_WORKSHOP_NAME || '自动化车间-REAL0932',
+  车间名称: process.env.AUTOTEST_WORKSHOP_NAME || '自动化车间-REAL0932',
   线体编码: `AT-LINE-${runTag}`,
-  线体名称: process.env.JMOM_LINE_NAME || '自动化线体-REAL0932',
+  线体名称: process.env.AUTOTEST_LINE_NAME || '自动化线体-REAL0932',
   工段: '总装',
   所属工序: '总装',
   区域序号: '1',
   工艺名称: `AT-ROUTE-${runTag}`,
-  作业看板编码: process.env.JMOM_DESKTOP_CODE || 'S20250032',
-  工序名称: process.env.JMOM_OPERATION_NAME || 'SMT2',
-  创建车间线体: process.env.JMOM_CREATE_WORKSHOP_LINE || '',
+  作业看板编码: process.env.AUTOTEST_DESKTOP_CODE || 'S20250032',
+  工序名称: process.env.AUTOTEST_OPERATION_NAME || 'SMT2',
+  创建车间线体: process.env.AUTOTEST_CREATE_WORKSHOP_LINE || '',
   客户订单号: `AT-CO-${runTag}`,
   客户料号: `AT-OEM-${runTag}`,
   客户品名: `自动化客户品名-${runTag}`,

@@ -1,4 +1,4 @@
-# JMOM 绿色免安装本地录制器 Implementation Plan
+# AutoTest Studio 绿色免安装本地录制器 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -299,14 +299,14 @@ test('录制器规范化平台地址和录制码', () => {
 });
 
 test('便携路径只根据绿色包根目录解析', () => {
-  const paths = resolvePortablePaths('D:/JMOM录制器');
+  const paths = resolvePortablePaths('D:/AutoTest-Studio录制器');
   assert.match(paths.nodeExecutable, /runtime[\\/]node\.exe$/);
   assert.match(paths.playwrightCli, /app[\\/]node_modules[\\/]playwright[\\/]cli\.js$/);
   assert.match(paths.browserPath, /browsers$/);
 });
 
 test('codegen 使用指定 Node 和 CLI 写入输出脚本', async (t) => {
-  const root = await mkdtemp(path.join(tmpdir(), 'jmom-recorder-'));
+  const root = await mkdtemp(path.join(tmpdir(), 'autotest-recorder-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const fakeCli = path.join(root, 'fake-cli.mjs');
   const outputPath = path.join(root, 'recorded.spec.js');
@@ -402,7 +402,7 @@ export async function runCodegen({
     env: {
       ...process.env,
       PLAYWRIGHT_BROWSERS_PATH: browserPath,
-      JMOM_BASE_URL: startUrl.replace(/#.*$/, '').replace(/\/+$/, '')
+      AUTOTEST_BASE_URL: startUrl.replace(/#.*$/, '').replace(/\/+$/, '')
     }
   });
   const exitCode = await new Promise((resolve, reject) => {
@@ -509,7 +509,7 @@ Expected: FAIL，因为当前页面展示 `localCommand`。
 
 - [ ] **Step 3: 增加录制器下载接口**
 
-在 `createApp` 中增加 `recorderPackagePath`：优先使用 `options.recorderPackagePath`，否则使用环境变量 `JMOM_RECORDER_PACKAGE`，最后默认 `dist/JMOM本地录制器-win-x64.zip`。新增需要登录的 `GET /api/recorder/download`，文件不存在时返回 404 `免安装录制器尚未构建`，存在时调用 `response.download()`。
+在 `createApp` 中增加 `recorderPackagePath`：优先使用 `options.recorderPackagePath`，否则使用环境变量 `AUTOTEST_RECORDER_PACKAGE`，最后默认 `dist/AutoTest-Studio本地录制器-win-x64.zip`。新增需要登录的 `GET /api/recorder/download`，文件不存在时返回 404 `免安装录制器尚未构建`，存在时调用 `response.download()`。
 
 `POST /api/recordings/start` 的本地录制响应增加：
 
@@ -589,7 +589,7 @@ public void NormalizePlatformUrl_RejectsUnsupportedSchemes()
 [TestMethod]
 public void ProcessSpec_UsesPathsRelativeToPortableRoot()
 {
-    var spec = RecorderProcessSpec.Create(@"D:\JMOM录制器", "http://host:3050", "7K3P-W9QM");
+    var spec = RecorderProcessSpec.Create(@"D:\AutoTest-Studio录制器", "http://host:3050", "7K3P-W9QM");
     Assert.IsTrue(spec.FileName.EndsWith(@"runtime\node.exe", StringComparison.OrdinalIgnoreCase));
     StringAssert.Contains(spec.Arguments, @"app\portable-record-runner.mjs");
     StringAssert.Contains(spec.Arguments, "7K3P-W9QM");
@@ -632,7 +632,7 @@ Expected: 全部 PASS。
   <PublishSingleFile>true</PublishSingleFile>
   <SelfContained>true</SelfContained>
   <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-  <AssemblyName>JMOM录制器</AssemblyName>
+  <AssemblyName>AutoTest-Studio录制器</AssemblyName>
 </PropertyGroup>
 ```
 
@@ -644,7 +644,7 @@ Run:
 dotnet publish recorder/src/JmomRecorder.App/JmomRecorder.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-Expected: `recorder/src/JmomRecorder.App/bin/Release/net10.0-windows/win-x64/publish/JMOM录制器.exe` 存在。
+Expected: `recorder/src/JmomRecorder.App/bin/Release/net10.0-windows/win-x64/publish/AutoTest-Studio录制器.exe` 存在。
 
 - [ ] **Step 8: 提交 WinForms 录制器**
 
@@ -675,14 +675,14 @@ Expected: FAIL with `ERR_MODULE_NOT_FOUND`。
 
 `scripts/build-portable-recorder.mjs` 导出可测试的版本读取与布局函数；直接执行时完成：
 
-1. 清理 `dist/recorder-staging/JMOM录制器`。
+1. 清理 `dist/recorder-staging/AutoTest-Studio录制器`。
 2. 执行 `dotnet publish` 并复制 EXE。
 3. 复制当前 `node.exe` 到 `runtime/node.exe`。
 4. 根据 lockfile 固定版本，在 staging 的 `app` 中安装 `playwright@<locked version>`。
 5. 复制 `portable-record-runner.mjs` 和 `scripts/lib/local-recording.mjs`。
 6. 以 `PLAYWRIGHT_BROWSERS_PATH=<staging>/browsers` 执行 `playwright install chromium`。
 7. 创建 `data/recordings`、`data/pending`、`data/logs`、默认 `recorder.config.json` 和 `VERSION`。
-8. 用 PowerShell `Compress-Archive` 输出 `dist/JMOM本地录制器-win-x64.zip`。
+8. 用 PowerShell `Compress-Archive` 输出 `dist/AutoTest-Studio本地录制器-win-x64.zip`。
 9. 计算 SHA-256，写入同名 `.sha256` 文件。
 
 `package.json` 增加：
@@ -704,7 +704,7 @@ Run: `npm run build:recorder`
 
 Expected:
 
-- `dist/JMOM本地录制器-win-x64.zip` 存在且大小大于 100MB。
+- `dist/AutoTest-Studio本地录制器-win-x64.zip` 存在且大小大于 100MB。
 - `.sha256` 存在。
 - 解压目录包含 EXE、Node、Playwright CLI 和 Chromium。
 
@@ -713,7 +713,7 @@ Expected:
 解压 ZIP 到临时目录，执行：
 
 ```powershell
-Test-Path .\JMOM录制器.exe
+Test-Path .\AutoTest-Studio录制器.exe
 Test-Path .\runtime\node.exe
 Test-Path .\app\node_modules\playwright\cli.js
 Get-ChildItem .\browsers\chromium-* | Select-Object -First 1

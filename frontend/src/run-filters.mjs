@@ -17,7 +17,7 @@ export function filterRuns(runs = [], scenarios = [], filters = createRunFilters
   const [startDate, endDate] = filters.dateRange || [];
 
   return runs.filter((run) => {
-    const searchable = `${run.runId || ''} ${scenarioNames.get(run.scenarioId) || ''}`.toLocaleLowerCase();
+    const searchable = `${run.runId || ''} ${run.scenarioName || ''} ${scenarioNames.get(run.scenarioId) || ''}`.toLocaleLowerCase();
     const runDate = localDateKey(run.startedAt);
     return (!keyword || searchable.includes(keyword))
       && (!filters.status || run.status === filters.status)

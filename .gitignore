@@ -7,4 +7,6 @@ platform-data/
 recorder/**/bin/
 recorder/**/obj/
 dist/
+web-dist/
+release/
 .worktrees/portable-gui-recorder/dist

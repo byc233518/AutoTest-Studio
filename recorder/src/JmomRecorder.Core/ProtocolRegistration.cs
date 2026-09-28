@@ -7,7 +7,7 @@ public sealed record ProtocolRegistrationSpec(string RootKeyPath, string Command
 
 public static class ProtocolRegistration
 {
-    private const string RootKeyPath = @"Software\Classes\jmom-recorder";
+    private const string RootKeyPath = @"Software\Classes\autotest-recorder";
 
     public static ProtocolRegistrationSpec CreateSpec(string executablePath)
     {
@@ -21,7 +21,7 @@ public static class ProtocolRegistration
         var spec = CreateSpec(executablePath);
         using var protocolKey = Registry.CurrentUser.CreateSubKey(spec.RootKeyPath, writable: true)
             ?? throw new InvalidOperationException("无法写入当前用户的协议注册表");
-        protocolKey.SetValue(null, "URL:JMOM Recorder Protocol");
+        protocolKey.SetValue(null, "URL:AutoTest Studio Recorder Protocol");
         protocolKey.SetValue("URL Protocol", string.Empty);
         using var commandKey = protocolKey.CreateSubKey(@"shell\open\command", writable: true)
             ?? throw new InvalidOperationException("无法写入桌面启动命令");

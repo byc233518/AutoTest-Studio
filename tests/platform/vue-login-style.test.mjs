@@ -18,7 +18,7 @@ const extractRuleBody = (css, selector) => {
   return match[1];
 };
 
-test('登录页提供 JMOM 品牌视觉与三项平台能力', async () => {
+test('登录页提供 AutoTest Studio 品牌视觉与三项平台能力', async () => {
   const source = await readUtf8('frontend/src/views/LoginView.vue');
 
   for (const className of [
@@ -31,7 +31,7 @@ test('登录页提供 JMOM 品牌视觉与三项平台能力', async () => {
     assert.match(source, new RegExp(`class=["'][^"']*${className}`));
   }
 
-  assert.match(source, /JMOM 自动化测试平台/);
+  assert.match(source, /AutoTest Studio/);
   assert.match(source, /场景、数据、执行与证据的一体化工作台/);
   assert.match(source, /<h3>场景管理<\/h3>[\s\S]*?<small>脚本、数据、环境与依赖统一沉淀<\/small>/);
   assert.match(source, /<h3>执行闭环<\/h3>[\s\S]*?<small>预检、执行、过程与结果全程追踪<\/small>/);
@@ -57,9 +57,9 @@ test('登录页保留原有账号表单与提交逻辑', async () => {
 
 test('登录视觉样式引用本地 SVG 并在移动端切换为单栏', async () => {
   const css = await readUtf8('frontend/src/login.css');
-  const svg = await readOptionalUtf8('frontend/src/assets/jmom-login-visual.svg');
+  const svg = await readOptionalUtf8('frontend/src/assets/autotest-login-visual.svg');
 
-  assert.match(css, /url\(["']?\.\/assets\/jmom-login-visual\.svg["']?\)/);
+  assert.match(css, /url\(["']?\.\/assets\/autotest-login-visual\.svg["']?\)/);
   assert.match(css, /--login-panel-shell-width\s*:\s*44\.444444%/);
   assert.match(css, /\.login-panel-shell\s*\{[\s\S]*?width\s*:\s*var\(--login-panel-shell-width\)/);
   assert.match(css, /\.login-visual\s*\{/);

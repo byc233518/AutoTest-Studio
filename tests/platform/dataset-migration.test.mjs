@@ -59,7 +59,7 @@ test('畸形输入和无效字段映射只返回错误而不抛异常', () => {
 });
 
 test('旧 datasets 表重复启动迁移时只新增一次追溯字段', async (t) => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'jmom-dataset-migration-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'autotest-dataset-migration-'));
   const filename = path.join(directory, 'legacy.sqlite');
   t.after(() => rm(directory, { recursive: true, force: true }));
   const legacy = new DatabaseSync(filename);

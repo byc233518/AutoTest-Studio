@@ -33,7 +33,7 @@ public sealed class MainForm : Form
     {
         _launchRequest = launchRequest;
         _settingsStore = new RecorderSettingsStore(_portableRoot);
-        Text = "JMOM 本地测试工具";
+        Text = "AutoTest Studio 本地测试工具";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(680, 460);
         Size = new Size(760, 520);
@@ -63,7 +63,7 @@ public sealed class MainForm : Form
 
         var title = new Label
         {
-            Text = "JMOM 绿色免安装测试工具",
+            Text = "AutoTest Studio 绿色免安装测试工具",
             AutoSize = true,
             Font = new Font(Font, FontStyle.Bold)
         };

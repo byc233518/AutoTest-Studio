@@ -1,11 +1,58 @@
 import { spawn } from 'node:child_process';
-import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, cp, mkdir, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { buildPlaywrightCliArgs } from './execution-mode.mjs';
+import { environmentVariablesObject } from './environment-context.mjs';
+import { resolveRuntimePaths } from './runtime-paths.mjs';
+import { resolveScenarioScriptPath } from './scenario-scripts.mjs';
+import { normalizeBrowserChannel, resolveBrowserChannel } from './system-browsers.mjs';
 
 function now() {
   return new Date().toISOString();
+}
+
+export function configuredBrowserChannel(database) {
+  try {
+    const row = database?.getSetting?.('general');
+    const value = JSON.parse(row?.value || '{}');
+    return normalizeBrowserChannel(value.browserChannel, { strict: false });
+  } catch {
+    return 'auto';
+  }
+}
+
+export function resolveExecutionBrowser(database, options) {
+  return resolveBrowserChannel(configuredBrowserChannel(database), options);
+}
+
+function isWithin(root, candidate) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+export async function stageScenarioExecution(paths, runId, sourcePath) {
+  if (isWithin(paths.workspaceRoot, sourcePath)) {
+    return { scriptPath: sourcePath, cleanup: async () => {} };
+  }
+  const stageRoot = path.resolve(paths.temporaryDir, 'executions', runId);
+  const stageCaseDir = path.resolve(stageRoot, 'case');
+  const sourceDirectory = path.dirname(sourcePath);
+  await rm(stageRoot, { recursive: true, force: true });
+  await mkdir(stageCaseDir, { recursive: true });
+  if (path.resolve(sourceDirectory) === path.resolve(paths.scriptsDir)) {
+    await copyFile(sourcePath, path.resolve(stageCaseDir, path.basename(sourcePath)));
+  } else {
+    await cp(sourceDirectory, stageCaseDir, { recursive: true });
+  }
+  const runtimeModules = path.resolve(paths.workspaceRoot, 'node_modules');
+  if (!existsSync(runtimeModules)) throw new Error('客户端运行依赖不存在');
+  await symlink(runtimeModules, path.resolve(stageRoot, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+  const scriptPath = path.resolve(stageCaseDir, path.basename(sourcePath));
+  return {
+    scriptPath,
+    cleanup: () => rm(stageRoot, { recursive: true, force: true })
+  };
 }
 
 function artifactUrl(runId, fileName) {
@@ -33,7 +80,8 @@ export function isSkippedOnly(summary = {}) {
   return Number(summary.total || 0) > 0 && Number(summary.skipped || 0) === Number(summary.total || 0);
 }
 
-function finalRunStatus(exitCode, summary = {}) {
+function finalRunStatus(exitCode, summary = {}, signal = null) {
+  if (signal) return 'failed';
   if (exitCode && exitCode !== 0) return 'failed';
   if (isSkippedOnly(summary)) return 'skipped';
   return 'passed';
@@ -119,7 +167,9 @@ export function createRun(database, input) {
   return database.createRun({
     id: database.nextId('RUN'),
     scenarioId: input.scenario.id,
+    scenarioName: input.scenario.name,
     datasetId: input.dataset.id,
+    datasetName: input.dataset.name,
     environment: input.environment,
     executionMode: input.executionMode,
     executionLocation: input.executionLocation || 'server',
@@ -134,7 +184,7 @@ async function writeMockScreenshot(reportDir, scenario, text) {
   <rect width="960" height="540" fill="#f6f8ff"/>
   <rect x="56" y="56" width="848" height="428" rx="16" fill="#fff" stroke="#d9e1de"/>
   <rect x="96" y="104" width="220" height="42" rx="10" fill="#7c3aed"/>
-  <text x="116" y="132" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#fff">JMOM UI Runner</text>
+  <text x="116" y="132" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#fff">AutoTest Studio Runner</text>
   <text x="96" y="198" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#16201d">${scenario.name}</text>
   <text x="96" y="252" font-family="Arial, sans-serif" font-size="22" fill="#167c68">${text}</text>
   <text x="96" y="306" font-family="Arial, sans-serif" font-size="18" fill="#667085">这里模拟实时浏览器画面；真实 Playwright 执行会显示运行中截图。</text>
@@ -155,6 +205,7 @@ async function writeMockReport(app, run, scenario, dataset, reportDir) {
     ['browser', '启动浏览器并打开测试环境'],
     ['scenario', `执行场景：${scenario.name}`]
   ]) {
+    if (app.locals.shuttingDown) throw new Error('客户端正在退出，已停止测试执行');
     processState = { ...processState, steps: markStepRunning(processState.steps, stepId), currentStep: label };
     await writeMockScreenshot(reportDir, scenario, label);
     await writeRunProcess(reportDir, {
@@ -231,7 +282,7 @@ async function copyIfExists(source, target) {
 }
 
 async function writeFallbackScreenshot(reportDir, summary = {}, processState = {}) {
-  const title = processState.scenarioName || summary.scenario || 'JMOM 自动化测试';
+  const title = processState.scenarioName || summary.scenario || 'AutoTest Studio';
   const reason = isSkippedOnly(summary) ? '未产生浏览器画面' : '未采集到截图，展示执行摘要';
   const tests = Array.isArray(summary.tests) ? summary.tests.slice(0, 5) : [];
   const rows = tests.length
@@ -242,7 +293,7 @@ async function writeFallbackScreenshot(reportDir, summary = {}, processState = {
   <rect width="960" height="540" fill="#f6f8ff"/>
   <rect x="56" y="56" width="848" height="428" rx="16" fill="#fff" stroke="#d9e1de"/>
   <rect x="96" y="104" width="210" height="42" rx="10" fill="#7c3aed"/>
-  <text x="116" y="132" font-family="Arial,'Microsoft YaHei',sans-serif" font-size="18" font-weight="700" fill="#fff">JMOM Runner</text>
+  <text x="116" y="132" font-family="Arial,'Microsoft YaHei',sans-serif" font-size="18" font-weight="700" fill="#fff">AutoTest Studio Runner</text>
   <text x="96" y="198" font-family="Arial,'Microsoft YaHei',sans-serif" font-size="32" font-weight="700" fill="#16201d">${escapeXml(title)}</text>
   <text x="96" y="248" font-family="Arial,'Microsoft YaHei',sans-serif" font-size="22" font-weight="700" fill="#b54708">${escapeXml(reason)}</text>
   <text x="96" y="292" font-family="Arial,'Microsoft YaHei',sans-serif" font-size="18" fill="#667085">总数 ${summary.total ?? 0} · 通过 ${summary.passed ?? 0} · 失败 ${summary.failed ?? 0} · 跳过 ${summary.skipped ?? 0}</text>
@@ -344,39 +395,73 @@ function createArtifactRecords(database, runId, reportDir) {
 
 async function executePlaywright(app, run, scenario, dataset, reportDir) {
   await mkdir(reportDir, { recursive: true });
-  const environment = app.locals.database.getEnvironmentByKey(run.environment)
-    || app.locals.database.getDefaultEnvironment();
+  const environment = app.locals.database.getEnvironmentByKey(run.environment);
+  if (!environment) {
+    throw new Error(`执行环境不存在：${run.environment || '未指定'}`);
+  }
+  const scenarioScript = resolveScenarioScriptPath({
+    workspaceRoot: app.locals.paths.workspaceRoot,
+    dataDir: app.locals.paths.dataDir,
+    scriptEntry: scenario.script_entry
+  });
+  if (!scenarioScript || !existsSync(scenarioScript)) {
+    throw new Error(`场景执行脚本不存在：${scenario.script_entry || '未绑定脚本'}`);
+  }
+  const browser = resolveExecutionBrowser(
+    app.locals.database,
+    app.locals.browserDetectorOptions
+  );
+  const stagedExecution = await stageScenarioExecution(app.locals.paths, run.id, scenarioScript);
+  const { nodeExecutable, browsersPath, electronRunAsNode } = resolveRuntimePaths(app.locals.paths.workspaceRoot);
   const env = {
     ...process.env,
-    JMOM_RUN_ID: run.id,
-    JMOM_SCENARIO_KEY: scenario.key,
-    JMOM_DATASET_PATH: dataset.rows_path,
-    JMOM_RESULT_DIR: reportDir,
-    JMOM_PROCESS_FILE: path.resolve(reportDir, 'process.json'),
-    JMOM_EXECUTION_MODE: run.execution_mode || 'headless',
-    JMOM_RECORD_EVIDENCE: '1',
-    ...(environment ? {
-      JMOM_BASE_URL: environment.base_url,
-      JMOM_USERNAME: environment.username,
-      JMOM_PASSWORD: environment.password
-    } : {})
+    AUTOTEST_RUN_ID: run.id,
+    AUTOTEST_SCENARIO_KEY: scenario.key,
+    AUTOTEST_DATASET_PATH: dataset.rows_path,
+    AUTOTEST_RESULT_DIR: reportDir,
+    AUTOTEST_PROCESS_FILE: path.resolve(reportDir, 'process.json'),
+    AUTOTEST_EXECUTION_MODE: run.execution_mode || 'headless',
+    AUTOTEST_SCENARIO_SCRIPT: stagedExecution.scriptPath,
+    AUTOTEST_RECORD_EVIDENCE: '1',
+    AUTOTEST_BROWSER_CHANNEL: browser.channel,
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: browser.executablePath,
+    ...(browsersPath ? { PLAYWRIGHT_BROWSERS_PATH: browsersPath } : {}),
+    ...(electronRunAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+    AUTOTEST_BASE_URL: environment.base_url,
+    AUTOTEST_USERNAME: environment.username,
+    AUTOTEST_PASSWORD: environment.password,
+    AUTOTEST_GLOBAL_VARIABLES: JSON.stringify(environmentVariablesObject(environment))
   };
-  const child = spawn(process.execPath, [
-    path.resolve(app.locals.paths.workspaceRoot, 'scripts', 'run-tests.mjs'),
-    scenario.script_entry,
-    ...buildPlaywrightCliArgs(run.execution_mode)
-  ], {
-    cwd: app.locals.paths.workspaceRoot,
-    env,
-    stdio: app.locals.silent ? 'ignore' : 'inherit'
-  });
-  const exitCode = await new Promise((resolve) => child.on('close', resolve));
+  let exitCode;
+  let signal = null;
+  let child = null;
+  try {
+    child = spawn(nodeExecutable, [
+      path.resolve(app.locals.paths.workspaceRoot, 'scripts', 'run-tests.mjs'),
+      ...buildPlaywrightCliArgs(run.execution_mode)
+    ], {
+      cwd: app.locals.paths.workspaceRoot,
+      env,
+      stdio: app.locals.silent ? 'ignore' : 'inherit'
+    });
+    app.locals.activeChildProcesses?.add(child);
+    ({ exitCode, signal } = await new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', (code, closedSignal) => resolve({ exitCode: code, signal: closedSignal }));
+    }));
+    if (signal && app.locals.shuttingDown) {
+      throw new Error('客户端正在退出，已停止测试执行');
+    }
+  } finally {
+    if (child) app.locals.activeChildProcesses?.delete(child);
+    await stagedExecution.cleanup();
+  }
   await preparePlayableArtifacts(reportDir);
   const summaryPath = path.resolve(reportDir, 'summary.json');
   const summary = JSON.parse(await readFile(summaryPath, 'utf8').catch(() => '{}'));
   const processState = await readJson(path.resolve(reportDir, 'process.json'), initialProcessState(run, scenario, dataset));
   const screenshotFile = existsSync(path.resolve(reportDir, 'screenshot.png')) ? 'screenshot.png' : 'screenshot.svg';
-  const status = finalRunStatus(exitCode, summary);
+  const status = finalRunStatus(exitCode, summary, signal);
 
   await writeRunProcess(reportDir, {
     ...processState,
@@ -389,7 +474,7 @@ async function executePlaywright(app, run, scenario, dataset, reportDir) {
     steps: finishStepsByStatus(processState.steps || [], status)
   });
 
-  return { reportDir, summary, exitCode, status };
+  return { reportDir, summary, exitCode, signal, status };
 }
 
 export async function executeRun(app, runId) {
@@ -403,11 +488,14 @@ export async function executeRun(app, runId) {
   database.updateRun(runId, { status: 'running', startedAt: now(), reportPath: reportDir });
 
   try {
+    if (!database.getEnvironmentByKey(run.environment)) {
+      throw new Error(`执行环境不存在：${run.environment || '未指定'}`);
+    }
     const result = app.locals.runMode === 'mock'
       ? await writeMockReport(app, run, scenario, dataset, reportDir)
       : await executePlaywright(app, run, scenario, dataset, reportDir);
     database.updateRun(runId, {
-      status: result.status || finalRunStatus(result.exitCode, result.summary),
+      status: result.status || finalRunStatus(result.exitCode, result.summary, result.signal),
       finishedAt: now(),
       summary: result.summary,
       reportPath: result.reportDir

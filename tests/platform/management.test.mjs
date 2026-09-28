@@ -11,12 +11,12 @@ test('平台提供应用管理和模块管理列表', async (t) => {
   const appsBody = await apps.json();
   assert.equal(appsBody.apps.length, 6);
   assert.deepEqual(appsBody.apps.map((app) => app.key), [
-    'jmom-base',
-    'jmom-wms',
-    'jmom-mes',
-    'jmom-qms',
-    'jmom-tpm',
-    'jmom-legacy-mes'
+    'autotest-base',
+    'autotest-wms',
+    'autotest-mes',
+    'autotest-qms',
+    'autotest-tpm',
+    'autotest-legacy-mes'
   ]);
   assert.equal(appsBody.apps.find((app) => app.id === 'APP-MES').name, '制造执行');
   assert.equal(appsBody.apps.find((app) => app.id === 'APP-WMS').name, '仓储管理');

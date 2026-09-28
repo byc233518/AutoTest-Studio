@@ -64,7 +64,7 @@ test('录制复核、合约同步和发布版本组件包含完整 API 闭环', 
   assert.match(releases, /draft/);
 });
 
-test('场景工作区保留五个页签并接入统一工作流组件', async () => {
+test('用例工作区保留五个页签并接入统一工作流组件', async () => {
   const source = await read('frontend/src/components/ScenarioDrawer.vue');
   for (const label of ['基本信息', '测试数据', '脚本与录制', '发布版本', '执行记录']) assert.match(source, new RegExp(label));
   assert.match(source, /ScriptEditor/);
@@ -81,9 +81,9 @@ test('场景工作区保留五个页签并接入统一工作流组件', async ()
   assert.match(source, /analysis/);
 });
 
-test('场景工作区头部提供状态摘要、执行发布主操作和证据入口', async () => {
+test('用例工作区头部提供状态摘要、执行发布主操作和证据入口', async () => {
   const source = await read('frontend/src/components/ScenarioDrawer.vue');
-  for (const label of ['场景状态', '当前脚本', '字段数量', '最近执行']) assert.match(source, new RegExp(label));
+  for (const label of ['用例状态', '当前脚本', '字段数量', '最近执行']) assert.match(source, new RegExp(label));
   assert.match(source, /RunDialog/);
   assert.match(source, /runRef\.open\(scenario/);
   assert.match(source, /发布当前草稿|立即发布/);
@@ -98,15 +98,17 @@ test('草稿执行按钮仍使用统一 RunDialog 且不按状态禁用', async 
   assert.doesNotMatch(source, /:disabled="row\.status==='draft'"/);
 });
 
-test('场景分类在桌面按菜单树展示并在移动端保留路径选择器', async () => {
+test('用例目录使用桌面树形选择且不保留手机专用选择器', async () => {
   const source = await read('frontend/src/views/ScenariosView.vue');
-  assert.match(source, /buildScenarioTree/);
+  assert.match(source, /buildScenarioDirectoryTree/);
   assert.match(source, /findScenarioTreeNode/);
-  assert.match(source, /mobile-category-select/);
-  assert.match(source, /flattenCategoryOptions/);
+  assert.match(source, /<el-tree/);
+  assert.match(source, /class="scenario-layout directory-layout"/);
+  assert.doesNotMatch(source, /mobile-category-select/);
+  assert.doesNotMatch(source, /flattenCategoryOptions/);
 });
 
-test('发布结果直接合并到场景目录且目录刷新异常不会形成未处理 Promise', async () => {
+test('发布结果直接合并到用例目录且目录刷新异常不会形成未处理 Promise', async () => {
   const [view, drawer, store] = await Promise.all([
     read('frontend/src/views/ScenariosView.vue'),
     read('frontend/src/components/ScenarioDrawer.vue'),
@@ -122,17 +124,20 @@ test('发布结果直接合并到场景目录且目录刷新异常不会形成�
   assert.match(store, /function mergeScenario\(next\)/);
 });
 
-test('场景目录加载期间显示 Loading 且并发请求全部结束后再关闭', async () => {
+test('用例目录加载期间显示 Loading 且只请求用例和环境目录', async () => {
   const [view, store] = await Promise.all([
     read('frontend/src/views/ScenariosView.vue'),
     read('frontend/src/stores/platform.js')
   ]);
+  const loadCatalogSource = store.match(/async function loadCatalog\(\)\s*\{[\s\S]*?\n\s*\}\n\s*async function loadRuns/)?.[0] || '';
   assert.match(view, /v-loading="store\.loading"/);
-  assert.match(view, /element-loading-text="场景加载中\.\.\."/);
+  assert.match(view, /element-loading-text="用例加载中\.\.\."/);
   assert.match(view, /:aria-busy="store\.loading"/);
-  assert.match(store, /catalogLoadCount \+= 1/);
-  assert.match(store, /loading\.value = true/);
-  assert.match(store, /finally\s*\{/);
-  assert.match(store, /catalogLoadCount -= 1/);
-  assert.match(store, /loading\.value = catalogLoadCount > 0/);
+  assert.match(loadCatalogSource, /catalogLoadCount \+= 1/);
+  assert.match(loadCatalogSource, /loading\.value = true/);
+  assert.match(loadCatalogSource, /Promise\.all\(\[api\('\/api\/scenarios'\), api\('\/api\/environments'\)\]\)/);
+  assert.doesNotMatch(loadCatalogSource, /\/api\/(?:apps|modules)/);
+  assert.match(loadCatalogSource, /finally\s*\{/);
+  assert.match(loadCatalogSource, /catalogLoadCount -= 1/);
+  assert.match(loadCatalogSource, /loading\.value = catalogLoadCount > 0/);
 });

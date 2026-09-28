@@ -22,7 +22,8 @@ test('本地执行使用相对脚本路径调用 Playwright', async () => {
       environment: {
         baseUrl: 'http://127.0.0.1:46069',
         username: 'tester',
-        password: 'secret'
+        password: 'secret',
+        variables: { warehouseCode: 'WH-LOCAL', approvalRequired: false }
       }
     },
     paths: {
@@ -43,4 +44,5 @@ test('本地执行使用相对脚本路径调用 Playwright', async () => {
   assert.equal(exitCode, 0);
   assert.equal(invocation.args[2], 'tests/recordings/collect.spec.js');
   assert.equal(invocation.options.cwd, workspaceDir);
+  assert.equal(invocation.options.env.AUTOTEST_GLOBAL_VARIABLES, '{"warehouseCode":"WH-LOCAL","approvalRequired":false}');
 });
