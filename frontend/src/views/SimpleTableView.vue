@@ -1,0 +1,1 @@
+﻿<template><div class="page"><el-card><template #header><h2>{{title}}</h2></template><el-table :data="rows"><el-table-column v-for="column in columns" :key="column.prop" :prop="column.prop" :label="column.label"/></el-table></el-card></div></template><script setup>defineProps({title:String,rows:Array,columns:Array})</script>

@@ -1,0 +1,44 @@
+<h2>执行交互方案</h2>
+<p class="subtitle">点击一个方案。三个方案都支持实时步骤、截图刷新、完成后查看 HTML 报告与录像。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:18px;background:#f4f6f8">
+      <div style="background:white;border:1px solid #dfe3e8;border-radius:6px;overflow:hidden">
+        <div style="padding:12px 16px;border-bottom:1px solid #e8eaed;display:flex;justify-content:space-between"><strong>执行场景 · 客户主数据录入</strong><span style="color:#16794d">执行中 42%</span></div>
+        <div style="display:grid;grid-template-columns:190px 1fr;min-height:230px">
+          <div style="padding:14px;border-right:1px solid #e8eaed;background:#fafbfc">
+            <div style="font-weight:700;margin-bottom:12px">本次任务</div>
+            <div style="padding:9px;background:#eaf6ef;border-left:3px solid #25855a">客户主数据<br><small>执行中</small></div>
+          </div>
+          <div style="padding:14px">
+            <div style="height:112px;background:#20252b;color:white;display:grid;place-items:center;border-radius:4px">实时浏览器画面</div>
+            <div style="margin-top:12px;display:grid;gap:7px;font-size:12px"><span>✓ 准备环境</span><span>● 填写客户信息</span><span style="color:#8a929b">○ 生成报告</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body"><h3>A. 原弹窗原地切换（推荐）</h3><p>确认后不关闭弹窗，配置步骤切换为执行过程。单次和批量共用一个执行中心。</p></div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:18px;background:#f4f6f8">
+      <div style="margin-left:32%;background:white;border-left:1px solid #dfe3e8;min-height:270px;padding:14px">
+        <strong>执行详情</strong><div style="margin:14px 0;height:120px;background:#20252b;color:white;display:grid;place-items:center">实时画面</div><div style="font-size:12px;line-height:2">✓ 准备环境<br>● 执行业务步骤<br>○ 整理报告</div>
+      </div>
+    </div>
+    <div class="card-body"><h3>B. 关闭配置弹窗，打开详情抽屉</h3><p>复用现有详情抽屉，改动较小，但视觉上发生一次跳转，批量队列空间也更局促。</p></div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:18px;background:#f4f6f8">
+      <div style="background:white;border:1px solid #dfe3e8;min-height:270px;padding:14px"><strong>执行与报告</strong><div style="display:grid;grid-template-columns:1fr 1.6fr;gap:12px;margin-top:14px"><div style="border:1px solid #e5e8eb;padding:10px;font-size:12px;line-height:2.2">任务 1　通过<br>任务 2　执行中<br>任务 3　排队中</div><div style="background:#20252b;color:white;display:grid;place-items:center">实时画面</div></div></div>
+    </div>
+    <div class="card-body"><h3>C. 跳转到执行与报告页面</h3><p>最适合大规模批量监控，但不满足“当前页面弹窗内查看”，会打断场景选择流程。</p></div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:22px">
+  <div class="label">推荐的批量交互</div>
+  <p>场景表格增加多选；点击“批量执行”后统一选择环境和模式，各场景沿用其最近数据集。确认后在同一弹窗显示左侧队列，默认串行执行；点击队列项可切换右侧实时过程。全部结束后显示汇总，并可逐项打开报告。</p>
+</div>

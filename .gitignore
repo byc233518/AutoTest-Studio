@@ -1,0 +1,10 @@
+node_modules/
+test-results/
+playwright-report/
+.env
+platform-data/
+.worktrees/
+recorder/**/bin/
+recorder/**/obj/
+dist/
+.worktrees/portable-gui-recorder/dist
