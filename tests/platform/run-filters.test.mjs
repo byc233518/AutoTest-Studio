@@ -34,3 +34,18 @@ test('状态、场景和日期范围使用并且关系组合过滤', () => {
 
   assert.deepEqual(filterRuns(runs, scenarios, filters).map((item) => item.runId), ['RUN-CUSTOMER-001']);
 });
+
+test('已删除用例的执行记录仍可按快照名称搜索', () => {
+  const deletedRuns = [{
+    runId: 'RUN-DELETED-001',
+    scenarioId: 'SCN-DELETED',
+    scenarioName: '已删除客户回归',
+    status: 'passed',
+    startedAt: '2026-09-28T10:00:00.000Z'
+  }];
+
+  assert.deepEqual(
+    filterRuns(deletedRuns, [], { ...createRunFilters(), keyword: '客户回归' }).map((item) => item.runId),
+    ['RUN-DELETED-001']
+  );
+});

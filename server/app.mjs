@@ -1,4 +1,4 @@
-﻿import express from 'express';
+import express from 'express';
 import ExcelJS from 'exceljs';
 import multer from 'multer';
 import path from 'node:path';
@@ -20,9 +20,10 @@ import {
   markLocalRunStarted
 } from './platform/runner.mjs';
 import { rowsToCsv } from './platform/sample-data.mjs';
-import { generateSampleRowsSmart } from './platform/llm.mjs';
+import { generateSampleRowsSmart, testLlmConnection } from './platform/llm.mjs';
 import { publicLlmSetting } from './platform/settings.mjs';
 import { normalizeExecutionMode } from './platform/execution-mode.mjs';
+import { createBrowserStatus } from './platform/system-browsers.mjs';
 import { checkScenarioDependencies, assertDependenciesReady } from './platform/dependencies.mjs';
 import {
   archiveScenarioScriptVersion,
@@ -30,6 +31,7 @@ import {
   isAllowedScriptFile,
   listScenarioScriptVersions,
   readScenarioScript,
+  removeScenarioScriptAssets,
   restoreScenarioScriptVersion,
   saveScenarioScript,
   saveScenarioScriptContent
@@ -71,22 +73,142 @@ import {
   writeLocalExecutionMeta
 } from './platform/local-executions.mjs';
 import { buildDesktopLaunchUrl } from './platform/desktop-launch.mjs';
+import {
+  createScenarioSelectionBatch,
+  createTestPlanBatch,
+  executeTestPlanBatch,
+  normalizeGeneralSettings,
+  normalizeTestPlan,
+  publicTestPlan,
+  publicTestPlanRun,
+  publicTestPlanRunItem,
+  readGeneralSettings
+} from './platform/test-plans.mjs';
+import {
+  createScenarioPackage,
+  parseScenarioPackage,
+  ScenarioPackageError
+} from './platform/scenario-packages.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(__dirname, '..');
-const legacyPublicDir = path.resolve(workspaceRoot, 'web');
-const builtPublicDir = path.resolve(workspaceRoot, 'web-dist');
-const publicDir = existsSync(builtPublicDir) ? builtPublicDir : legacyPublicDir;
-const RECORDER_ARCHIVE_NAME = 'JMOM\u672c\u5730\u5f55\u5236\u5668-win-x64.zip';
-const SCENARIO_KEY_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const RECORDER_ARCHIVE_NAME = 'AutoTest-Studio\u672c\u5730\u5f55\u5236\u5668-win-x64.zip';
+const SCENARIO_KEY_PATTERN = /^[a-z0-9]+(?:-+[a-z0-9]+)*$/;
+const LEGACY_SCENARIO_KEY_PATTERN = /^legacyMes(?:-+[a-z0-9]+)+$/;
+const ENVIRONMENT_VARIABLE_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const DANGEROUS_VARIABLE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const MIGRATION_FILE_ATTEMPTS = 8;
+const DESKTOP_USER = Object.freeze({
+  token: 'desktop-local',
+  user_id: 'USR-DESKTOP',
+  username: 'local',
+  display_name: '本地用户',
+  role: 'admin'
+});
 
 function jsonError(response, status, message, extra = {}) {
   return response.status(status).json({ message, ...extra });
 }
 
 function isValidScenarioKey(value) {
-  return typeof value === 'string' && SCENARIO_KEY_PATTERN.test(value);
+  return typeof value === 'string'
+    && (SCENARIO_KEY_PATTERN.test(value) || LEGACY_SCENARIO_KEY_PATTERN.test(value));
+}
+
+function normalizeBatchScenarioIds(value) {
+  if (!Array.isArray(value) || !value.length) {
+    throw new TypeError('请至少选择一个测试用例');
+  }
+  const ids = value.map((id, index) => {
+    if (typeof id !== 'string' || !id.trim()) {
+      throw new TypeError(`第 ${index + 1} 个测试用例 ID 无效`);
+    }
+    return id.trim();
+  });
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length > 200) {
+    throw new TypeError('单次最多操作 200 个测试用例');
+  }
+  return uniqueIds;
+}
+
+function normalizeScenarioDirectory(value) {
+  if (typeof value !== 'string') throw new TypeError('目标目录必须是字符串');
+  const directory = value.trim();
+  if (directory.length > 500) throw new TypeError('目标目录不能超过 500 个字符');
+  return directory;
+}
+
+function normalizeBatchDatasetIds(value, scenarioIds) {
+  if (value == null) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('测试数据映射必须是对象');
+  }
+  const selected = new Set(scenarioIds);
+  const normalized = {};
+  for (const [scenarioId, datasetId] of Object.entries(value)) {
+    if (!selected.has(scenarioId)) {
+      throw new TypeError(`测试数据映射包含未选择的测试用例: ${scenarioId}`);
+    }
+    if (datasetId == null || datasetId === '') continue;
+    if (typeof datasetId !== 'string' || !datasetId.trim()) {
+      throw new TypeError(`测试数据 ID 无效: ${scenarioId}`);
+    }
+    normalized[scenarioId] = datasetId.trim();
+  }
+  return normalized;
+}
+
+function normalizeEnvironmentVariables(value) {
+  if (!Array.isArray(value)) {
+    throw new TypeError('环境全局变量必须是 key/value 对象数组');
+  }
+  const keys = new Set();
+  return value.map((item, index) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new TypeError(`第 ${index + 1} 个环境变量必须是对象`);
+    }
+    const key = typeof item.key === 'string' ? item.key.trim() : '';
+    if (!ENVIRONMENT_VARIABLE_KEY_PATTERN.test(key) || DANGEROUS_VARIABLE_KEYS.has(key)) {
+      throw new TypeError(`环境变量名无效: ${key || `第 ${index + 1} 项`}`);
+    }
+    if (keys.has(key)) {
+      throw new TypeError(`环境变量名重复: ${key}`);
+    }
+    if (!Object.hasOwn(item, 'value')) {
+      throw new TypeError(`环境变量 ${key} 缺少 value`);
+    }
+    const variableValue = item.value;
+    if ((typeof variableValue === 'object' && variableValue !== null)
+      || !['string', 'number', 'boolean', 'object'].includes(typeof variableValue)
+      || (typeof variableValue === 'number' && !Number.isFinite(variableValue))) {
+      throw new TypeError(`环境变量 ${key} 的值必须是字符串、数字、布尔值或 null`);
+    }
+    keys.add(key);
+    return { key, value: variableValue };
+  });
+}
+
+function publicEnvironmentVariables(value) {
+  try {
+    return normalizeEnvironmentVariables(JSON.parse(value || '[]'));
+  } catch {
+    return [];
+  }
+}
+
+function applyProjectMetadata(database, metadata) {
+  const current = database.getDefaultProject();
+  if (!current || !metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return current;
+  }
+  const name = typeof metadata.name === 'string' && metadata.name.trim()
+    ? metadata.name.trim()
+    : current.name;
+  const description = typeof metadata.description === 'string'
+    ? metadata.description.trim()
+    : current.description;
+  return database.updateProject(current.id, { name, description });
 }
 
 function resolveWithinUploads(uploadsDir, ...segments) {
@@ -105,11 +227,15 @@ function isDatasetIdConflict(error) {
 
 function sessionCookie(request) {
   const cookie = request.headers.cookie || '';
-  const found = cookie.split(';').map((item) => item.trim()).find((item) => item.startsWith('jmom_session='));
+  const found = cookie.split(';').map((item) => item.trim()).find((item) => item.startsWith('autotest_session='));
   return found ? decodeURIComponent(found.split('=').slice(1).join('=')) : '';
 }
 
 function requireAuth(request, response, next) {
+  if (request.app.locals.desktopMode) {
+    request.user = request.app.locals.desktopUser;
+    return next();
+  }
   const token = sessionCookie(request);
   const session = token ? request.app.locals.database.getSession(token) : null;
   if (!session) {
@@ -147,6 +273,7 @@ function toPublicEnvironment(row) {
     baseUrl: row.base_url,
     username: row.username,
     passwordMasked: row.password ? '********' : '',
+    variables: publicEnvironmentVariables(row.variables_json),
     isDefault: Boolean(row.is_default),
     sort: row.sort,
     createdAt: row.created_at,
@@ -229,13 +356,14 @@ async function writeExclusiveMigrationFile({ database, uploadsDir, scenarioId, r
   throw error;
 }
 
-function scenarioReadiness(database, scenario, environmentKey = 'test') {
+function scenarioReadiness(database, scenario, environmentKey = '') {
+  const resolvedEnvironmentKey = environmentKey || database.getDefaultEnvironment()?.key || '';
   const dependencies = checkScenarioDependencies(database, scenario);
   const checks = [
     { type: 'status', label: '场景已发布', ready: scenario.status === 'published', action: '发布场景' },
     { type: 'script', label: '已绑定自动化脚本', ready: Boolean(scenario.script_entry), action: '上传脚本' },
     { type: 'dataset', label: '已有有效样本数据', ready: database.listDatasets(scenario.id).some((item) => item.validation_status === 'valid'), action: '上传数据' },
-    { type: 'environment', label: '执行环境可用', ready: Boolean(database.getEnvironmentByKey(environmentKey)), action: '配置环境' },
+    { type: 'environment', label: '执行环境可用', ready: Boolean(database.getEnvironmentByKey(resolvedEnvironmentKey)), action: '配置环境' },
     { type: 'dependencies', label: '前置依赖已完成', ready: dependencies.every((item) => item.status === 'ready'), action: '执行依赖链', detail: dependencies }
   ];
   const blockers = checks.filter((item) => !item.ready).map((item) => item.type);
@@ -254,6 +382,182 @@ function scriptSchemaPatch(content) {
   return dataSchema ? { dataSchema } : {};
 }
 
+function isProcessRunning(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function markRecordingFailed(app, id, error) {
+  const metaPath = path.resolve(app.locals.paths.recordingsDir, `${id}.meta.json`);
+  if (!existsSync(metaPath)) return null;
+  const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+  if (['finished', 'draft'].includes(meta.status)) return meta;
+  meta.status = 'failed';
+  meta.error = error?.message || String(error || '录制失败');
+  meta.finishedAt = new Date().toISOString();
+  meta.uploadToken = null;
+  meta.uploadTokenExpires = null;
+  meta.recordCodeHash = null;
+  meta.recordCodeExpires = null;
+  await writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
+  return meta;
+}
+
+function listActiveRuns(database) {
+  return database.raw.prepare(`
+    SELECT * FROM runs
+    WHERE status IN ('queued', 'running')
+    ORDER BY created_at DESC
+  `).all();
+}
+
+function listActiveTestPlanRuns(database) {
+  return database.raw.prepare(`
+    SELECT * FROM test_plan_runs
+    WHERE status IN ('queued', 'running')
+    ORDER BY created_at DESC
+  `).all();
+}
+
+async function invalidateLocalExecution(app, runId, message, finishedAt) {
+  const reportDir = path.resolve(app.locals.paths.reportsDir, runId);
+  const meta = await readLocalExecutionMeta(reportDir).catch(() => null);
+  if (!meta) return;
+  await writeLocalExecutionMeta(reportDir, {
+    ...meta,
+    status: 'failed',
+    token: null,
+    tokenExpires: null,
+    recordCodeHash: null,
+    recordCodeExpires: null,
+    error: message,
+    finishedAt
+  });
+}
+
+async function failActiveDesktopTasks(app, { message, summaryFlag }) {
+  const database = app.locals.database;
+  const finishedAt = new Date().toISOString();
+
+  for (const run of listActiveRuns(database)) {
+    database.updateRun(run.id, {
+      status: 'failed',
+      finishedAt,
+      error: message
+    });
+    if (run.execution_location === 'local') {
+      await invalidateLocalExecution(app, run.id, message, finishedAt);
+    }
+  }
+
+  for (const batch of listActiveTestPlanRuns(database)) {
+    for (const item of database.listTestPlanRunItems(batch.id).filter((entry) => ['queued', 'running'].includes(entry.status))) {
+      database.updateTestPlanRunItem(item.id, {
+        status: 'failed',
+        error: message,
+        finishedAt
+      });
+    }
+    database.updateTestPlanRun(batch.id, {
+      status: 'failed',
+      finishedAt,
+      summary: {
+        ...JSON.parse(batch.summary_json || '{}'),
+        [summaryFlag]: true,
+        error: message
+      }
+    });
+  }
+
+  const recordingFiles = (await readdir(app.locals.paths.recordingsDir).catch(() => []))
+    .filter((name) => name.endsWith('.meta.json'));
+  for (const name of recordingFiles) {
+    const id = name.slice(0, -'.meta.json'.length);
+    try {
+      const metaPath = path.resolve(app.locals.paths.recordingsDir, name);
+      const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+      if (['waiting', 'recording'].includes(meta.status)) {
+        await markRecordingFailed(app, id, new Error(message));
+      }
+    } catch {}
+  }
+}
+
+async function finalizeRecording(app, { id, scenarioKey: requestedScenarioKey = '', actor = '', stopProcess = false }) {
+  const database = app.locals.database;
+  const metaPath = path.resolve(app.locals.paths.recordingsDir, `${id}.meta.json`);
+  if (!existsSync(metaPath)) return null;
+  const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+  if (meta.status === 'finished') {
+    const scenario = meta.scenarioKey ? database.getScenarioByKey(meta.scenarioKey) : null;
+    return { id, status: 'finished', scriptEntry: meta.scriptEntry || null, scenario: scenario ? toPublicScenario(scenario) : null };
+  }
+  const outputPath = meta.outputPath
+    ? path.resolve(meta.outputPath)
+    : path.resolve(app.locals.paths.recordingScriptsDir, `${id}.spec.js`);
+  if (stopProcess) stopRecordingProcess(meta.pid);
+  if (!existsSync(outputPath) && app.locals.recordMode === 'stub') {
+    const environment = database.getEnvironmentByKey(meta.environmentKey) || database.getDefaultEnvironment();
+    await writeRecordingStub(outputPath, id, environment);
+  }
+  const scriptEntry = resolveRecordingScriptEntry(
+    app.locals.paths.workspaceRoot,
+    outputPath,
+    app.locals.paths.dataDir
+  );
+  if (!scriptEntry || !isManagedScriptEntry(scriptEntry)) {
+    throw new Error('录制脚本不存在或不在当前项目目录');
+  }
+  const content = await readFile(outputPath, 'utf8');
+  const scenarioKey = requestedScenarioKey || meta.scenarioKey || '';
+  let scenario;
+  if (scenarioKey) {
+    scenario = database.getScenarioByKey(scenarioKey);
+    if (!scenario) throw new Error('录制关联的测试用例不存在');
+    if (scenario.script_entry && scenario.script_entry !== scriptEntry) {
+      await archiveScenarioScriptVersion({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        scriptsDir: app.locals.paths.scriptsDir,
+        dataDir: app.locals.paths.dataDir,
+        scenarioKey: scenario.key,
+        scriptEntry: scenario.script_entry,
+        actor: actor || meta.createdBy || '',
+        reason: 'recording'
+      });
+    }
+    scenario = database.updateScenario(scenarioKey, { scriptEntry, ...scriptSchemaPatch(content) });
+  } else {
+    const key = `draft-recording-${id.toLowerCase()}`;
+    scenario = database.getScenarioByKey(key) || database.createScenario({
+      key,
+      name: `录制用例 ${id}`,
+      description: `由录制任务 ${id} 自动创建`,
+      module: '录制用例',
+      appId: '',
+      moduleId: '',
+      priority: 'P2',
+      status: 'draft',
+      version: '0.1.0',
+      owner: actor || meta.createdBy || '本地用户',
+      scriptEntry,
+      dataSchema: extractScriptDataSchema(content) || { columns: [], required: [], example: {} },
+      dependsOn: []
+    });
+  }
+  meta.status = 'finished';
+  meta.error = null;
+  meta.finishedAt = new Date().toISOString();
+  meta.scenarioKey = scenario.key;
+  meta.scriptEntry = scriptEntry;
+  await writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
+  return { id, status: 'finished', scriptEntry, scenario: toPublicScenario(scenario) };
+}
+
 function toPublicRun(row) {
   const summary = JSON.parse(row.summary || '{}');
   const passedRows = Number(summary.passed ?? 0);
@@ -263,7 +567,9 @@ function toPublicRun(row) {
   return {
     runId: row.id,
     scenarioId: row.scenario_id,
+    scenarioName: row.scenario_name || row.scenario_id,
     datasetId: row.dataset_id,
+    datasetName: row.dataset_name || row.dataset_id,
     environment: row.environment,
     executionMode: row.execution_mode || 'headless',
     executionLocation: row.execution_location || 'server',
@@ -403,8 +709,8 @@ async function runProcessPayload(app, run) {
     runId: run.id,
     scenarioId: run.scenario_id,
     datasetId: run.dataset_id,
-    scenarioName: processState.scenarioName || scenario?.name || run.scenario_id,
-    datasetName: processState.datasetName || dataset?.name || run.dataset_id,
+    scenarioName: processState.scenarioName || scenario?.name || run.scenario_name || run.scenario_id,
+    datasetName: processState.datasetName || dataset?.name || run.dataset_name || run.dataset_id,
     executionMode: run.execution_mode || 'headless',
     executionLocation: run.execution_location || processState.executionLocation || 'server',
     status: skippedOnly ? 'skipped' : processState.status || run.status,
@@ -428,28 +734,41 @@ async function runProcessPayload(app, run) {
 
 export async function createApp(options = {}) {
   const appWorkspaceRoot = options.workspaceRoot || workspaceRoot;
+  const legacyPublicDir = path.resolve(appWorkspaceRoot, 'web');
+  const builtPublicDir = path.resolve(appWorkspaceRoot, 'web-dist');
+  const publicDir = options.publicDir || (existsSync(builtPublicDir) ? builtPublicDir : legacyPublicDir);
   const dataDir = options.dataDir || path.resolve(appWorkspaceRoot, 'platform-data');
-  const uploadsDir = path.resolve(dataDir, 'uploads');
-  const reportsDir = path.resolve(dataDir, 'reports');
-  const recordingsDir = path.resolve(dataDir, 'recordings');
+  const uploadsDir = path.resolve(options.uploadsDir || path.resolve(dataDir, 'uploads'));
+  const reportsDir = path.resolve(options.reportsDir || path.resolve(dataDir, 'reports'));
+  const recordingsDir = path.resolve(options.recordingsDir || path.resolve(dataDir, 'recordings'));
   const recordingScriptsDir = options.recordingScriptsDir || path.resolve(appWorkspaceRoot, 'tests', 'recordings');
-  const scriptsDir = path.resolve(dataDir, 'scripts');
+  const scriptsDir = path.resolve(options.scriptsDir || path.resolve(dataDir, 'scripts'));
+  const temporaryDir = path.resolve(options.temporaryDir || path.resolve(dataDir, 'tmp'));
   const migrationWriteFile = options.migrationWriteFile || writeFile;
   const recorderPackagePath = options.recorderPackagePath
-    || process.env.JMOM_RECORDER_PACKAGE
-    || path.resolve(workspaceRoot, 'dist', RECORDER_ARCHIVE_NAME);
+    || process.env.AUTOTEST_RECORDER_PACKAGE
+    || path.resolve(appWorkspaceRoot, 'dist', RECORDER_ARCHIVE_NAME);
   await mkdir(uploadsDir, { recursive: true });
   await mkdir(reportsDir, { recursive: true });
   await mkdir(recordingsDir, { recursive: true });
   await mkdir(recordingScriptsDir, { recursive: true });
   await mkdir(scriptsDir, { recursive: true });
+  await mkdir(temporaryDir, { recursive: true });
 
-  const database = createPlatformDatabase(options.databasePath || path.resolve(dataDir, 'platform.sqlite'));
-  seedPlatform(database);
+  const database = createPlatformDatabase(options.databasePath || path.resolve(dataDir, 'platform.sqlite'), {
+    rootDir: dataDir,
+    uploadsDir,
+    reportsDir
+  });
+  seedPlatform(database, {
+    preserveExisting: Boolean(options.desktopMode),
+    includeRepositoryCatalog: !options.desktopMode
+  });
+  applyProjectMetadata(database, options.project);
 
   const app = express();
-  const upload = multer({ dest: path.resolve(dataDir, 'tmp') });
-  const recordingFiles = multer({ dest: path.resolve(dataDir, 'tmp'), limits: { fileSize: 1024 * 1024 } });
+  const upload = multer({ dest: temporaryDir });
+  const recordingFiles = multer({ dest: temporaryDir, limits: { fileSize: 1024 * 1024 } });
   const recordingUpload = (request, response, next) => recordingFiles.single('file')(request, response, (error) => {
     if (!error) return next();
     const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
@@ -464,21 +783,97 @@ export async function createApp(options = {}) {
     recordingsDir,
     recordingScriptsDir,
     scriptsDir,
+    temporaryDir,
     recorderPackagePath,
     workspaceRoot: appWorkspaceRoot
   };
-  app.locals.runMode = options.runMode || process.env.JMOM_RUN_MODE || 'playwright';
-  app.locals.recordMode = options.recordMode || process.env.JMOM_RECORD_MODE || 'codegen';
+  app.locals.runMode = options.runMode || process.env.AUTOTEST_RUN_MODE || 'playwright';
+  app.locals.recordMode = options.recordMode || process.env.AUTOTEST_RECORD_MODE || 'codegen';
+  app.locals.desktopMode = Boolean(options.desktopMode);
+  app.locals.desktopUser = DESKTOP_USER;
+  app.locals.llmFetch = options.llmFetch || globalThis.fetch;
+  app.locals.llmRequestTimeoutMs = options.llmRequestTimeoutMs;
+  app.locals.browserDetectorOptions = options.browserDetectorOptions || {};
+  app.locals.testPlanReportWriter = options.testPlanReportWriter || writeFile;
+  app.locals.scenarioPackageScriptWriter = options.scenarioPackageScriptWriter || saveScenarioScriptContent;
   app.locals.silent = options.silent || false;
   app.locals.mockRunStepDelayMs = options.mockRunStepDelayMs || 0;
   app.locals.recordingCodeLimiter = createRecordingCodeLimiter();
   app.locals.localExecutionCodeLimiter = createRecordingCodeLimiter();
+  app.locals.activeRecordingTasks = new Map();
+  app.locals.activeRecordingProcesses = new Map();
+  app.locals.activeExecutionTasks = new Set();
+  app.locals.activePlanTasks = new Set();
+  app.locals.activeChildProcesses = new Set();
+  app.locals.shuttingDown = false;
+  app.locals.shutdownPromise = null;
+  const trackTask = (collection, promise) => {
+    const task = Promise.resolve(promise);
+    collection.add(task);
+    task.then(
+      () => collection.delete(task),
+      () => collection.delete(task)
+    );
+    return task;
+  };
+  app.locals.trackExecutionTask = (promise) => trackTask(app.locals.activeExecutionTasks, promise);
+  app.locals.trackPlanTask = (promise) => trackTask(app.locals.activePlanTasks, promise);
+  app.locals.getActiveRecordingCount = async () => {
+    const files = (await readdir(recordingsDir).catch(() => []))
+      .filter((name) => name.endsWith('.meta.json'));
+    let count = 0;
+    for (const name of files) {
+      try {
+        const meta = JSON.parse(await readFile(path.resolve(recordingsDir, name), 'utf8'));
+        if (['waiting', 'recording'].includes(meta.status)) count += 1;
+      } catch {}
+    }
+    return count;
+  };
+  app.locals.shutdown = async () => {
+    if (app.locals.shutdownPromise) return app.locals.shutdownPromise;
+    app.locals.shutdownPromise = (async () => {
+      app.locals.shuttingDown = true;
+
+      // 先停止录制和 Playwright 子进程，让它们有机会写出最终状态，再关闭数据库。
+      for (const processInfo of app.locals.activeRecordingProcesses.values()) {
+        stopRecordingProcess(processInfo.pid, processInfo.child);
+      }
+      for (const child of app.locals.activeChildProcesses) {
+        try {
+          if (process.platform === 'win32' && child.pid) {
+            stopRecordingProcess(child.pid, child);
+          } else {
+            child.kill();
+          }
+        } catch {}
+      }
+
+      await Promise.allSettled([...app.locals.activeRecordingTasks.values()]);
+      await Promise.allSettled([
+        ...app.locals.activeExecutionTasks,
+        ...app.locals.activePlanTasks
+      ]);
+      await failActiveDesktopTasks(app, {
+        message: '客户端已退出，执行任务已取消',
+        summaryFlag: 'shutdown'
+      });
+    })();
+    return app.locals.shutdownPromise;
+  };
+
+  if (app.locals.desktopMode) {
+    await failActiveDesktopTasks(app, {
+      message: '客户端上次异常退出，执行任务已取消',
+      summaryFlag: 'recoveredFromInterruptedSession'
+    });
+  }
 
   app.use(express.json({ limit: '2mb' }));
   app.use('/reports', express.static(reportsDir));
 
   app.get('/api/health', (request, response) => {
-    response.json({ ok: true, service: 'jmom-test-platform', runMode: app.locals.runMode });
+    response.json({ ok: true, service: 'autotest-studio', runMode: app.locals.runMode, desktopMode: app.locals.desktopMode });
   });
 
   app.get('/api/recorder/download', requireAuth, (request, response) => {
@@ -499,13 +894,13 @@ export async function createApp(options = {}) {
       return jsonError(response, 401, '\u8bf7\u6c42\u5931\u8d25');
     }
     const token = database.createSession(user.id);
-    response.setHeader('set-cookie', `jmom_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`);
+    response.setHeader('set-cookie', `autotest_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`);
     return response.json({ id: user.id, username: user.username, displayName: user.display_name, role: user.role });
   });
 
   app.post('/api/auth/logout', requireAuth, (request, response) => {
     database.deleteSession(sessionCookie(request));
-    response.setHeader('set-cookie', 'jmom_session=; Path=/; Max-Age=0');
+    response.setHeader('set-cookie', 'autotest_session=; Path=/; Max-Age=0');
     response.json({ ok: true });
   });
 
@@ -520,8 +915,106 @@ export async function createApp(options = {}) {
 
   app.get('/api/scenarios', requireAuth, (request, response) => {
     const project = database.getDefaultProject();
-    const scenarios = database.listScenarios().map((row) => ({ ...toPublicScenario(row), readiness: scenarioReadiness(database, row), quality: scenarioQuality(database, row) }));
+    const environmentKey = database.getDefaultEnvironment()?.key || '';
+    const scenarios = database.listScenarios().map((row) => ({
+      ...toPublicScenario(row),
+      readiness: scenarioReadiness(database, row, environmentKey),
+      quality: scenarioQuality(database, row)
+    }));
     response.json({ project, scenarios, recommendations: [] });
+  });
+
+  app.get('/api/scenarios/export', requireAuth, async (request, response, next) => {
+    try {
+      const entries = [];
+      for (const scenario of database.listScenarios()) {
+        entries.push({
+          scenario,
+          script: scenario.script_entry
+            ? await readScenarioScript({
+              workspaceRoot: app.locals.paths.workspaceRoot,
+              dataDir: app.locals.paths.dataDir,
+              scriptEntry: scenario.script_entry
+            }).catch(() => null)
+            : null
+        });
+      }
+      const scenarioPackage = createScenarioPackage(entries);
+      const date = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+      response.setHeader('content-type', 'application/json; charset=utf-8');
+      response.setHeader('content-disposition', `attachment; filename="autotest-scenarios-${date}.json"`);
+      return response.send(`${JSON.stringify(scenarioPackage, null, 2)}\n`);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.post('/api/scenarios/import', requireAuth, upload.single('file'), async (request, response, next) => {
+    const created = [];
+    const storedPaths = [];
+    let tombstonesToRestore = [];
+    try {
+      if (!request.file) return jsonError(response, 400, '请选择要导入的 JSON 用例包');
+      const scenarioPackage = parseScenarioPackage(await readFile(request.file.path), {
+        existingKeys: database.listScenarios().map((scenario) => scenario.key)
+      });
+      const importedKeys = new Set(scenarioPackage.scenarios.map((scenario) => scenario.key));
+      tombstonesToRestore = database.listAssetTombstones('scenario')
+        .filter((row) => importedKeys.has(row.asset_key));
+      for (const item of scenarioPackage.scenarios) {
+        let scenario = database.createScenario({
+          key: item.key,
+          name: item.name,
+          description: item.description,
+          module: item.directory,
+          appId: '',
+          moduleId: '',
+          priority: item.priority,
+          status: 'draft',
+          version: '0.1.0',
+          owner: item.owner || request.user.display_name || request.user.username,
+          scriptEntry: '',
+          dataSchema: item.dataSchema,
+          dependsOn: item.dependsOn
+        });
+        created.push(scenario);
+        if (item.script) {
+          const saved = await app.locals.scenarioPackageScriptWriter({
+            workspaceRoot: app.locals.paths.workspaceRoot,
+            scriptsDir: app.locals.paths.scriptsDir,
+            dataDir: app.locals.paths.dataDir,
+            scenarioKey: item.key,
+            existingScriptEntry: '',
+            fileName: item.script.fileName,
+            content: item.script.content
+          });
+          storedPaths.push(saved.storedPath);
+          scenario = database.updateScenario(item.key, { scriptEntry: saved.scriptEntry });
+          created[created.length - 1] = scenario;
+        }
+      }
+      return response.status(201).json({
+        imported: created.length,
+        scenarios: created.map(toPublicScenario)
+      });
+    } catch (error) {
+      await Promise.all(storedPaths.map((storedPath) => rm(storedPath, { force: true }).catch(() => {})));
+      for (const scenario of [...created].reverse()) {
+        try {
+          database.deleteScenario(scenario.id);
+        } catch {}
+      }
+      database.restoreAssetTombstones(tombstonesToRestore);
+      if (error instanceof ScenarioPackageError) {
+        return jsonError(response, error.status || 400, error.message, {
+          code: error.code,
+          ...(error.conflictingKeys ? { conflictingKeys: error.conflictingKeys } : {})
+        });
+      }
+      return next(error);
+    } finally {
+      if (request.file?.path) await rm(request.file.path, { force: true }).catch(() => {});
+    }
   });
 
   app.get('/api/scenarios/:key', requireAuth, (request, response) => {
@@ -539,7 +1032,7 @@ export async function createApp(options = {}) {
       return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
     }
     if (!isValidScenarioKey(body.key)) {
-      return jsonError(response, 400, '场景 key 必须是小写字母、数字和单连字符组合');
+      return jsonError(response, 400, '场景 key 只能包含小写字母、数字和连字符，且不能以连字符开头或结尾');
     }
     if (body.scriptEntry && !isManagedScriptEntry(body.scriptEntry)) {
       return jsonError(response, 400, '脚本入口必须位于受管目录');
@@ -576,6 +1069,108 @@ export async function createApp(options = {}) {
     }
     const updated = database.updateScenario(request.params.key, body);
     return response.json(toPublicScenario(updated));
+  });
+
+  app.post('/api/scenarios/batch/move', requireAuth, (request, response) => {
+    try {
+      const scenarioIds = normalizeBatchScenarioIds(request.body?.scenarioIds);
+      const directory = normalizeScenarioDirectory(request.body?.directory);
+      const scenarios = database.moveScenarios(scenarioIds, directory);
+      return response.json({
+        moved: scenarios.length,
+        directory,
+        scenarios: scenarios.map(toPublicScenario)
+      });
+    } catch (error) {
+      const status = error.code === 'SCENARIOS_NOT_FOUND' ? 404 : 400;
+      return jsonError(response, status, error.message, {
+        ...(error.missingScenarioIds ? { missingScenarioIds: error.missingScenarioIds } : {})
+      });
+    }
+  });
+
+  app.post('/api/scenarios/batch/delete', requireAuth, async (request, response) => {
+    try {
+      const scenarioIds = normalizeBatchScenarioIds(request.body?.scenarioIds);
+      const result = database.deleteScenarios(scenarioIds);
+      const datasetPaths = new Set(result.datasets.flatMap((dataset) => [dataset.file_path, dataset.rows_path]).filter(Boolean));
+      const datasetCleanup = await Promise.allSettled([...datasetPaths].map((filePath) => rm(filePath, { force: true })));
+      const cleanupWarnings = datasetCleanup.flatMap((entry, index) => entry.status === 'rejected'
+        ? [{ path: [...datasetPaths][index], message: entry.reason?.message || String(entry.reason) }]
+        : []);
+      const scriptCleanup = await removeScenarioScriptAssets({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        dataDir: app.locals.paths.dataDir,
+        scriptsDir: app.locals.paths.scriptsDir,
+        scenarios: result.scenarios,
+        remainingScenarios: database.listScenarios()
+      });
+      cleanupWarnings.push(...scriptCleanup.failed);
+      return response.json({
+        deleted: result.scenarios.length,
+        scenarioIds,
+        updatedTestPlanIds: result.updatedTestPlanIds,
+        deletedTestPlanIds: result.deletedTestPlanIds,
+        updatedDependencyScenarioIds: result.updatedDependencyScenarioIds,
+        removedScriptAssets: scriptCleanup.removed.length,
+        cleanupWarnings
+      });
+    } catch (error) {
+      const status = error.code === 'SCENARIOS_NOT_FOUND'
+        ? 404
+        : error.code === 'SCENARIOS_IN_ACTIVE_RUN' ? 409 : 400;
+      return jsonError(response, status, error.message, {
+        ...(error.missingScenarioIds ? { missingScenarioIds: error.missingScenarioIds } : {}),
+        ...(error.activeRunIds ? { activeRunIds: error.activeRunIds } : {}),
+        ...(error.activePlanItemIds ? { activePlanItemIds: error.activePlanItemIds } : {})
+      });
+    }
+  });
+
+  app.post('/api/scenarios/batch/run', requireAuth, (request, response) => {
+    let batch;
+    try {
+      const scenarioIds = normalizeBatchScenarioIds(request.body?.scenarioIds);
+      const datasetIds = normalizeBatchDatasetIds(request.body?.datasetIds, scenarioIds);
+      const activeBatch = database.listTestPlanRuns().find((run) => ['queued', 'running'].includes(run.status));
+      if (activeBatch) {
+        return jsonError(response, 409, '当前项目已有测试计划正在执行，请等待完成后再启动');
+      }
+      if (app.locals.shuttingDown) {
+        return jsonError(response, 503, '客户端正在退出，不能启动批量执行');
+      }
+      batch = createScenarioSelectionBatch(database, {
+        scenarioIds,
+        datasetIds,
+        ...(Object.hasOwn(request.body || {}, 'environment') ? { environment: request.body.environment } : {}),
+        ...(Object.hasOwn(request.body || {}, 'executionMode') ? { executionMode: request.body.executionMode } : {})
+      }, request.user.user_id);
+    } catch (error) {
+      return jsonError(response, 400, error.message);
+    }
+
+    response.status(202).json(publicTestPlanRun(database, batch));
+    const task = executeTestPlanBatch(app, batch.id);
+    app.locals.trackPlanTask(task);
+    task.catch((error) => {
+      database.updateTestPlanRun(batch.id, {
+        status: 'failed',
+        finishedAt: new Date().toISOString(),
+        summary: { error: error.message }
+      });
+      if (!app.locals.silent) console.error(error);
+    });
+  });
+
+  app.get('/api/scenarios/batch/runs', requireAuth, (request, response) => {
+    const limit = request.query.limit === undefined ? 20 : Number(request.query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      return jsonError(response, 400, 'limit 必须是 1 到 100 之间的整数');
+    }
+    return response.json({
+      testPlanRuns: database.listScenarioSelectionRuns(limit)
+        .map((run) => publicTestPlanRun(database, run))
+    });
   });
 
   app.get('/api/apps', requireAuth, (request, response) => {
@@ -681,10 +1276,16 @@ export async function createApp(options = {}) {
   app.post('/api/environments', requireAuth, (request, response) => {
     const body = request.body || {};
     if (!body.key || !body.name || !body.baseUrl || !body.username || !body.password) {
-      return jsonError(response, 400, '璇峰～鍐欑幆澧?key銆佸悕绉般€佸湴鍧€銆佽处鍙峰拰瀵嗙爜');
+      return jsonError(response, 400, '请填写环境标识、名称、地址、账号和密码');
     }
     if (database.getEnvironmentByKey(body.key)) {
       return jsonError(response, 409, '\u6570\u636e\u51b2\u7a81');
+    }
+    let variables;
+    try {
+      variables = normalizeEnvironmentVariables(Object.hasOwn(body, 'variables') ? body.variables : []);
+    } catch (error) {
+      return jsonError(response, 400, error.message);
     }
     const env = database.createEnvironment({
       key: body.key,
@@ -692,6 +1293,7 @@ export async function createApp(options = {}) {
       baseUrl: body.baseUrl,
       username: body.username,
       password: body.password,
+      variables,
       isDefault: Boolean(body.isDefault),
       sort: body.sort ?? 99
     });
@@ -703,12 +1305,30 @@ export async function createApp(options = {}) {
     if (!existing) {
       return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
+    if (existing.is_default && request.body?.isDefault === false) {
+      return jsonError(response, 409, '至少需要保留一个默认环境，请先设置其他环境为默认环境');
+    }
     const duplicate = request.body?.key ? database.getEnvironmentByKey(request.body.key) : null;
     if (duplicate && duplicate.id !== existing.id) {
       return jsonError(response, 409, '\u6570\u636e\u51b2\u7a81');
     }
-    const updated = database.updateEnvironment(request.params.id, request.body || {});
-    return response.json(toPublicEnvironment(updated));
+    const patch = { ...(request.body || {}) };
+    if (Object.hasOwn(patch, 'variables')) {
+      try {
+        patch.variables = normalizeEnvironmentVariables(patch.variables);
+      } catch (error) {
+        return jsonError(response, 400, error.message);
+      }
+    }
+    try {
+      const updated = database.updateEnvironment(request.params.id, patch);
+      return response.json(toPublicEnvironment(updated));
+    } catch (error) {
+      if (error.code === 'DEFAULT_ENVIRONMENT_REQUIRED') {
+        return jsonError(response, 409, error.message);
+      }
+      throw error;
+    }
   });
 
   app.delete('/api/environments/:id', requireAuth, (request, response) => {
@@ -719,8 +1339,22 @@ export async function createApp(options = {}) {
     if (existing.is_default) {
       return jsonError(response, 409, '\u9ed8\u8ba4\u73af\u5883\u4e0d\u80fd\u5220\u9664\uff0c\u8bf7\u5148\u8bbe\u7f6e\u5176\u4ed6\u9ed8\u8ba4\u73af\u5883');
     }
-    database.deleteEnvironment(existing.id);
-    return response.status(204).end();
+    try {
+      database.deleteEnvironment(existing.id);
+      return response.status(204).end();
+    } catch (error) {
+      if (error.code === 'DEFAULT_ENVIRONMENT_REQUIRED' || error.code === 'ENVIRONMENT_IN_USE') {
+        const details = error.code === 'ENVIRONMENT_IN_USE'
+          ? {
+              testPlanCount: error.testPlanCount || 0,
+              activeRunCount: error.activeRunCount || 0,
+              activePlanRunCount: error.activePlanRunCount || 0
+            }
+          : {};
+        return jsonError(response, 409, error.message, details);
+      }
+      throw error;
+    }
   });
 
   app.get('/api/scenarios/:key/template.csv', requireAuth, (request, response) => {
@@ -781,7 +1415,9 @@ export async function createApp(options = {}) {
         count: request.body?.count || 3,
         offset: request.body?.offset || 0,
         useLlm: Boolean(request.body?.useLlm),
-        rules: String(request.body?.rules || '').slice(0, 2000)
+        rules: String(request.body?.rules || '').slice(0, 2000),
+        fetchImpl: app.locals.llmFetch,
+        timeoutMs: app.locals.llmRequestTimeoutMs
       });
       return response.json({
         scenarioId: scenario.id,
@@ -815,7 +1451,7 @@ export async function createApp(options = {}) {
   app.get('/api/scenarios/:key/preflight', requireAuth, (request, response) => {
     const scenario = database.getScenarioByKey(request.params.key);
     if (!scenario) return jsonError(response, 404, '\u6d4b\u8bd5\u573a\u666f\u4e0d\u5b58\u5728');
-    response.json(scenarioReadiness(database, scenario, request.query.environment || 'test'));
+    response.json(scenarioReadiness(database, scenario, request.query.environment || ''));
   });
 
   app.get('/api/scenarios/:key/datasets', requireAuth, (request, response) => {
@@ -1300,12 +1936,141 @@ export async function createApp(options = {}) {
     }
   });
 
+  app.get('/api/test-plans', requireAuth, (request, response) => {
+    response.json({ testPlans: database.listTestPlans().map(publicTestPlan) });
+  });
+
+  app.post('/api/test-plans', requireAuth, (request, response) => {
+    try {
+      const input = normalizeTestPlan(database, request.body || {});
+      const created = database.createTestPlan({
+        ...input,
+        createdBy: request.user.user_id
+      });
+      return response.status(201).json(publicTestPlan(created));
+    } catch (error) {
+      return jsonError(response, 400, error.message);
+    }
+  });
+
+  app.get('/api/test-plans/:id', requireAuth, (request, response) => {
+    const plan = database.getTestPlanById(request.params.id);
+    return plan
+      ? response.json(publicTestPlan(plan))
+      : jsonError(response, 404, '测试计划不存在');
+  });
+
+  app.put('/api/test-plans/:id', requireAuth, (request, response) => {
+    const current = database.getTestPlanById(request.params.id);
+    if (!current) return jsonError(response, 404, '测试计划不存在');
+    try {
+      const input = normalizeTestPlan(database, request.body || {}, current);
+      return response.json(publicTestPlan(database.updateTestPlan(current.id, input)));
+    } catch (error) {
+      return jsonError(response, 400, error.message);
+    }
+  });
+
+  app.delete('/api/test-plans/:id', requireAuth, (request, response) => {
+    if (!database.getTestPlanById(request.params.id)) {
+      return jsonError(response, 404, '测试计划不存在');
+    }
+    database.deleteTestPlan(request.params.id);
+    return response.status(204).end();
+  });
+
+  app.get('/api/test-plans/:id/runs', requireAuth, (request, response) => {
+    const plan = database.getTestPlanById(request.params.id);
+    if (!plan) return jsonError(response, 404, '测试计划不存在');
+    return response.json({
+      testPlanRuns: database.listTestPlanRuns(plan.id).map((run) => publicTestPlanRun(database, run))
+    });
+  });
+
+  app.post('/api/test-plans/:id/run', requireAuth, (request, response) => {
+    const plan = database.getTestPlanById(request.params.id);
+    if (!plan) return jsonError(response, 404, '测试计划不存在');
+    const activeBatch = database.listTestPlanRuns().find((run) => ['queued', 'running'].includes(run.status));
+    if (activeBatch) {
+      return jsonError(response, 409, '当前项目已有测试计划正在执行，请等待完成后再启动');
+    }
+    if (app.locals.shuttingDown) {
+      return jsonError(response, 503, '客户端正在退出，不能启动测试计划');
+    }
+    let batch;
+    try {
+      batch = createTestPlanBatch(database, plan, request.user.user_id, request.body || {});
+    } catch (error) {
+      return jsonError(response, 400, error.message);
+    }
+    response.status(202).json(publicTestPlanRun(database, batch));
+    if (app.locals.shuttingDown) {
+      database.updateTestPlanRun(batch.id, {
+        status: 'failed',
+        finishedAt: new Date().toISOString(),
+        summary: { error: '客户端已退出，执行任务已取消' }
+      });
+    } else {
+      const task = executeTestPlanBatch(app, batch.id);
+      app.locals.trackPlanTask(task);
+      task.catch((error) => {
+          database.updateTestPlanRun(batch.id, {
+            status: 'failed',
+            finishedAt: new Date().toISOString(),
+            summary: { error: error.message }
+          });
+          if (!app.locals.silent) console.error(error);
+        });
+    }
+  });
+
+  app.get('/api/test-plan-runs', requireAuth, (request, response) => {
+    response.json({
+      testPlanRuns: database.listTestPlanRuns(request.query.testPlanId || '').map((run) => publicTestPlanRun(database, run))
+    });
+  });
+
+  app.get('/api/test-plan-runs/:id/items/:itemId', requireAuth, (request, response) => {
+    const batch = database.getTestPlanRunById(request.params.id);
+    const item = database.getTestPlanRunItemById(request.params.itemId);
+    if (!batch || !item || item.test_plan_run_id !== batch.id) {
+      return jsonError(response, 404, '测试计划执行项不存在');
+    }
+    return response.json(publicTestPlanRunItem(database, item));
+  });
+
+  app.get('/api/test-plan-runs/:id/report', requireAuth, async (request, response, next) => {
+    try {
+      const batch = database.getTestPlanRunById(request.params.id);
+      if (!batch) return jsonError(response, 404, '测试计划执行批次不存在');
+      if (!batch.report_path) return jsonError(response, 409, '测试报告尚未生成');
+      const reportPath = path.resolve(batch.report_path);
+      const relative = path.relative(app.locals.paths.reportsDir, reportPath);
+      if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        return jsonError(response, 404, '测试报告不存在');
+      }
+      return response.type('text/markdown; charset=utf-8').send(await readFile(reportPath, 'utf8'));
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  app.get('/api/test-plan-runs/:id', requireAuth, (request, response) => {
+    const batch = database.getTestPlanRunById(request.params.id);
+    return batch
+      ? response.json(publicTestPlanRun(database, batch))
+      : jsonError(response, 404, '测试计划执行批次不存在');
+  });
+
   app.post('/api/runs', requireAuth, async (request, response, next) => {
     try {
+      if (app.locals.shuttingDown) {
+        return jsonError(response, 503, '客户端正在退出，不能启动测试执行');
+      }
       const {
         scenarioId,
         datasetId,
-        environment = 'test',
+        environment,
         executionLocation = 'server',
         enforceDependencies = false,
         skipDependencyCheck = false
@@ -1324,7 +2089,7 @@ export async function createApp(options = {}) {
       if (!scenario || !dataset || dataset.scenario_id !== scenario.id) {
         return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
       }
-      const envRow = database.getEnvironmentByKey(environment);
+      const envRow = database.getEnvironmentByKey(environment || database.getDefaultEnvironment()?.key || '');
       if (!envRow) {
         return jsonError(response, 400, `鎵ц鐜涓嶅瓨鍦? ${environment}`);
       }
@@ -1367,11 +2132,19 @@ export async function createApp(options = {}) {
         });
       }
       response.status(202).json(toPublicRun(run));
-      setImmediate(() => {
-        executeRun(app, run.id).catch((error) => {
+      if (app.locals.shuttingDown) {
+        database.updateRun(run.id, {
+          status: 'failed',
+          finishedAt: new Date().toISOString(),
+          error: '客户端已退出，执行任务已取消'
+        });
+      } else {
+        const task = executeRun(app, run.id);
+        app.locals.trackExecutionTask(task);
+        task.catch((error) => {
           if (!app.locals.silent) console.error(error);
         });
-      });
+      }
     } catch (error) {
       next(error);
     }
@@ -1521,31 +2294,61 @@ export async function createApp(options = {}) {
     response.json(publicLlmSetting(database.getSetting('llm')));
   });
 
+  app.get('/api/settings/general', requireAuth, (request, response) => {
+    response.json(readGeneralSettings(database));
+  });
+
+  app.get('/api/settings/browser-status', requireAuth, (request, response) => {
+    const settings = readGeneralSettings(database);
+    response.json(createBrowserStatus(settings.browserChannel, app.locals.browserDetectorOptions));
+  });
+
+  app.put('/api/settings/general', requireAuth, (request, response) => {
+    try {
+      const value = normalizeGeneralSettings(request.body || {}, readGeneralSettings(database));
+      const row = database.setSetting('general', value, request.user.user_id);
+      return response.json({ ...value, updatedAt: row.updated_at });
+    } catch (error) {
+      return jsonError(response, 400, error.message);
+    }
+  });
+
   app.put('/api/settings/llm', requireAuth, (request, response) => {
-    const { provider = '', model = '', baseUrl = '', apiKey = '', enabled = true } = request.body || {};
+    const current = database.getSetting('llm');
+    const currentValue = current ? JSON.parse(current.value) : {};
+    const { provider = '', model = '', baseUrl = '', enabled = true } = request.body || {};
+    const apiKey = String(request.body?.apiKey || '').trim() || currentValue.apiKey || '';
     if (!provider || !model || !apiKey) {
-      return jsonError(response, 400, '璇峰～鍐欎緵搴斿晢銆佹ā鍨嬪拰 API Key');
+      return jsonError(response, 400, '请填写供应商、模型和 API Key');
     }
     const row = database.setSetting('llm', { provider, model, baseUrl, apiKey, enabled }, request.user.user_id);
     response.json(publicLlmSetting(row));
   });
 
-  app.post('/api/settings/llm/test', requireAuth, (request, response) => {
+  app.post('/api/settings/llm/test', requireAuth, async (request, response) => {
     const setting = database.getSetting('llm');
     const value = setting ? JSON.parse(setting.value) : null;
     if (!value?.apiKey) {
-      return jsonError(response, 400, '璇峰厛閰嶇疆 LLM API Key');
+      return jsonError(response, 400, '请先配置 AI API Key');
     }
     if (!value.enabled) {
-      return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
+      return jsonError(response, 400, 'AI 功能尚未启用');
     }
-    return response.json({ ok: true, message: '???????????' });
+    try {
+      await testLlmConnection(value, { fetchImpl: app.locals.llmFetch });
+      return response.json({ ok: true, message: 'AI 服务连接成功' });
+    } catch (error) {
+      return jsonError(response, 502, `AI 服务连接失败：${error.message}`);
+    }
   });
 
   app.post('/api/recordings/start', requireAuth, async (request, response, next) => {
     try {
+      if (app.locals.shuttingDown) {
+        return jsonError(response, 503, '客户端正在退出，不能启动录制');
+      }
       const scenarioKey = request.body?.scenarioKey || '';
-      const environmentKey = request.body?.environmentKey || 'test';
+      const environmentKey = request.body?.environmentKey || database.getDefaultEnvironment()?.key || '';
       const location = request.body?.location === 'server' ? 'server' : 'local';
       const platformUrl = `${request.protocol}://${request.get('host')}`;
       const environment = database.getEnvironmentByKey(environmentKey) || database.getDefaultEnvironment();
@@ -1563,9 +2366,9 @@ export async function createApp(options = {}) {
       const uploadTokenExpires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       const recordCode = location === 'local' ? createRecordingCode() : null;
       let processInfo = { pid: null, mode: location, startUrl };
+      const recordMode = app.locals.recordMode || 'codegen';
 
       if (location === 'server') {
-        const recordMode = app.locals.recordMode || 'codegen';
         if (recordMode === 'stub') {
           await writeRecordingStub(outputPath, id, environment);
         }
@@ -1573,7 +2376,9 @@ export async function createApp(options = {}) {
           workspaceRoot: app.locals.paths.workspaceRoot,
           outputPath,
           environment,
-          recordMode
+          recordMode,
+          browserChannel: readGeneralSettings(database).browserChannel,
+          browserOptions: app.locals.browserDetectorOptions
         });
       }
 
@@ -1599,6 +2404,26 @@ export async function createApp(options = {}) {
         }, null, 2)}\n`,
         'utf8'
       );
+      if (location === 'server') {
+        app.locals.activeRecordingProcesses.set(id, {
+          pid: processInfo.pid,
+          child: processInfo.child || null
+        });
+        const completion = processInfo.completion || Promise.resolve({ exitCode: 0, signal: null, error: null });
+        const task = completion
+          .then(async ({ exitCode, error }) => {
+            if (app.locals.shuttingDown) throw new Error('客户端正在退出，录制任务已取消');
+            if (error) throw error;
+            if (exitCode && !existsSync(outputPath)) throw new Error(`录制进程异常退出：${exitCode}`);
+            return finalizeRecording(app, { id, scenarioKey, actor: request.user.user_id });
+          })
+          .catch((error) => markRecordingFailed(app, id, error))
+          .finally(() => {
+            app.locals.activeRecordingTasks.delete(id);
+            app.locals.activeRecordingProcesses.delete(id);
+          });
+        app.locals.activeRecordingTasks.set(id, task);
+      }
       return response.status(201).json({
         id,
         status: 'recording',
@@ -1618,6 +2443,9 @@ export async function createApp(options = {}) {
           : null
       });
     } catch (error) {
+      if (error?.code === 'SYSTEM_BROWSER_NOT_FOUND') {
+        return jsonError(response, 400, error.message);
+      }
       return next(error);
     }
   });
@@ -1667,7 +2495,18 @@ export async function createApp(options = {}) {
       if (!existsSync(metaPath)) {
         return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
-      const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+      let meta = JSON.parse(await readFile(metaPath, 'utf8'));
+      if (meta.location === 'server'
+        && meta.status === 'recording'
+        && !app.locals.activeRecordingTasks.has(meta.id)
+        && !isProcessRunning(meta.pid)) {
+        try {
+          await finalizeRecording(app, { id: meta.id, scenarioKey: meta.scenarioKey, actor: meta.createdBy });
+        } catch (error) {
+          await markRecordingFailed(app, meta.id, error);
+        }
+        meta = JSON.parse(await readFile(metaPath, 'utf8'));
+      }
       return response.json({
         id: meta.id,
         status: meta.status,
@@ -1675,6 +2514,7 @@ export async function createApp(options = {}) {
         scenarioKey: meta.scenarioKey || null,
         scriptEntry: meta.scriptEntry || null,
         analysis: meta.analysis || null,
+        error: meta.error || null,
         startUrl: meta.startUrl || null,
         finishedAt: meta.finishedAt || null
       });
@@ -1993,88 +2833,13 @@ export async function createApp(options = {}) {
 
   app.post('/api/recordings/:id/finish', requireAuth, async (request, response, next) => {
     try {
-      const id = request.params.id;
-      const metaPath = path.resolve(app.locals.paths.recordingsDir, `${id}.meta.json`);
-      if (!existsSync(metaPath)) {
-        return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
-      }
-      const meta = JSON.parse(await readFile(metaPath, 'utf8'));
-      const outputPath = meta.outputPath
-        ? path.resolve(meta.outputPath)
-        : path.resolve(app.locals.paths.recordingScriptsDir, `${id}.spec.js`);
-      if (meta.location === 'local' && !['finished', 'draft'].includes(meta.status)) {
-        return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
-      }
-      stopRecordingProcess(meta.pid);
-      if (!existsSync(outputPath) && app.locals.recordMode === 'stub') {
-        const environment = database.getEnvironmentByKey(meta.environmentKey) || database.getDefaultEnvironment();
-        await writeRecordingStub(outputPath, id, environment);
-      }
-      const scriptEntry = resolveRecordingScriptEntry(
-        app.locals.paths.workspaceRoot,
-        outputPath,
-        app.locals.paths.dataDir
-      );
-      if (!scriptEntry) {
-        return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
-      }
-      const scenarioKey = request.body?.scenarioKey || meta.scenarioKey || '';
-      if (scenarioKey) {
-        const scenario = database.getScenarioByKey(scenarioKey);
-        if (!scenario) {
-          return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
-        }
-        await archiveScenarioScriptVersion({
-          workspaceRoot: app.locals.paths.workspaceRoot,
-          scriptsDir: app.locals.paths.scriptsDir,
-          dataDir: app.locals.paths.dataDir,
-          scenarioKey: scenario.key,
-          scriptEntry: scenario.script_entry,
-          actor: request.user.user_id,
-          reason: 'recording'
-        });
-        const content = await readFile(outputPath, 'utf8').catch(() => '');
-        const updated = database.updateScenario(scenarioKey, { scriptEntry, ...scriptSchemaPatch(content) });
-        meta.status = 'finished';
-        meta.finishedAt = new Date().toISOString();
-        meta.scenarioKey = scenarioKey;
-        meta.scriptEntry = scriptEntry;
-        await writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
-        return response.json({
-          id,
-          status: 'finished',
-          scriptEntry,
-          scenario: toPublicScenario(updated)
-        });
-      }
-      const key = `draft-recording-${id.toLowerCase()}`;
-      const content = await readFile(outputPath, 'utf8').catch(() => '');
-      const scenario = database.createScenario({
-        key,
-        name: `???? ${id}`,
-        description: `??? ${id} ???????`,
-        module: '褰曞埗 / Recording',
-        appId: '',
-        moduleId: '',
-        priority: 'P2',
-        status: 'draft',
-        version: '0.1.0',
-        owner: request.user.display_name || request.user.username,
-        scriptEntry,
-        dataSchema: extractScriptDataSchema(content) || { columns: [], required: [], example: {} },
-        dependsOn: []
+      const result = await finalizeRecording(app, {
+        id: request.params.id,
+        scenarioKey: request.body?.scenarioKey || '',
+        actor: request.user.user_id,
+        stopProcess: true
       });
-      meta.status = 'finished';
-      meta.finishedAt = new Date().toISOString();
-      meta.scenarioKey = scenario.key;
-      meta.scriptEntry = scriptEntry;
-      await writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
-      return response.json({
-        id,
-        status: 'finished',
-        scriptEntry,
-        scenario: toPublicScenario(scenario)
-      });
+      return result ? response.json(result) : jsonError(response, 404, '录制任务不存在');
     } catch (error) {
       return next(error);
     }

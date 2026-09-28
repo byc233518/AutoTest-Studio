@@ -34,7 +34,7 @@ test('平台种子数据包含核心发布场景和代码仓库草稿场景', as
   assert.equal(response.status, 200);
   const body = await response.json();
 
-  assert.equal(body.project.name, 'JMOM');
+  assert.equal(body.project.name, 'AutoTest Studio');
   const scenarioByKey = new Map(body.scenarios.map((scenario) => [scenario.key, scenario]));
   const coreScenarios = coreScenarioKeys.map((key) => scenarioByKey.get(key));
   assert.equal(coreScenarios.every(Boolean), true);

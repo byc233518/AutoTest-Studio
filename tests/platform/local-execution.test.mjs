@@ -8,6 +8,17 @@ test('测试人员可以用一次性执行码在本机领取场景并上传执�
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const dataset = await ctx.uploadCustomerDataset(cookie);
+  const environmentResponse = await ctx.fetch('/api/environments/ENV-TEST', {
+    method: 'PUT',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      variables: [
+        { key: 'warehouseCode', value: 'WH-TEST-01' },
+        { key: 'approvalRequired', value: false }
+      ]
+    })
+  });
+  assert.equal(environmentResponse.status, 200);
   const scriptPath = path.resolve(ctx.app.locals.paths.workspaceRoot, 'tests', 'wms-master-data.spec.js');
   const supportPath = path.resolve(ctx.app.locals.paths.workspaceRoot, 'tests', 'support', 'config.js');
   await mkdir(path.dirname(scriptPath), { recursive: true });
@@ -46,6 +57,10 @@ test('测试人员可以用一次性执行码在本机领取场景并上传执�
   assert.ok(claimed.files.some((file) => file.path === 'tests/wms-master-data.spec.js'));
   assert.ok(claimed.files.some((file) => file.path === 'tests/support/config.js'));
   assert.equal(typeof claimed.environment.password, 'string');
+  assert.deepEqual(claimed.environment.variables, {
+    warehouseCode: 'WH-TEST-01',
+    approvalRequired: false
+  });
 
   const reused = await ctx.fetch('/api/local-runs/resolve', {
     method: 'POST',

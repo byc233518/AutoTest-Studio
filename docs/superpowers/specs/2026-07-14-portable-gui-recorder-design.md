@@ -1,4 +1,4 @@
-# JMOM 绿色免安装本地录制器设计
+# AutoTest Studio 绿色免安装本地录制器设计
 
 ## 背景
 
@@ -41,9 +41,9 @@
 
 ### 首次使用
 
-1. 同事从平台或共享目录下载 `JMOM本地录制器-win-x64.zip`。
-2. 解压到任意可写目录，例如 `D:\JMOM录制器`。
-3. 双击 `JMOM录制器.exe`。
+1. 同事从平台或共享目录下载 `AutoTest-Studio本地录制器-win-x64.zip`。
+2. 解压到任意可写目录，例如 `D:\AutoTest-Studio录制器`。
+3. 双击 `AutoTest-Studio录制器.exe`。
 4. 首次启动时确认平台地址；默认填入团队统一的局域网平台地址，并保存到录制器目录下的本地配置文件。
 
 ### 每次录制
@@ -62,8 +62,8 @@
 ## 绿色包结构
 
 ```text
-JMOM录制器/
-├─ JMOM录制器.exe
+AutoTest-Studio录制器/
+├─ AutoTest-Studio录制器.exe
 ├─ recorder.config.json
 ├─ runtime/
 │  └─ node.exe
@@ -80,7 +80,7 @@ JMOM录制器/
 └─ VERSION
 ```
 
-- 所有运行路径根据 `JMOM录制器.exe` 所在目录解析，不能依赖当前工作目录。
+- 所有运行路径根据 `AutoTest-Studio录制器.exe` 所在目录解析，不能依赖当前工作目录。
 - 启动 Node 子进程时设置 `PLAYWRIGHT_BROWSERS_PATH=<录制器目录>\browsers`。
 - 临时脚本写入 `data/recordings`；上传失败的脚本移动到 `data/pending`，避免丢失。
 - 日志不得记录上传 Token、登录密码、Cookie 或页面表单内容。
@@ -256,7 +256,7 @@ GUI 使用以下状态：
 
 1. 解压 ZIP 后无需管理员权限即可启动。
 2. 输入平台地址和录制码后一分钟内打开 Inspector。
-3. 可以访问 JMOM 测试环境并完成一次操作录制。
+3. 可以访问 AutoTest Studio 测试环境并完成一次操作录制。
 4. 关闭 Inspector 后脚本自动上传并绑定场景。
 5. 平台显示完成状态，脚本可以正常执行。
 6. 全流程不打开命令行窗口，不要求用户编辑配置文件。

@@ -500,7 +500,7 @@ function renderLogin() {
   app.innerHTML = `
     <section class="login-shell">
       <form class="login-panel" id="loginForm">
-        <h1>JMOM 自动化测试平台</h1>
+        <h1>AutoTest Studio</h1>
         <p class="muted">选择应用、模块和测试场景，上传或生成样本数据，执行回归并查看过程资产。</p>
         <div class="field"><label>账号</label><input name="username" value="tester" autocomplete="username" /></div>
         <div class="field"><label>密码</label><input name="password" type="password" value="Tester123!" autocomplete="current-password" /></div>
@@ -593,7 +593,7 @@ function renderShell(content) {
         <div class="brand">
           <div class="brand-mark">J</div>
           <span class="brand-copy">
-            <strong>JMOM</strong>
+            <strong>AutoTest Studio</strong>
             <small>测试平台</small>
           </span>
         </div>
@@ -606,7 +606,7 @@ function renderShell(content) {
       <main class="workspace">
         <header class="topbar">
           <div>
-            <h1>${state.project?.name || 'JMOM'} 自动化测试</h1>
+            <h1>${state.project?.name || 'AutoTest Studio'} 自动化测试</h1>
             <div class="muted">集中 Runner：Playwright / 测试环境 · ${roleName(state.user.role)}</div>
           </div>
           <div class="topbar-actions">

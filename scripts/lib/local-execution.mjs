@@ -70,7 +70,7 @@ module.exports = defineConfig({
     ['html', { outputFolder: ${JSON.stringify(path.resolve(resultDir, 'html'))}, open: 'never' }]
   ],
   use: {
-    baseURL: process.env.JMOM_BASE_URL,
+    baseURL: process.env.AUTOTEST_BASE_URL,
     actionTimeout: 20000,
     navigationTimeout: 45000,
     screenshot: 'on',
@@ -112,14 +112,15 @@ export async function runPlaywrightTask({ task, paths, workspace, spawnImpl = sp
   const env = {
     ...process.env,
     PLAYWRIGHT_BROWSERS_PATH: paths.browserPath,
-    JMOM_RUN_ID: task.runId,
-    JMOM_SCENARIO_KEY: task.scenarioKey,
-    JMOM_DATASET_PATH: workspace.datasetPath,
-    JMOM_RESULT_DIR: workspace.resultDir,
-    JMOM_BASE_URL: task.environment.baseUrl,
-    JMOM_USERNAME: task.environment.username,
-    JMOM_PASSWORD: task.environment.password,
-    JMOM_DATA_TAG: new Date().toISOString().replace(/\D/g, '').slice(2, 14)
+    AUTOTEST_RUN_ID: task.runId,
+    AUTOTEST_SCENARIO_KEY: task.scenarioKey,
+    AUTOTEST_DATASET_PATH: workspace.datasetPath,
+    AUTOTEST_RESULT_DIR: workspace.resultDir,
+    AUTOTEST_BASE_URL: task.environment.baseUrl,
+    AUTOTEST_USERNAME: task.environment.username,
+    AUTOTEST_PASSWORD: task.environment.password,
+    AUTOTEST_GLOBAL_VARIABLES: JSON.stringify(task.environment.variables || {}),
+    AUTOTEST_DATA_TAG: new Date().toISOString().replace(/\D/g, '').slice(2, 14)
   };
   const args = [
     paths.playwrightCli,

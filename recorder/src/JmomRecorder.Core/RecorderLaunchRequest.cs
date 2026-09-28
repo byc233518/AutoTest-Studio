@@ -14,7 +14,8 @@ public sealed record RecorderLaunchRequest(
     public static RecorderLaunchRequest Parse(string value)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
-            || !string.Equals(uri.Scheme, "jmom-recorder", StringComparison.OrdinalIgnoreCase))
+            || (!string.Equals(uri.Scheme, "autotest-recorder", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(uri.Scheme, "jmom-recorder", StringComparison.OrdinalIgnoreCase)))
         {
             throw new ArgumentException("启动地址无效", nameof(value));
         }

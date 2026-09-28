@@ -9,6 +9,62 @@ export function splitScenarioMenuPath(value) {
     .filter(Boolean);
 }
 
+function splitDirectoryPath(value) {
+  return String(value || '')
+    .split(/\s*\/\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function directoryId(path) {
+  return `DIRECTORY:${path.map((item) => encodeURIComponent(item)).join('/')}`;
+}
+
+export function buildScenarioDirectoryTree(scenarios) {
+  const root = [];
+  for (const scenario of scenarios) {
+    const identity = scenario.id || scenario.key;
+    const path = splitDirectoryPath(scenario.directory || scenario.module || '未分类');
+    let children = root;
+    const currentPath = [];
+    for (const label of path.length ? path : ['未分类']) {
+      currentPath.push(label);
+      let node = children.find((item) => item.label === label);
+      if (!node) {
+        node = {
+          id: directoryId(currentPath),
+          label,
+          type: 'directory',
+          path: [...currentPath],
+          directory: currentPath.join(' / '),
+          scenarioIds: [],
+          scenarioCount: 0,
+          children: []
+        };
+        children.push(node);
+      }
+      if (!node.scenarioIds.includes(identity)) node.scenarioIds.push(identity);
+      node.scenarioCount = node.scenarioIds.length;
+      children = node.children;
+    }
+  }
+  const sortNodes = (nodes) => nodes
+    .sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
+    .map((node) => ({ ...node, children: sortNodes(node.children) }));
+  return sortNodes(root);
+}
+
+export function collectScenarioDirectories(scenarios) {
+  const values = new Set();
+  for (const scenario of scenarios) {
+    const path = splitDirectoryPath(scenario.directory || scenario.module || '');
+    for (let index = 1; index <= path.length; index += 1) {
+      values.add(path.slice(0, index).join(' / '));
+    }
+  }
+  return [...values].sort((left, right) => left.localeCompare(right, 'zh-CN'));
+}
+
 function categoryId(appId, path) {
   return `CATEGORY:${appId}:${path.map((item) => encodeURIComponent(item)).join('/')}`;
 }

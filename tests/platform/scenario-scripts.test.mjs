@@ -34,7 +34,7 @@ test('脚本字段解析支持 testDataSchema 和 JSON 注释声明', () => {
   });
 
   assert.deepEqual(extractScriptDataSchema(`
-    /* @jmom-data-schema
+    /* @autotest-data-schema
     {"columns":["customerCode","customerName"],"required":["customerCode"],"example":{"customerCode":"C001","customerName":"测试客户"}}
     */
   `), {

@@ -1,51 +1,58 @@
 {
-    "name":  "jmom-ui-automation",
-    "version":  "0.1.0",
-    "private":  true,
-    "scripts":  {
-                    "start":  "node server/index.mjs",
-                    "dev":  "node --watch server/index.mjs",
-                    "test":  "node --test \"tests/**/*.test.mjs\"",
-                    "test:e2e":  "node scripts/run-tests.mjs",
-                    "test:e2e:headed":  "node scripts/run-tests.mjs --headed",
-                    "test:e2e:debug":  "node scripts/run-tests.mjs --debug",
-                    "record:local":  "node scripts/record-local.mjs",
-                    "test:recorder":  "node --test tests/platform/recording-codes.test.mjs tests/platform/local-recorder.test.mjs tests/platform/portable-recorder-package.test.mjs && dotnet test recorder/JmomRecorder.sln",
-                    "build:recorder":  "node scripts/build-portable-recorder.mjs",
-                    "scenarios:menu:import":  "node scripts/import-system-menu-routes.mjs",
-                    "scenarios:generate":  "node scripts/generate-repository-scenarios.mjs",
-                    "results:summary":  "node scripts/summarize-results.mjs",
-                    "report":  "node node_modules/playwright/cli.js show-report",
-                    "dev:web":  "vite --config vite.config.js",
-                    "build:web":  "vite build --config vite.config.js"
-                },
-    "devDependencies":  {
-                            "@playwright/test":  "^1.54.1",
-                            "@vitejs/plugin-vue":  "^6.0.7",
-                            "vite":  "^7.3.6"
-                        },
-    "dependencies":  {
-                         "@codemirror/commands":  "^6.8.1",
-                         "@codemirror/lang-javascript":  "^6.2.4",
-                         "@codemirror/language":  "^6.11.3",
-                         "@codemirror/lint":  "^6.8.5",
-                         "@codemirror/search":  "^6.5.10",
-                         "@codemirror/state":  "^6.7.1",
-                         "@codemirror/view":  "^6.36.5",
-                         "@element-plus/icons-vue":  "^2.3.2",
-                         "acorn":  "^8.15.0",
-                         "acorn-walk":  "^8.3.4",
-                         "element-plus":  "^2.14.3",
-                         "exceljs":  "^4.4.0",
-                         "express":  "^5.2.1",
-                         "magic-string":  "^0.30.17",
-                         "multer":  "^2.2.0",
-                         "pinia":  "^3.0.4",
-                         "read-excel-file":  "^9.2.0",
-                         "vue":  "^3.5.39",
-                         "vue-router":  "^4.6.4"
-                     },
-    "overrides":  {
-                       "uuid":  "11.1.1"
-                   }
+    "name": "autotest-studio",
+    "version": "0.1.0",
+    "private": true,
+    "main": "desktop/main.mjs",
+    "description": "AutoTest Studio",
+    "scripts": {
+        "start": "node server/index.mjs",
+        "dev": "node --watch server/index.mjs",
+        "test": "node --test \"tests/**/*.test.mjs\"",
+        "test:e2e": "node scripts/run-tests.mjs",
+        "test:e2e:headed": "node scripts/run-tests.mjs --headed",
+        "test:e2e:debug": "node scripts/run-tests.mjs --debug",
+        "record:local": "node scripts/record-local.mjs",
+        "test:recorder": "node --test tests/platform/recording-codes.test.mjs tests/platform/local-recorder.test.mjs tests/platform/portable-recorder-package.test.mjs && dotnet test recorder/JmomRecorder.sln",
+        "build:recorder": "node scripts/build-portable-recorder.mjs",
+        "scenarios:menu:import": "node scripts/import-system-menu-routes.mjs",
+        "scenarios:generate": "node scripts/generate-repository-scenarios.mjs",
+        "results:summary": "node scripts/summarize-results.mjs",
+        "report": "node node_modules/playwright/cli.js show-report",
+        "dev:web": "vite --config vite.config.js",
+        "build:web": "vite build --config vite.config.js",
+        "desktop:dev": "npm run build:web && electron . --enable-logging",
+        "desktop": "npm run build:web && electron .",
+        "desktop:package": "npm run build:web && electron-builder --config electron-builder.config.cjs --win nsis --x64"
+    },
+    "devDependencies": {
+        "@vitejs/plugin-vue": "^6.0.7",
+        "electron": "40.9.3",
+        "electron-builder": "^26.15.3",
+        "vite": "^7.3.6"
+    },
+    "dependencies": {
+        "@codemirror/commands": "^6.8.1",
+        "@codemirror/lang-javascript": "^6.2.4",
+        "@codemirror/language": "^6.11.3",
+        "@codemirror/lint": "^6.8.5",
+        "@codemirror/search": "^6.5.10",
+        "@codemirror/state": "^6.7.1",
+        "@codemirror/view": "^6.36.5",
+        "@element-plus/icons-vue": "^2.3.2",
+        "@playwright/test": "^1.54.1",
+        "acorn": "^8.15.0",
+        "acorn-walk": "^8.3.4",
+        "element-plus": "^2.14.3",
+        "exceljs": "^4.4.0",
+        "express": "^5.2.1",
+        "magic-string": "^0.30.17",
+        "multer": "^2.2.0",
+        "pinia": "^3.0.4",
+        "read-excel-file": "^9.2.0",
+        "vue": "^3.5.39",
+        "vue-router": "^4.6.4"
+    },
+    "overrides": {
+        "uuid": "11.1.1"
+    }
 }

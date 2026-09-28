@@ -1,8 +1,8 @@
 const fs = require('node:fs');
 const { config } = require('./config');
 
-const scenarioKey = process.env.JMOM_SCENARIO_KEY || '';
-const datasetPath = process.env.JMOM_DATASET_PATH || '';
+const scenarioKey = process.env.AUTOTEST_SCENARIO_KEY || '';
+const datasetPath = process.env.AUTOTEST_DATASET_PATH || '';
 
 function loadRows() {
   if (!datasetPath) {

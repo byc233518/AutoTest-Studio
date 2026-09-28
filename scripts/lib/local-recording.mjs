@@ -82,7 +82,7 @@ export async function runCodegen({
   await mkdir(path.dirname(outputPath), { recursive: true });
   const env = {
     ...process.env,
-    JMOM_BASE_URL: startUrl.replace(/#.*$/, '').replace(/\/+$/, '')
+    AUTOTEST_BASE_URL: startUrl.replace(/#.*$/, '').replace(/\/+$/, '')
   };
   if (browserPath) env.PLAYWRIGHT_BROWSERS_PATH = browserPath;
 

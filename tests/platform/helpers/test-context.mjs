@@ -6,7 +6,7 @@ import { once } from 'node:events';
 import { createApp } from '../../../server/app.mjs';
 
 export async function createTestContext(t, options = {}) {
-  const rootDir = await mkdtemp(path.join(tmpdir(), 'jmom-platform-'));
+  const rootDir = await mkdtemp(path.join(tmpdir(), 'autotest-platform-'));
   const testWorkspaceRoot = path.resolve(rootDir, 'workspace');
   const app = await createApp({
     workspaceRoot: testWorkspaceRoot,

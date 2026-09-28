@@ -9,7 +9,7 @@
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishTrimmed>false</PublishTrimmed>
-    <AssemblyName>JMOM录制器</AssemblyName>
+    <AssemblyName>AutoTest-Studio录制器</AssemblyName>
     <RootNamespace>JmomRecorder.App</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

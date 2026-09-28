@@ -10,7 +10,7 @@ function normalizeRows(rows, schema = {}) {
 }
 
 function loadRecordedRows(schema = {}) {
-  const datasetPath = process.env.JMOM_DATASET_PATH || '';
+  const datasetPath = process.env.AUTOTEST_DATASET_PATH || '';
   if (datasetPath) {
     const rows = JSON.parse(fs.readFileSync(datasetPath, 'utf8'));
     if (Array.isArray(rows) && rows.length) return normalizeRows(rows, schema);

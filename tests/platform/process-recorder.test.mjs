@@ -8,21 +8,21 @@ import path from 'node:path';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { recordProcessStep } = require('../support/jmom-ui.js');
+const { recordProcessStep } = require('../support/autotest-ui.js');
 
 test('Playwright 支持函数会写入实时过程截图和步骤状态', async (t) => {
-  const rootDir = await mkdtemp(path.join(tmpdir(), 'jmom-process-'));
+  const rootDir = await mkdtemp(path.join(tmpdir(), 'autotest-process-'));
   t.after(async () => {
-    delete process.env.JMOM_PROCESS_FILE;
-    delete process.env.JMOM_RESULT_DIR;
-    delete process.env.JMOM_RUN_ID;
+    delete process.env.AUTOTEST_PROCESS_FILE;
+    delete process.env.AUTOTEST_RESULT_DIR;
+    delete process.env.AUTOTEST_RUN_ID;
     await rm(rootDir, { recursive: true, force: true });
   });
 
   const processFile = path.resolve(rootDir, 'process.json');
-  process.env.JMOM_PROCESS_FILE = processFile;
-  process.env.JMOM_RESULT_DIR = rootDir;
-  process.env.JMOM_RUN_ID = 'RUN-TEST';
+  process.env.AUTOTEST_PROCESS_FILE = processFile;
+  process.env.AUTOTEST_RESULT_DIR = rootDir;
+  process.env.AUTOTEST_RUN_ID = 'RUN-TEST';
   await writeFile(processFile, JSON.stringify({
     status: 'running',
     steps: [
@@ -66,4 +66,21 @@ test('容器可以通过环境变量指定系统 Chromium', () => {
   });
 
   assert.equal(output, '/usr/bin/chromium-browser');
+});
+
+test('Playwright 配置使用桌面端检测到的系统浏览器路径', () => {
+  const output = execFileSync(process.execPath, ['-e', `
+    const config = require('./playwright.config.js');
+    process.stdout.write(JSON.stringify(config.projects[0].use.launchOptions || {}));
+  `], {
+    cwd: path.resolve(import.meta.dirname, '../..'),
+    env: {
+      ...process.env,
+      AUTOTEST_BROWSER_CHANNEL: 'msedge',
+      PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: 'C:\\Browser\\msedge.exe'
+    },
+    encoding: 'utf8'
+  });
+
+  assert.deepEqual(JSON.parse(output), { executablePath: 'C:\\Browser\\msedge.exe' });
 });

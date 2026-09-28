@@ -1,27 +1,75 @@
-# JMOM 测试自动化平台
+# AutoTest Studio
 
-这是面向 JMOM B/S 系统的测试自动化平台。平台把 Playwright 脚本、测试数据、执行环境和执行报告集中管理，测试人员可以通过网页选择场景、维护样本数据、录制或上传脚本，并查看执行过程、截图、录像和报告。
+这是面向制造业 B/S 系统的 Windows 桌面自动化测试客户端。客户端默认完全本地离线运行，把 Playwright 脚本、测试数据、执行环境、测试计划和执行报告保存在用户选择的项目目录中；不同项目使用独立数据库和物理目录。当前版本保留 Web 服务边界，后续可以在不改变项目数据模型的前提下接入服务端能力。
 
 ## 核心能力
 
-- 场景库：登录、客户、供应商、物料、库位、采购、销售、Excel 导入、MES 工单、车间线体、条码过站等场景。
-- 测试数据：支持 CSV/Excel 上传、在线表格维护、规则样例生成和可选 AI 生成。
-- 执行中心：基于 Playwright Runner，支持 headless、headed、UI 实时观察模式，多环境切换，并按 `scriptEntry` 精确执行。
+- 多项目：支持创建、注册和切换项目，每个项目的用例、数据、录制、报告和 SQLite 数据库均物理隔离。
+- 用例库：使用任意层级目录管理用例，不再维护应用和模块；支持树形选择、JSON 用例包导入导出。
+- 测试数据：支持 JSON、CSV、Excel 导入、在线动态字段维护、规则生成和可选 AI 生成。
+- 脚本工作台：支持 Playwright 脚本录制、上传、CodeMirror 编辑、版本归档和字段合约同步。
+- 执行中心：支持无头、有头和 UI 模式，多环境切换，并按 `scriptEntry` 精确执行。
+- 测试计划：可选择多个用例顺序执行，并结合 AI 或规则降级生成 Markdown 测试报告。
+- 系统配置：支持浅色、深色、跟随系统主题，以及 AI、测试单位、测试人员和报告落款配置。
+- 环境配置：每个项目可维护多个环境及其 Base URL、测试账号、密码和全局变量。
 - 报告中心：展示执行状态、HTML 报告、过程截图、录像回放、失败数据下载。
-- 场景工作台：场景只分“草稿”和“已发布”，所有登录用户都可创建、编辑、执行和发布；每次发布都会保存一个不可变版本快照。
-- 脚本管理：支持上传脚本、CodeMirror 在线编辑、本地录制自动绑定、三步复核、脚本/字段合约同步；脚本保存最近 10 个版本，可防止误操作。
 - 字段与数据：脚本字段和平台字段可选择以平台为准、以脚本为准或合并；已有数据集时字段变化会进入迁移向导，创建新数据集并保留源数据。
+
+本期聚焦浏览器 UI 自动化，暂不提供接口测试功能。
 
 完善路线图见：`docs/superpowers/specs/2026-07-09-完善路线图-design.md`
 
-## 启动平台
+## 使用桌面客户端
+
+开发环境启动：
+
+```powershell
+npm install
+npm.cmd run desktop
+```
+
+构建 Windows x64 离线安装包：
+
+```powershell
+npm.cmd run desktop:package
+```
+
+安装包包含客户端运行所需的 Node.js 和用于测试录像的 FFmpeg，不再内置用于测试执行的 Playwright Chromium 或 Chromium Headless Shell。目标电脑需要安装 Google Chrome 或 Microsoft Edge；客户端优先使用 Chrome，未安装 Chrome 时使用 Edge。有头、无头执行及脚本录制均使用检测到的系统浏览器，并使用独立的临时用户目录，不读取日常浏览器的账号和个人数据。
+
+构建机只需准备与当前 Playwright 版本匹配的 FFmpeg：
+
+```powershell
+npx.cmd playwright install ffmpeg
+```
+
+打包过程不会下载组件；需要复用其他缓存目录时，可通过 `AUTOTEST_DESKTOP_BROWSER_CACHE` 指定。
+
+新建桌面项目只初始化 15 个手工维护的核心用例，不再自动导入代码扫描生成的历史用例。现阶段先按登录、WMS 主数据和 MES 核心流程逐个完成真实环境验证；其他用例在验证脚本和数据后，再通过录制、新建或用例包导入逐批加入。升级已有项目不会删除其中已经维护的历史用例。
+
+每个项目采用以下目录结构：
+
+```text
+<项目目录>/
+├─ .autotest-studio/project.json
+├─ .autotest-studio/project.sqlite
+├─ cases/
+├─ data/
+├─ recordings/
+├─ runs/
+├─ reports/
+└─ tmp/
+```
+
+取消注册项目只会从客户端列表中移除，不会删除项目目录及其中数据。
+
+## Web 开发模式
 
 ```powershell
 npm install
 npm start
 ```
 
-默认访问地址：
+Web 开发服务默认访问地址：
 
 - `http://localhost:3050`
 
@@ -32,6 +80,10 @@ npm start
 | 演示账号 | tester | Tester123! |
 | 演示账号 | maintainer | Maintainer123! |
 | 演示账号 | admin | Admin123! |
+
+## 服务端预留模式
+
+现有 Express API 和 Docker 部署方式继续保留，用于开发调试及后续服务端接入。桌面客户端的默认工作流不依赖 Docker 或外部服务端。
 
 ## Docker 部署
 
@@ -56,20 +108,20 @@ sh docker/docker-deploy.sh
 
 该脚本会修复平台数据目录权限、构建镜像、启动或更新容器并执行健康检查，也可以通过 Jenkins 的 Publish over SSH 在远端调用。
 
-## JMOM 测试环境
+## 被测系统测试环境
 
 默认被测环境来自 `Agents.md`：
 
-- `JMOM_BASE_URL=http://172.16.100.11:46069`
-- `JMOM_USERNAME=byc`
-- `JMOM_PASSWORD=Abcd1234`
+- `AUTOTEST_BASE_URL=http://172.16.100.11:46069`
+- `AUTOTEST_USERNAME=byc`
+- `AUTOTEST_PASSWORD=Abcd1234`
 
 如需覆盖：
 
 ```powershell
-$env:JMOM_BASE_URL='http://172.16.100.11:46069'
-$env:JMOM_USERNAME='byc'
-$env:JMOM_PASSWORD='Abcd1234'
+$env:AUTOTEST_BASE_URL='http://172.16.100.11:46069'
+$env:AUTOTEST_USERNAME='byc'
+$env:AUTOTEST_PASSWORD='Abcd1234'
 npm start
 ```
 
@@ -80,8 +132,8 @@ npm start
 在线绑定流程：
 
 1. 在场景详情的“脚本与录制”页签点击“开始录制”。
-2. 下载并解压 `JMOM本地录制器-win-x64.zip`。
-3. 浏览器会优先通过 `jmom-recorder://record` 一键唤起工具；未唤起时双击 `JMOM录制器.exe`，输入平台显示的 8 位录制码。
+2. 下载并解压 `AutoTest-Studio本地录制器-win-x64.zip`。
+3. 浏览器会优先通过 `autotest-recorder://record` 一键唤起工具；未唤起时双击 `AutoTest-Studio录制器.exe`，输入平台显示的 8 位录制码。
 4. 在 Playwright Inspector 中完成操作并关闭窗口。
 5. 录制器会自动上传脚本，平台打开三步复核：确认字段、确认成功条件、确认最终脚本。
 6. 复核应用后，场景保持草稿，可立即本地验证或发布生成版本。
@@ -108,7 +160,7 @@ npm run record:local -- --id REC-xxx --token TOKEN --url "http://172.16.100.11:4
 npm run build:recorder
 ```
 
-然后将 `dist/JMOM本地录制器-win-x64.zip` 上传到服务器仓库后重新部署。完整说明见 `docs/免安装录制器使用说明.md`。
+然后将 `dist/AutoTest-Studio本地录制器-win-x64.zip` 上传到服务器仓库后重新部署。完整说明见 `docs/免安装录制器使用说明.md`。
 
 ## 测试人员本机执行
 
@@ -116,8 +168,8 @@ npm run build:recorder
 
 1. 在场景列表点击“执行”，将“执行位置”切换为“本机执行”。
 2. 选择执行环境、浏览器模式和测试数据，创建执行任务。
-3. 平台弹出本机执行窗口，优先通过 `jmom-recorder://execute` 一键唤起绿色工具。
-4. 如果浏览器没有唤起工具，打开 `JMOM录制器.exe`，功能选择“执行场景”，输入平台地址和 8 位一次性执行码。
+3. 平台弹出本机执行窗口，优先通过 `autotest-recorder://execute` 一键唤起绿色工具。
+4. 如果浏览器没有唤起工具，打开 `AutoTest-Studio录制器.exe`，功能选择“执行场景”，输入平台地址和 8 位一次性执行码。
 5. 工具在测试人员电脑上下载场景脚本与数据，运行 Playwright，并把报告、截图、录像和 Trace 自动上传平台。
 
 本机执行任务在“执行与报告”中标记为“测试人员本机”，任务领取前显示排队中，领取后显示执行中。绿色包的构建命令仍为：
@@ -148,7 +200,7 @@ const testDataSchema = {
 exports.testDataSchema = testDataSchema;
 
 defineRecordedTests(test, '库位维护录入', testDataSchema, async ({ page }, data) => {
-  await page.goto(process.env.JMOM_BASE_URL || 'http://172.16.100.11:46069/#/login');
+  await page.goto(process.env.AUTOTEST_BASE_URL || 'http://172.16.100.11:46069/#/login');
 
   await page.getByRole('textbox', { name: '库位编码' }).fill(data.locatorCode);
   await page.getByRole('textbox', { name: '库位名称' }).fill(data.locatorName);
@@ -165,8 +217,8 @@ defineRecordedTests(test, '库位维护录入', testDataSchema, async ({ page },
 1. `testDataSchema.columns` 决定平台测试数据表格、Excel 模板、自动生成字段。
 2. `required` 决定上传或手工保存数据时的必填校验。
 3. `example` 是没有选择数据集时的本地回退样例。
-4. 执行任务创建后，Runner 会把选中的数据集路径写入 `JMOM_DATASET_PATH`。
-5. `defineRecordedTests` 会读取 `JMOM_DATASET_PATH`，按数据集每一行循环生成一个 Playwright test。
+4. 执行任务创建后，Runner 会把选中的数据集路径写入 `AUTOTEST_DATASET_PATH`。
+5. `defineRecordedTests` 会读取 `AUTOTEST_DATASET_PATH`，按数据集每一行循环生成一个 Playwright test。
 
 ## 脚本版本管理
 
@@ -209,6 +261,7 @@ Playwright 原始结果仍会写入：
 
 支持格式：
 
+- `.json`
 - `.csv`
 - `.xlsx`
 
@@ -217,7 +270,7 @@ Playwright 原始结果仍会写入：
 平台默认使用真实 Playwright Runner。开发测试时可使用 mock 模式快速验证平台流程：
 
 ```powershell
-$env:JMOM_RUN_MODE='mock'
+$env:AUTOTEST_RUN_MODE='mock'
 npm start
 ```
 

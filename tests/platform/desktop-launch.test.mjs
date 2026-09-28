@@ -12,7 +12,7 @@ test('协议 URL 只携带平台地址、模式和一次性操作码', () => {
 
   assert.equal(
     url,
-    'jmom-recorder://execute?platform=http%3A%2F%2Fhost%3A3050&code=7K3P-W9QM'
+    'autotest-recorder://execute?platform=http%3A%2F%2Fhost%3A3050&code=7K3P-W9QM'
   );
   assert.doesNotMatch(url, /password|script|dataset/i);
 });

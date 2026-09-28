@@ -6,7 +6,7 @@ const {
   createPart,
   createLocator,
   searchByPlaceholder
-} = require('./support/jmom-ui');
+} = require('./support/autotest-ui');
 const { rowsFor, shouldRun, testRowTitle } = require('./support/dataset');
 
 test.describe.configure({ mode: 'serial' });

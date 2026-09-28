@@ -4,6 +4,7 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createRecordingCode, verifyRecordingCode } from './recording-codes.mjs';
 import { createRecordingUploadToken } from './recordings.mjs';
 import { readScenarioScript } from './scenario-scripts.mjs';
+import { environmentVariablesObject } from './environment-context.mjs';
 
 const META_FILE = 'local-execution.json';
 
@@ -111,7 +112,8 @@ export async function buildLocalExecutionBundle({ workspaceRoot, dataDir, scenar
       key: environment.key,
       baseUrl: environment.base_url,
       username: environment.username,
-      password: environment.password
+      password: environment.password,
+      variables: environmentVariablesObject(environment)
     },
     rows,
     files: [

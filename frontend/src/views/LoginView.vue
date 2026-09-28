@@ -1,10 +1,10 @@
 <template>
   <div class="login-page">
-    <section class="login-visual" aria-label="JMOM 自动化测试平台介绍">
+    <section class="login-visual" aria-label="AutoTest Studio 介绍">
       <div class="login-visual-brand">
         <span class="login-brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span>
         <div>
-          <h1>JMOM 自动化测试平台</h1>
+          <h1>AutoTest Studio</h1>
           <p>场景、数据、执行与证据的一体化工作台</p>
         </div>
       </div>

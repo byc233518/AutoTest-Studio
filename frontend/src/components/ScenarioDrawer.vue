@@ -4,7 +4,7 @@
       <div class="workspace-header">
         <div class="workspace-title"><div><h2>{{ scenario?.name }}</h2><span class="muted">维护测试数据、脚本与录制</span></div><el-tag :type="scenario?.status === 'published' ? 'success' : 'warning'">{{ scenarioStatusLabel }}</el-tag></div>
         <div class="workspace-summary">
-          <div><span>场景状态</span><strong>{{ scenarioStatusLabel }}</strong></div>
+          <div><span>用例状态</span><strong>{{ scenarioStatusLabel }}</strong></div>
           <div><span>当前脚本</span><strong :title="scenario?.scriptEntry">{{ currentScriptLabel }}</strong></div>
           <div><span>字段数量</span><strong>{{ dataColumns.length }}</strong></div>
           <div><span>最近执行</span><strong>{{ recentRunLabel }}</strong></div>
@@ -22,10 +22,8 @@
           <el-button type="primary" @click="formRef.open(scenario)">编辑基本信息</el-button>
         </div>
         <el-descriptions border :column="1">
-          <el-descriptions-item label="场景 key">{{ scenario?.key }}</el-descriptions-item>
-          <el-descriptions-item label="应用 / 模块">
-            {{ store.appName(scenario?.appId) }} / {{ store.moduleName(scenario?.moduleId) }}
-          </el-descriptions-item>
+          <el-descriptions-item label="用例 key">{{ scenario?.key }}</el-descriptions-item>
+          <el-descriptions-item label="所属目录">{{ scenario?.directory || scenario?.module || '未分类' }}</el-descriptions-item>
           <el-descriptions-item label="优先级">{{ scenario?.priority }}</el-descriptions-item>
           <el-descriptions-item label="说明">{{ scenario?.description || '-' }}</el-descriptions-item>
           <el-descriptions-item label="脚本入口">
@@ -46,8 +44,8 @@
 
         <div class="data-entry-toolbar">
           <el-button :icon="Download" @click="downloadDataTemplate">下载 Excel 模板</el-button>
-          <el-upload ref="uploadRef" :auto-upload="false" :show-file-list="false" accept=".csv,.xlsx" :on-change="previewDataFile">
-            <el-button :icon="Upload" :loading="dataLoading">导入 Excel / CSV</el-button>
+          <el-upload ref="uploadRef" :auto-upload="false" :show-file-list="false" accept=".json,.csv,.xlsx" :on-change="previewDataFile">
+            <el-button :icon="Upload" :loading="dataLoading">导入 Excel / CSV / JSON</el-button>
           </el-upload>
           <el-button :loading="dataGenerating" @click="generate(false)">自动生成</el-button>
           <el-button :loading="dataGenerating" @click="openAiGeneration">AI 生成</el-button>
@@ -110,7 +108,7 @@
           </div>
         </section>
 
-        <el-divider content-position="left">本地录制</el-divider>
+        <el-divider content-position="left">脚本录制</el-divider>
         <el-alert title="推荐使用录制快速创建脚本，再补充业务断言。" type="info" show-icon />
         <el-form label-position="top" class="record-form">
           <el-form-item label="录制环境">
@@ -122,7 +120,7 @@
         <el-button type="primary" :icon="VideoCamera" :loading="recordLoading" @click="startRecord">开始录制</el-button>
         <div v-if="recording" class="record-command">
           <strong>录制状态：{{ recordStatus }}</strong>
-          <div class="record-fallback">
+          <div v-if="!isDesktop" class="record-fallback">
             <el-text tag="code" size="large">{{ recording.recordCode || '等待录制码' }}</el-text>
             <p>录制码有效期：{{ formatDate(recording.recordCodeExpires) }}</p>
             <div class="drawer-actions">
@@ -130,7 +128,9 @@
               <el-button :disabled="!recording.recorderDownloadUrl" @click="downloadRecorder">下载免安装录制器</el-button>
             </div>
           </div>
-          <p v-if="recording.status !== 'finished' && recording.status !== 'draft'">在免安装录制器中输入录制码；关闭 Inspector 后脚本会自动上传并绑定。</p>
+          <p v-if="recording.status === 'failed'" class="error-text">{{ recording.error || '录制失败，请重新开始录制' }}</p>
+          <p v-else-if="isDesktop && recording.status !== 'finished' && recording.status !== 'draft'">录制窗口已打开；完成操作并关闭录制窗口后，脚本会自动绑定到当前用例。</p>
+          <p v-else-if="recording.status !== 'finished' && recording.status !== 'draft'">在免安装录制器中输入录制码；关闭 Inspector 后脚本会自动上传并绑定。</p>
           <p v-else>脚本已上传：{{ recording.scriptEntry || '等待复核' }}</p>
           <el-button :loading="recordLoading" @click="refresh">刷新状态</el-button>
         </div>
@@ -196,6 +196,7 @@ import RunDetailDrawer from './RunDetailDrawer.vue';
 
 const emit = defineEmits(['changed']);
 const store = usePlatformStore();
+const isDesktop = Boolean(window.autotestDesktop);
 const visible = ref(false);
 const scenario = ref();
 const tab = ref('base');
@@ -203,7 +204,7 @@ const datasets = ref([]);
 const selectedDatasetId = ref('');
 const dataRows = ref([]);
 const recording = ref();
-const environment = ref('test');
+const environment = ref('');
 const datasetName = ref('');
 const uploadRef = ref();
 const dataLoading = ref(false);
@@ -235,7 +236,11 @@ const runDetailRef = ref();
 let recordTimer;
 let recordRequestGeneration = 0;
 
-const recordStatus = computed(() => recording.value?.status === 'finished' || recording.value?.status === 'draft' ? '已完成待复核' : '录制中');
+const recordStatus = computed(() => ({
+  finished: '已完成待复核',
+  draft: '已完成待复核',
+  failed: '录制失败'
+})[recording.value?.status] || '录制中');
 const dataColumns = computed(() => scenario.value?.dataSchema?.columns || []);
 const requiredColumns = computed(() => new Set(scenario.value?.dataSchema?.required || []));
 const scenarioRuns = computed(() => store.runs.filter((run) => run.scenarioId === scenario.value?.id || run.scenarioKey === scenario.value?.key));
@@ -327,7 +332,7 @@ async function open(item) {
     await Promise.all([loadDatasets(), loadScript(false)]);
     if (datasets.value.length) await loadDataset(datasets.value[0].id);
     else resetDataRows();
-    environment.value = store.environments.find((entry) => entry.isDefault)?.key || 'test';
+    environment.value = store.environments.find((entry) => entry.isDefault)?.key || store.environments[0]?.key || '';
     visible.value = true;
   } catch (error) {
     ElMessage.error(error.message);
@@ -490,7 +495,14 @@ async function startRecord() {
   const request = { generation: recordRequestGeneration, scenarioKey: scenario.value?.key };
   recordLoading.value = true;
   try {
-    const result = await api('/api/recordings/start', { method: 'POST', body: JSON.stringify({ scenarioKey: request.scenarioKey, environmentKey: environment.value, location: 'local' }) });
+    const result = await api('/api/recordings/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        scenarioKey: request.scenarioKey,
+        environmentKey: environment.value,
+        location: window.autotestDesktop ? 'server' : 'local'
+      })
+    });
     if (!isCurrentRecordingRequest(request)) return;
     recording.value = result;
     startRecordPolling();
@@ -550,6 +562,11 @@ async function refresh({ silent = false } = {}) {
     const result = await api(`/api/recordings/${request.recordingId}`);
     if (!isCurrentRecordingRequest(request)) return;
     recording.value = { ...recording.value, ...result };
+    if (result.status === 'failed') {
+      stopRecordPolling();
+      if (!silent) ElMessage.error(result.error || '录制失败');
+      return;
+    }
     if (result.status === 'finished' || result.status === 'draft') {
       stopRecordPolling();
       const completionRequest = { ...request, generation: recordRequestGeneration };

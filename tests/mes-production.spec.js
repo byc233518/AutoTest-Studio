@@ -4,7 +4,7 @@ const {
   createVirtualWorkOrder,
   createWorkshopAndLine,
   passBarcode
-} = require('./support/jmom-ui');
+} = require('./support/autotest-ui');
 const { rowsFor, shouldRun, testRowTitle } = require('./support/dataset');
 
 test.describe.configure({ mode: 'serial' });
@@ -15,11 +15,11 @@ test.beforeEach(async ({ page }) => {
 
 const workorderRows = rowsFor('mes-workorder-create', (runTag) => ({
   // Prefer a part created in earlier real runs; fall back to tagged code.
-  物料编码: process.env.JMOM_PART_CODE || 'AT-PART-REAL0902',
+  物料编码: process.env.AUTOTEST_PART_CODE || 'AT-PART-REAL0902',
   工单类型: '正常',
   工单状态: '已创建',
   目标量: '10',
-  车间名称: process.env.JMOM_WORKSHOP_NAME || '',
+  车间名称: process.env.AUTOTEST_WORKSHOP_NAME || '',
   客户订单号: `AT-CO-${runTag}`,
   客户料号: `AT-OEM-${runTag}`,
   客户品名: `自动化客户品名-${runTag}`,
@@ -40,12 +40,12 @@ const workshopLineRows = rowsFor('mes-workshop-line-create', (runTag) => ({
 }));
 
 const barcodePassRows = rowsFor('mes-barcode-pass', (runTag) => ({
-  // 桌面管理方案编码（条码报工），可用 JMOM_DESKTOP_CODE 覆盖
-  作业看板编码: process.env.JMOM_DESKTOP_CODE || 'S20250032',
-  工单号: process.env.JMOM_WO_NO || '',
-  线体ID: process.env.JMOM_LINE_ID || '',
-  车间名称: process.env.JMOM_WORKSHOP_NAME || `自动化车间-${runTag}`,
-  线体名称: process.env.JMOM_LINE_NAME || `自动化线体-${runTag}`,
+  // 桌面管理方案编码（条码报工），可用 AUTOTEST_DESKTOP_CODE 覆盖
+  作业看板编码: process.env.AUTOTEST_DESKTOP_CODE || 'S20250032',
+  工单号: process.env.AUTOTEST_WO_NO || '',
+  线体ID: process.env.AUTOTEST_LINE_ID || '',
+  车间名称: process.env.AUTOTEST_WORKSHOP_NAME || `自动化车间-${runTag}`,
+  线体名称: process.env.AUTOTEST_LINE_NAME || `自动化线体-${runTag}`,
   工序名称: '总装',
   条码: `AT-SN-${runTag}`,
   良品数: '1',

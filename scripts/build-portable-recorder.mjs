@@ -39,7 +39,7 @@ export function portableLayout(outputRoot) {
   const appDir = path.resolve(root, 'app');
   return {
     root,
-    executable: path.resolve(root, 'JMOM录制器.exe'),
+    executable: path.resolve(root, 'AutoTest-Studio录制器.exe'),
     nodeExecutable: path.resolve(root, 'runtime', 'node.exe'),
     appDir,
     runner: path.resolve(appDir, 'portable-record-runner.mjs'),
@@ -168,9 +168,9 @@ export async function buildPortableRecorder({
   const lock = JSON.parse(await readFile(path.resolve(root, 'package-lock.json'), 'utf8'));
   const playwrightVersion = readLockedPlaywrightVersion(lock);
   const stagingParent = path.resolve(distDir, 'recorder-staging');
-  const layout = portableLayout(path.resolve(stagingParent, 'JMOM录制器'));
+  const layout = portableLayout(path.resolve(stagingParent, 'AutoTest-Studio录制器'));
   const publishDir = path.resolve(distDir, 'recorder-publish');
-  const zipPath = path.resolve(distDir, 'JMOM本地录制器-win-x64.zip');
+  const zipPath = path.resolve(distDir, 'AutoTest-Studio本地录制器-win-x64.zip');
   const hashPath = zipPath + '.sha256';
 
   await rm(stagingParent, { recursive: true, force: true });
@@ -188,7 +188,7 @@ export async function buildPortableRecorder({
     '-p:PublishSingleFile=true',
     '-o', publishDir
   ], { cwd: root });
-  await copyFile(path.resolve(publishDir, 'JMOM录制器.exe'), layout.executable);
+  await copyFile(path.resolve(publishDir, 'AutoTest-Studio录制器.exe'), layout.executable);
 
   await mkdir(path.dirname(layout.nodeExecutable), { recursive: true });
   await copyFile(process.execPath, layout.nodeExecutable);

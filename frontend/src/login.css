@@ -5,7 +5,7 @@
   min-height: 100vh;
   height: auto;
   --login-panel-shell-width: 44.444444%;
-  background: #f6f8ff url('./assets/jmom-login-visual.svg') center / cover no-repeat;
+  background: #f6f8ff url('./assets/autotest-login-visual.svg') center / cover no-repeat;
 }
 
 .login-page .login-panel-shell {

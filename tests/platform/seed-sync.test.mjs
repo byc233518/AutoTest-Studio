@@ -88,3 +88,44 @@ test('自动目录同步拒绝非自动前缀标识', (t) => {
     /只接受 SCN-AUTO/
   );
 });
+
+test('精简种子只创建核心场景且不删除现有自动场景', (t) => {
+  const database = createPlatformDatabase(':memory:');
+  t.after(() => database.close());
+
+  seedPlatform(database, {
+    preserveExisting: true,
+    includeRepositoryCatalog: false
+  });
+
+  const initialScenarios = database.listScenarios();
+  assert.equal(initialScenarios.length, 15);
+  assert.equal(initialScenarios.some((scenario) => scenario.id.startsWith('SCN-AUTO-')), false);
+  assert.ok(database.getScenarioByKey('auth-login'));
+  assert.ok(database.getScenarioByKey('wms-customer-create'));
+
+  database.createModule({
+    id: 'MOD-AUTO-LEGACY-KEEP',
+    appId: 'APP-MES',
+    name: '历史自动目录',
+    prefix: 'LegacyKeep',
+    sort: 9999
+  });
+  database.createScenario({
+    id: 'SCN-AUTO-LEGACY-KEEP',
+    key: 'auto-legacy-keep',
+    appId: 'APP-MES',
+    moduleId: 'MOD-AUTO-LEGACY-KEEP',
+    module: '历史自动目录',
+    name: '已有项目历史用例',
+    dataSchema: { columns: [], required: [], example: {} }
+  });
+
+  seedPlatform(database, {
+    preserveExisting: true,
+    includeRepositoryCatalog: false
+  });
+
+  assert.equal(database.getScenarioById('SCN-AUTO-LEGACY-KEEP').name, '已有项目历史用例');
+  assert.equal(database.getModuleById('MOD-AUTO-LEGACY-KEEP').name, '历史自动目录');
+});

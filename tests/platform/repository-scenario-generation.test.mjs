@@ -180,7 +180,7 @@ test('每个仓库场景脚本固化真实路由、中文名称和源码工作�
 test('代码仓库场景的本机执行包包含独立脚本和通用业务执行器', async (t) => {
   const catalog = await readCatalog();
   const scenario = catalog.scenarios.find((item) => item.key === 'base-page-sys-data-dict-index-4159c2');
-  const temporaryDir = await mkdtemp(path.join(tmpdir(), 'jmom-repository-scenario-'));
+  const temporaryDir = await mkdtemp(path.join(tmpdir(), 'autotest-repository-scenario-'));
   t.after(() => rm(temporaryDir, { recursive: true, force: true }));
   const rowsPath = path.resolve(temporaryDir, 'rows.json');
   await writeFile(rowsPath, '[]\n', 'utf8');

@@ -3,15 +3,15 @@ const fs = require('node:fs');
 const { config } = require('./config');
 
 function updateProcessFile(patch) {
-  if (!process.env.JMOM_PROCESS_FILE) return;
+  if (!process.env.AUTOTEST_PROCESS_FILE) return;
   let current = {};
   try {
-    current = JSON.parse(fs.readFileSync(process.env.JMOM_PROCESS_FILE, 'utf8'));
+    current = JSON.parse(fs.readFileSync(process.env.AUTOTEST_PROCESS_FILE, 'utf8'));
   } catch {
     current = {};
   }
   fs.writeFileSync(
-    process.env.JMOM_PROCESS_FILE,
+    process.env.AUTOTEST_PROCESS_FILE,
     `${JSON.stringify({ ...current, ...patch, updatedAt: new Date().toISOString() }, null, 2)}\n`,
     'utf8'
   );
@@ -38,21 +38,21 @@ function buttonTextPattern(labels) {
 }
 
 async function recordProcessStep(page, title, options = {}) {
-  if (!process.env.JMOM_PROCESS_FILE || !process.env.JMOM_RESULT_DIR) return;
-  fs.mkdirSync(process.env.JMOM_RESULT_DIR, { recursive: true });
-  const screenshotPath = `${process.env.JMOM_RESULT_DIR}/live-latest.png`;
+  if (!process.env.AUTOTEST_PROCESS_FILE || !process.env.AUTOTEST_RESULT_DIR) return;
+  fs.mkdirSync(process.env.AUTOTEST_RESULT_DIR, { recursive: true });
+  const screenshotPath = `${process.env.AUTOTEST_RESULT_DIR}/live-latest.png`;
   await page.screenshot({ path: screenshotPath, fullPage: false }).catch(() => {});
 
   let current = {};
   try {
-    current = JSON.parse(fs.readFileSync(process.env.JMOM_PROCESS_FILE, 'utf8'));
+    current = JSON.parse(fs.readFileSync(process.env.AUTOTEST_PROCESS_FILE, 'utf8'));
   } catch {
     current = {};
   }
 
   updateProcessFile({
     currentStep: title,
-    latestScreenshotUrl: `/api/runs/${process.env.JMOM_RUN_ID}/report-file/live-latest.png`,
+    latestScreenshotUrl: `/api/runs/${process.env.AUTOTEST_RUN_ID}/report-file/live-latest.png`,
     steps: options.stepId ? markStepRunning(current.steps, options.stepId) : current.steps
   });
 }
@@ -65,8 +65,8 @@ async function login(page) {
   await recordProcessStep(page, '打开登录页', { stepId: 'browser' });
   await page.goto(`${config.baseURL}/#/login`, { waitUntil: 'domcontentloaded' });
   await recordProcessStep(page, '填写登录账号');
-  await page.getByPlaceholder('用户名').fill(process.env.JMOM_USERNAME || config.username);
-  await page.getByPlaceholder('密码').fill(process.env.JMOM_PASSWORD || config.password);
+  await page.getByPlaceholder('用户名').fill(process.env.AUTOTEST_USERNAME || config.username);
+  await page.getByPlaceholder('密码').fill(process.env.AUTOTEST_PASSWORD || config.password);
   await visibleButton(page, '登录').click();
   await page.waitForURL('**/#/index', { timeout: 45_000 });
   await waitForLoadingDone(page);
@@ -636,7 +636,7 @@ async function createProductRouteForPart(page, row) {
 }
 
 async function openDesktopReportWork(page, row) {
-  const desktopCode = row.作业看板编码 || process.env.JMOM_DESKTOP_CODE || 'S20250032';
+  const desktopCode = row.作业看板编码 || process.env.AUTOTEST_DESKTOP_CODE || 'S20250032';
   const params = new URLSearchParams({ code: desktopCode });
   if (row.工单号) params.set('wono', row.工单号);
   await recordProcessStep(page, `打开条码报工页面：${desktopCode}${row.工单号 ? ` / ${row.工单号}` : ''}`);
@@ -1204,7 +1204,7 @@ async function waitForDesktopReportWork(page) {
 
 async function passBarcode(page, row) {
   // code 必须是桌面管理方案编码（SysViewDesign.Code），不是路由名 DesktopReportWork
-  const desktopCode = row.作业看板编码 || process.env.JMOM_DESKTOP_CODE || 'S20250032';
+  const desktopCode = row.作业看板编码 || process.env.AUTOTEST_DESKTOP_CODE || 'S20250032';
   const params = new URLSearchParams({ code: desktopCode });
   if (row.工单号) params.set('wono', row.工单号);
   if (row.线体ID) params.set('lineid', row.线体ID);

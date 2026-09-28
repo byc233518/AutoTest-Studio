@@ -7,10 +7,10 @@ function makeRunTag() {
 }
 
 const config = {
-  baseURL: trimTrailingSlash(process.env.JMOM_BASE_URL || 'http://172.16.100.11:46069'),
-  username: process.env.JMOM_USERNAME || 'byc',
-  password: process.env.JMOM_PASSWORD || 'Abcd1234',
-  runTag: process.env.JMOM_DATA_TAG || makeRunTag()
+  baseURL: trimTrailingSlash(process.env.AUTOTEST_BASE_URL || 'http://172.16.100.11:46069'),
+  username: process.env.AUTOTEST_USERNAME || 'byc',
+  password: process.env.AUTOTEST_PASSWORD || 'Abcd1234',
+  runTag: process.env.AUTOTEST_DATA_TAG || makeRunTag()
 };
 
 module.exports = { config };
