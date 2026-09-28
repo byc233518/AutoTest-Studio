@@ -108,6 +108,7 @@ export async function prepareExecutionWorkspace(task, paths) {
 }
 
 export async function runPlaywrightTask({ task, paths, workspace, spawnImpl = spawn }) {
+  const scriptArgument = path.relative(workspace.workspaceDir, workspace.scriptPath).replaceAll('\\', '/');
   const env = {
     ...process.env,
     PLAYWRIGHT_BROWSERS_PATH: paths.browserPath,
@@ -123,7 +124,7 @@ export async function runPlaywrightTask({ task, paths, workspace, spawnImpl = sp
   const args = [
     paths.playwrightCli,
     'test',
-    workspace.scriptPath,
+    scriptArgument,
     '--config',
     workspace.configPath
   ];

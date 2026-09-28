@@ -9,14 +9,28 @@ test('平台提供应用管理和模块管理列表', async (t) => {
   const apps = await ctx.fetch('/api/apps', { headers: { cookie } });
   assert.equal(apps.status, 200);
   const appsBody = await apps.json();
-  assert.equal(appsBody.apps.length, 3);
-  assert.deepEqual(appsBody.apps.map((app) => app.key), ['jmom-base', 'jmom-wms', 'jmom-mes']);
+  assert.equal(appsBody.apps.length, 6);
+  assert.deepEqual(appsBody.apps.map((app) => app.key), [
+    'jmom-base',
+    'jmom-wms',
+    'jmom-mes',
+    'jmom-qms',
+    'jmom-tpm',
+    'jmom-legacy-mes'
+  ]);
+  assert.equal(appsBody.apps.find((app) => app.id === 'APP-MES').name, '制造执行');
+  assert.equal(appsBody.apps.find((app) => app.id === 'APP-WMS').name, '仓储管理');
 
   const modules = await ctx.fetch('/api/modules?appId=APP-WMS', { headers: { cookie } });
   assert.equal(modules.status, 200);
   const modulesBody = await modules.json();
   assert.equal(modulesBody.modules.some((module) => module.name === '客户管理'), true);
   assert.equal(modulesBody.modules.every((module) => module.appId === 'APP-WMS'), true);
+  assert.equal(modulesBody.modules.every((module) => /[\u3400-\u9fff]/u.test(module.name)), true);
+
+  const mesModules = await ctx.fetch('/api/modules?appId=APP-MES', { headers: { cookie } });
+  const mesModulesBody = await mesModules.json();
+  assert.equal(mesModulesBody.modules.every((module) => /[\u3400-\u9fff]/u.test(module.name)), true);
 });
 
 test('平台可以按场景字段快速生成样例数据', async (t) => {
@@ -34,6 +48,25 @@ test('平台可以按场景字段快速生成样例数据', async (t) => {
   assert.equal(body.rows.length, 3);
   assert.equal(body.rows[0].客户编号.startsWith('AT-CUST-'), true);
   assert.equal(body.rows.every((row) => row.客户名称 && row.联系人 && row.客户地址), true);
+});
+
+test('代码仓库生成场景可以返回非空且符合字段含义的样例数据', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('tester', 'Tester123!');
+  const response = await ctx.fetch('/api/scenarios/mes-page-i-mes6-production-plan-daily-equipment-plan-index-920662/sample-data', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ count: 2 })
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.columns.includes('PlanDate'), true);
+  assert.equal(body.columns.includes('DatePlanQty'), true);
+  assert.equal(body.rows.length, 2);
+  assert.match(body.rows[0].PlanDate, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(body.rows[0].DatePlanQty, '1');
+  assert.equal(body.rows.every((row) => body.columns.every((column) => String(row[column]).trim())), true);
 });
 
 test('MES 场景可以生成匹配脚本字段的样例数据', async (t) => {

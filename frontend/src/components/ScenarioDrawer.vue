@@ -582,14 +582,14 @@ async function syncScenario(result, isCurrent = () => true) {
 
 function scenarioSaved(result) {
   scenario.value = { ...scenario.value, ...result };
-  emit('changed');
+  emit('changed', scenario.value);
 }
 
 function scenarioRestored(result) {
   scenario.value = { ...scenario.value, ...result, status: 'draft' };
   tab.value = 'base';
   loadScript(false);
-  emit('changed');
+  emit('changed', scenario.value);
 }
 
 function reviewApplied(result) {

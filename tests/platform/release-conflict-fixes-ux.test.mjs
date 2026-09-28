@@ -111,6 +111,21 @@ test('api 在 409 时保留 status 和解析后的 data', async (t) => {
   });
 });
 
+test('api 在网络中断时返回包含接口路径的中文错误', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const cause = new TypeError('Failed to fetch');
+  globalThis.fetch = async () => { throw cause; };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  await assert.rejects(api('/api/scenarios/example/publish', { method: 'POST', body: '{}' }), (error) => {
+    assert.equal(error.message, '无法连接平台服务：/api/scenarios/example/publish');
+    assert.equal(error.code, 'NETWORK_ERROR');
+    assert.equal(error.path, '/api/scenarios/example/publish');
+    assert.equal(error.cause, cause);
+    return true;
+  });
+});
+
 test('SchemaSyncDialog 接收 409 conflicts 并精确展示 kind/line/column/message', async () => {
   const conflict = { kind: 'dynamic-reference', line: 8, column: 17, message: '动态字段无法自动重命名' };
   const component = await setupScript('frontend/src/components/SchemaSyncDialog.vue', {

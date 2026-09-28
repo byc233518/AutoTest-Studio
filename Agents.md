@@ -34,6 +34,20 @@ JMOM 是制造业 MES（制造执行系统）+ WMS（仓库管理系统）一体
 - 前端: `F:\workspace\jmom\iWMS5.Vue`
 - 后端: `F:\workspace\jmom\iWMS5`
 
+### QMS 质量管理
+- 前端: `F:\workspace\jmom\IQMS.VUE`
+- 后端: `F:\workspace\IQMS`
+
+### TPM 设备管理
+- 前端: `F:\workspace\jmom\itpm.vue`
+- 后端: `F:\workspace\jmom\ITPM.API`
+
+### 旧版 MES 制造执行
+- 前端: `F:\workspace\ims.vue.d2`
+- 后端: `F:\workspace\jz.ims`
+
+SRM 是独立系统，本项目当前不扫描、不生成测试场景。
+
 ## 数据库连接
 
 - 主机: 172.16.100.11:1521

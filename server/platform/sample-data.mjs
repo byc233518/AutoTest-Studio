@@ -8,7 +8,7 @@ function offsetDate(days) {
   return date.toISOString().slice(0, 10);
 }
 
-function sampleValue(column, scenarioKey, index) {
+function sampleValue(column, scenarioKey, index, label = '') {
   const seq = sequence(index);
   if (scenarioKey === 'wms-locator-create') {
     if (column === '储位码') return `AT-LOC-${seq}`;
@@ -136,16 +136,27 @@ function sampleValue(column, scenarioKey, index) {
   if (column.includes('规格')) return `自动化规格${seq}`;
   if (column.includes('用户名')) return 'byc';
   if (column.includes('密码')) return 'Abcd1234';
+  const meaning = `${column}${label}`;
+  if (/(?:日期|时间|交期|Date|Time)$/i.test(meaning)) return offsetDate(index);
+  if (/(?:数量|数目|用量|容量|序号|索引|分配数|Qty|Count|Amount|Capacity|Index)$/i.test(meaning)) return '1';
+  if (/(?:启用|有效|是否|状态|Enabled|Active|Flag|Status)$/i.test(meaning)) return 'Y';
+  if (/(?:编号|编码|料号|单号|条码|Code|No|Number|Id)$/i.test(meaning)) return `AT-${seq}`;
+  if (/(?:名称|品名|Name)$/i.test(meaning)) return `自动化样例${seq}`;
+  if (/(?:描述|备注|说明|Description|Remark|Desc)$/i.test(meaning)) return `自动化测试备注${seq}`;
   return `样例${seq}`;
 }
 
 export function generateSampleRows(scenario, count = 3, offset = 0) {
   const schema = JSON.parse(scenario.data_schema);
+  const labels = new Map((schema.fields || []).map((field) => [field.key, field.label]));
   const safeCount = Math.max(1, Math.min(Number(count) || 3, 20));
   const safeOffset = Math.max(0, Number(offset) || 0);
   return Array.from({ length: safeCount }, (_, index) => {
     const rowIndex = safeOffset + index;
-    return Object.fromEntries(schema.columns.map((column) => [column, sampleValue(column, scenario.key, rowIndex)]));
+    return Object.fromEntries(schema.columns.map((column) => [
+      column,
+      sampleValue(column, scenario.key, rowIndex, labels.get(column) || '')
+    ]));
   });
 }
 

@@ -1,0 +1,397 @@
+// 本文件由 scripts/generate-repository-scenarios.mjs 根据真实菜单和页面源码生成。
+// workflows 中的步骤、测试数据、断言和数据安全策略由共享 Playwright 执行器逐条执行。
+const { defineRepositoryScenario } = require('../../support/repository-scenario');
+
+defineRepositoryScenario({
+  "key": "legacyMes-page-i-mes-smt-line-substitute-index-39e770",
+  "name": "旧版制造执行 - 暂无数据（未配置菜单）功能校验",
+  "displayName": "暂无数据（未配置菜单）",
+  "route": "/iMES/SmtLineSubstitute/Index",
+  "sourceRoute": "/iMES/SmtLineSubstitute/Index",
+  "menuCode": "",
+  "breadcrumb": "旧版制造执行 / 未配置菜单 / 暂无数据（未配置菜单）",
+  "sourceFile": "src/views/iMES/SmtLineSubstitute/Index.vue",
+  "dataSchema": {
+    "columns": [
+      "COMPONENT_PN",
+      "WO_NO",
+      "PCB_PN",
+      "REPLACE_PN",
+      "BEGINTIME",
+      "ENDTIME",
+      "MAKER_PN",
+      "VENDOR_CODE",
+      "ENABLED",
+      "Key",
+      "NAME"
+    ],
+    "required": [
+      "COMPONENT_PN",
+      "WO_NO",
+      "PCB_PN",
+      "REPLACE_PN",
+      "BEGINTIME",
+      "ENDTIME"
+    ],
+    "fields": [
+      {
+        "key": "COMPONENT_PN",
+        "label": "当前料号",
+        "required": true
+      },
+      {
+        "key": "WO_NO",
+        "label": "生产工单",
+        "required": true
+      },
+      {
+        "key": "PCB_PN",
+        "label": "成品料号",
+        "required": true
+      },
+      {
+        "key": "REPLACE_PN",
+        "label": "替代料号",
+        "required": true
+      },
+      {
+        "key": "BEGINTIME",
+        "label": "起效时间",
+        "required": true
+      },
+      {
+        "key": "ENDTIME",
+        "label": "失效时间",
+        "required": true
+      },
+      {
+        "key": "MAKER_PN",
+        "label": "制造商料号",
+        "required": false
+      },
+      {
+        "key": "VENDOR_CODE",
+        "label": "供应商",
+        "required": false
+      },
+      {
+        "key": "ENABLED",
+        "label": "是否可用",
+        "required": false
+      },
+      {
+        "key": "Key",
+        "label": "关键字",
+        "required": false
+      },
+      {
+        "key": "NAME",
+        "label": "供应商",
+        "required": false
+      }
+    ],
+    "example": {
+      "COMPONENT_PN": "AT-001",
+      "WO_NO": "生产工单测试值",
+      "PCB_PN": "AT-001",
+      "REPLACE_PN": "AT-001",
+      "BEGINTIME": "2026-08-01",
+      "ENDTIME": "2026-08-01",
+      "MAKER_PN": "AT-001",
+      "VENDOR_CODE": "供应商测试值",
+      "ENABLED": "是否可用测试值",
+      "Key": "关键字测试值",
+      "NAME": "供应商测试值"
+    }
+  },
+  "workflows": [
+    {
+      "key": "page-load",
+      "type": "页面加载",
+      "name": "页面加载与交互区域校验",
+      "executionPolicy": "只读校验",
+      "steps": [
+        "打开真实业务路由",
+        "等待微前端和加载遮罩结束",
+        "校验标题、权限和交互区域"
+      ],
+      "assertions": [
+        "目标路由不是登录页或404",
+        "页面无权限错误和阻塞骨架屏",
+        "页面存在真实交互区域"
+      ],
+      "mutatesData": false
+    },
+    {
+      "key": "query",
+      "type": "查询",
+      "name": "列表查询并等待数据加载",
+      "buttonLabels": [
+        "搜索",
+        "查询"
+      ],
+      "trigger": "button",
+      "sourceHandlers": [
+        "GetVendor",
+        "searchClick"
+      ],
+      "testData": {
+        "COMPONENT_PN": "AT-001",
+        "WO_NO": "生产工单测试值",
+        "PCB_PN": "AT-001",
+        "REPLACE_PN": "AT-001",
+        "BEGINTIME": "2026-08-01",
+        "ENDTIME": "2026-08-01",
+        "MAKER_PN": "AT-001",
+        "VENDOR_CODE": "供应商测试值",
+        "ENABLED": "是否可用测试值",
+        "Key": "关键字测试值",
+        "NAME": "供应商测试值"
+      },
+      "executionPolicy": "只读校验",
+      "steps": [
+        "填写可编辑查询条件",
+        "点击查询按钮或按回车",
+        "等待数据加载完成"
+      ],
+      "assertions": [
+        "查询入口可用",
+        "加载遮罩结束",
+        "列表、空状态或业务结果区域可见"
+      ],
+      "mutatesData": false
+    },
+    {
+      "key": "13fd57e65b-2cd9e6ce81-77767",
+      "type": "新增表单",
+      "name": "新增业务入口校验",
+      "label": "新增",
+      "handler": "insertEvent(-1)",
+      "permission": "SmtReplacePnAdd",
+      "menuTriggerLabel": "",
+      "rowAction": false,
+      "sourceMutatesData": false,
+      "executionPolicy": "填写表单后取消",
+      "steps": [
+        "点击新增",
+        "校验源码表单字段",
+        "填写可编辑字段并校验回填",
+        "取消关闭且不保存"
+      ],
+      "assertions": [
+        "表单、弹窗、抽屉或编辑路由真实打开",
+        "源码字段在界面中存在",
+        "取消后编辑界面关闭"
+      ],
+      "mutatesData": false,
+      "fields": [
+        {
+          "key": "COMPONENT_PN",
+          "label": "当前料号",
+          "required": true,
+          "example": "AT-001"
+        },
+        {
+          "key": "WO_NO",
+          "label": "生产工单",
+          "required": true,
+          "example": "生产工单测试值"
+        },
+        {
+          "key": "PCB_PN",
+          "label": "成品料号",
+          "required": true,
+          "example": "AT-001"
+        },
+        {
+          "key": "REPLACE_PN",
+          "label": "替代料号",
+          "required": true,
+          "example": "AT-001"
+        },
+        {
+          "key": "BEGINTIME",
+          "label": "起效时间",
+          "required": true,
+          "example": "2026-08-01"
+        },
+        {
+          "key": "ENDTIME",
+          "label": "失效时间",
+          "required": true,
+          "example": "2026-08-01"
+        },
+        {
+          "key": "MAKER_PN",
+          "label": "制造商料号",
+          "required": false,
+          "example": "AT-001"
+        },
+        {
+          "key": "VENDOR_CODE",
+          "label": "供应商",
+          "required": false,
+          "example": "供应商测试值"
+        },
+        {
+          "key": "ENABLED",
+          "label": "是否可用",
+          "required": false,
+          "example": "是否可用测试值"
+        },
+        {
+          "key": "Key",
+          "label": "关键字",
+          "required": false,
+          "example": "关键字测试值"
+        },
+        {
+          "key": "NAME",
+          "label": "供应商",
+          "required": false,
+          "example": "供应商测试值"
+        }
+      ],
+      "testData": {
+        "COMPONENT_PN": "AT-001",
+        "WO_NO": "生产工单测试值",
+        "PCB_PN": "AT-001",
+        "REPLACE_PN": "AT-001",
+        "BEGINTIME": "2026-08-01",
+        "ENDTIME": "2026-08-01",
+        "MAKER_PN": "AT-001",
+        "VENDOR_CODE": "供应商测试值",
+        "ENABLED": "是否可用测试值",
+        "Key": "关键字测试值",
+        "NAME": "供应商测试值"
+      }
+    },
+    {
+      "key": "4aa22a22ac-a7f814c0a4-45f7b",
+      "type": "编辑表单",
+      "name": "编辑业务入口校验",
+      "label": "编辑",
+      "handler": "editBut(row, row.$index)",
+      "permission": "SmtReplacePnEdit",
+      "menuTriggerLabel": "",
+      "rowAction": true,
+      "sourceMutatesData": false,
+      "executionPolicy": "填写表单后取消",
+      "steps": [
+        "点击编辑",
+        "校验源码表单字段",
+        "填写可编辑字段并校验回填",
+        "取消关闭且不保存"
+      ],
+      "assertions": [
+        "表单、弹窗、抽屉或编辑路由真实打开",
+        "源码字段在界面中存在",
+        "取消后编辑界面关闭"
+      ],
+      "mutatesData": false,
+      "fields": [
+        {
+          "key": "COMPONENT_PN",
+          "label": "当前料号",
+          "required": true,
+          "example": "AT-001"
+        },
+        {
+          "key": "WO_NO",
+          "label": "生产工单",
+          "required": true,
+          "example": "生产工单测试值"
+        },
+        {
+          "key": "PCB_PN",
+          "label": "成品料号",
+          "required": true,
+          "example": "AT-001"
+        },
+        {
+          "key": "REPLACE_PN",
+          "label": "替代料号",
+          "required": true,
+          "example": "AT-001"
+        },
+        {
+          "key": "BEGINTIME",
+          "label": "起效时间",
+          "required": true,
+          "example": "2026-08-01"
+        },
+        {
+          "key": "ENDTIME",
+          "label": "失效时间",
+          "required": true,
+          "example": "2026-08-01"
+        },
+        {
+          "key": "MAKER_PN",
+          "label": "制造商料号",
+          "required": false,
+          "example": "AT-001"
+        },
+        {
+          "key": "VENDOR_CODE",
+          "label": "供应商",
+          "required": false,
+          "example": "供应商测试值"
+        },
+        {
+          "key": "ENABLED",
+          "label": "是否可用",
+          "required": false,
+          "example": "是否可用测试值"
+        },
+        {
+          "key": "Key",
+          "label": "关键字",
+          "required": false,
+          "example": "关键字测试值"
+        },
+        {
+          "key": "NAME",
+          "label": "供应商",
+          "required": false,
+          "example": "供应商测试值"
+        }
+      ],
+      "testData": {
+        "COMPONENT_PN": "AT-001",
+        "WO_NO": "生产工单测试值",
+        "PCB_PN": "AT-001",
+        "REPLACE_PN": "AT-001",
+        "BEGINTIME": "2026-08-01",
+        "ENDTIME": "2026-08-01",
+        "MAKER_PN": "AT-001",
+        "VENDOR_CODE": "供应商测试值",
+        "ENABLED": "是否可用测试值",
+        "Key": "关键字测试值",
+        "NAME": "供应商测试值"
+      }
+    },
+    {
+      "key": "726b6ec55f-3755f56f2f-a01be",
+      "type": "删除确认",
+      "name": "删除确认框与取消操作",
+      "label": "删除",
+      "handler": "removeClick(row, row.$index)",
+      "permission": "SmtReplacePnRemove",
+      "menuTriggerLabel": "",
+      "rowAction": true,
+      "sourceMutatesData": false,
+      "executionPolicy": "打开确认框后取消",
+      "steps": [
+        "点击删除",
+        "校验删除确认提示",
+        "点击取消且不删除数据"
+      ],
+      "assertions": [
+        "出现删除确认提示",
+        "取消后确认框关闭"
+      ],
+      "mutatesData": false
+    }
+  ]
+});

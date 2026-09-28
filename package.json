@@ -12,6 +12,8 @@
                     "record:local":  "node scripts/record-local.mjs",
                     "test:recorder":  "node --test tests/platform/recording-codes.test.mjs tests/platform/local-recorder.test.mjs tests/platform/portable-recorder-package.test.mjs && dotnet test recorder/JmomRecorder.sln",
                     "build:recorder":  "node scripts/build-portable-recorder.mjs",
+                    "scenarios:menu:import":  "node scripts/import-system-menu-routes.mjs",
+                    "scenarios:generate":  "node scripts/generate-repository-scenarios.mjs",
                     "results:summary":  "node scripts/summarize-results.mjs",
                     "report":  "node node_modules/playwright/cli.js show-report",
                     "dev:web":  "vite --config vite.config.js",

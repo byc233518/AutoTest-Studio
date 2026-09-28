@@ -25,7 +25,7 @@ function recordedTitle(title, row) {
 
 function defineRecordedTests(test, title, schema, callback) {
   for (const row of loadRecordedRows(schema)) {
-    test(recordedTitle(title, row), async (fixtures, testInfo) => callback(fixtures, row, testInfo));
+    test(recordedTitle(title, row), async ({ page }, testInfo) => callback({ page }, row, testInfo));
   }
 }
 

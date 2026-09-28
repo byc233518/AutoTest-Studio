@@ -208,12 +208,18 @@ export function createPlatformDatabase(filename) {
         .run(project.id, project.name, project.description);
     },
     ensureApp(app) {
-      db.prepare('INSERT OR IGNORE INTO apps (id, key, name, description, sort) VALUES (?, ?, ?, ?, ?)')
-        .run(app.id, app.key, app.name, app.description, app.sort);
+      const existing = this.getAppById(app.id) || this.getAppByKey(app.key);
+      if (existing) {
+        return this.updateApp(existing.id, app);
+      }
+      return this.createApp(app);
     },
     ensureModule(module) {
-      db.prepare('INSERT OR IGNORE INTO modules (id, app_id, name, prefix, sort) VALUES (?, ?, ?, ?, ?)')
-        .run(module.id, module.appId, module.name, module.prefix, module.sort ?? 0);
+      const existing = this.getModuleById(module.id);
+      if (existing) {
+        return this.updateModule(existing.id, module);
+      }
+      return this.createModule(module);
     },
     ensureScenario(scenario) {
       const dependsOn = JSON.stringify(scenario.dependsOn || []);
@@ -510,6 +516,40 @@ export function createPlatformDatabase(filename) {
     },
     getScenarioById(id) {
       return db.prepare('SELECT * FROM scenarios WHERE id = ?').get(id);
+    },
+    syncGeneratedCatalog({ scenarioIds, moduleIds }) {
+      const expectedScenarios = new Set(scenarioIds || []);
+      const expectedModules = new Set(moduleIds || []);
+      if ([...expectedScenarios].some((id) => !id.startsWith('SCN-AUTO-'))
+        || [...expectedModules].some((id) => !id.startsWith('MOD-AUTO-'))) {
+        throw new TypeError('自动目录同步只接受 SCN-AUTO-* 和 MOD-AUTO-* 标识');
+      }
+      const staleScenarios = db.prepare("SELECT id FROM scenarios WHERE id LIKE 'SCN-AUTO-%'").all()
+        .map((row) => row.id)
+        .filter((id) => !expectedScenarios.has(id));
+      const staleModules = db.prepare("SELECT id FROM modules WHERE id LIKE 'MOD-AUTO-%'").all()
+        .map((row) => row.id)
+        .filter((id) => !expectedModules.has(id));
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        for (const id of staleScenarios) {
+          db.prepare('DELETE FROM run_artifacts WHERE run_id IN (SELECT id FROM runs WHERE scenario_id = ?)').run(id);
+          db.prepare('DELETE FROM runs WHERE scenario_id = ?').run(id);
+          db.prepare('DELETE FROM datasets WHERE scenario_id = ?').run(id);
+          db.prepare('DELETE FROM scenario_releases WHERE scenario_id = ?').run(id);
+          db.prepare('DELETE FROM scenarios WHERE id = ?').run(id);
+        }
+        let deletedModules = 0;
+        for (const id of staleModules) {
+          if (db.prepare('SELECT COUNT(*) AS count FROM scenarios WHERE module_id = ?').get(id).count) continue;
+          deletedModules += db.prepare('DELETE FROM modules WHERE id = ?').run(id).changes;
+        }
+        db.exec('COMMIT');
+        return { scenarios: staleScenarios.length, modules: deletedModules };
+      } catch (error) {
+        if (db.isTransaction) db.exec('ROLLBACK');
+        throw error;
+      }
     },
     updateScenarioStatus(id, status) {
       db.prepare('UPDATE scenarios SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), id);

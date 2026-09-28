@@ -24,6 +24,16 @@ export function readLockedPlaywrightVersion(lock) {
   return version;
 }
 
+export function portablePackageManifest(playwrightVersion) {
+  return {
+    private: true,
+    dependencies: {
+      playwright: playwrightVersion,
+      '@playwright/test': playwrightVersion
+    }
+  };
+}
+
 export function portableLayout(outputRoot) {
   const root = path.resolve(outputRoot);
   const appDir = path.resolve(root, 'app');
@@ -188,11 +198,11 @@ export async function buildPortableRecorder({
   await copyFile(path.resolve(root, 'scripts', 'lib', 'local-recording.mjs'), layout.library);
   await copyFile(path.resolve(root, 'scripts', 'portable-execution-runner.mjs'), layout.executionRunner);
   await copyFile(path.resolve(root, 'scripts', 'lib', 'local-execution.mjs'), layout.executionLibrary);
-  await writeFile(path.resolve(layout.appDir, 'package.json'), JSON.stringify({
-    private: true,
-    type: 'module',
-    dependencies: { playwright: playwrightVersion, '@playwright/test': playwrightVersion }
-  }, null, 2) + '\n', 'utf8');
+  await writeFile(
+    path.resolve(layout.appDir, 'package.json'),
+    JSON.stringify(portablePackageManifest(playwrightVersion), null, 2) + '\n',
+    'utf8'
+  );
 
   const npm = resolveNpmInvocation();
   await run(npm.command, [...npm.argsPrefix,

@@ -1,4 +1,4 @@
-import { buildScenarioTree, filterScenariosByTree } from './scenario-tree.mjs';
+import { buildScenarioTree, filterScenariosByTree, findScenarioTreeNode } from './scenario-tree.mjs';
 
 const state = {
   user: null,
@@ -22,6 +22,7 @@ const state = {
   filter: '',
   appFilter: '',
   moduleFilter: '',
+  categoryFilter: '',
   executionMode: 'ui',
   runScenarioFilter: '',
   editDialog: {
@@ -727,14 +728,21 @@ function renderModules() {
 }
 
 function filteredScenarios() {
+  const tree = buildScenarioTree(state.apps, state.modules, state.scenarios);
+  const category = findScenarioTreeNode(tree.apps, state.categoryFilter);
   return filterScenariosByTree(state.scenarios, {
     appId: state.appFilter,
     moduleId: state.moduleFilter,
+    scenarioIds: category?.scenarioIds,
     keyword: state.filter
   });
 }
 
 function scenarioFilterLabel() {
+  const tree = buildScenarioTree(state.apps, state.modules, state.scenarios);
+  const category = findScenarioTreeNode(tree.apps, state.categoryFilter);
+  if (category?.type === 'menu') return category.path.join(' / ');
+  if (category) return category.label;
   if (state.moduleFilter) return moduleName(state.moduleFilter);
   if (state.appFilter) return appName(state.appFilter);
   return '全部场景';
@@ -759,9 +767,20 @@ async function syncSelectedScenarioWithVisibleList() {
   await loadDependencyChecks(state.selectedScenario.key);
 }
 
+function renderScenarioTreeNodes(nodes) {
+  return nodes.map((node) => `
+    <div class="tree-group">
+      <button class="tree-node ${node.type === 'app' ? 'app-node' : 'module-node'} ${state.categoryFilter === node.id ? 'active' : ''}" data-tree-category-id="${node.id}">
+        <span>${node.label}</span><strong>${node.scenarioCount}</strong>
+      </button>
+      ${node.children.length ? `<div class="tree-children">${renderScenarioTreeNodes(node.children)}</div>` : ''}
+    </div>
+  `).join('');
+}
+
 function renderScenarioTree() {
   const tree = buildScenarioTree(state.apps, state.modules, state.scenarios);
-  const allActive = !state.appFilter && !state.moduleFilter;
+  const allActive = !state.categoryFilter;
 
   return `
     <section class="panel scenario-tree-panel">
@@ -770,20 +789,7 @@ function renderScenarioTree() {
         <span>全部场景</span><strong>${tree.total}</strong>
       </button>
       <div class="tree-groups">
-        ${tree.apps.map((appItem) => `
-          <div class="tree-group">
-            <button class="tree-node app-node ${state.appFilter === appItem.id && !state.moduleFilter ? 'active' : ''}" data-tree-app-id="${appItem.id}">
-              <span>${appItem.name}</span><strong>${appItem.scenarioCount}</strong>
-            </button>
-            <div class="tree-children">
-              ${appItem.modules.map((moduleItem) => `
-                <button class="tree-node module-node ${state.moduleFilter === moduleItem.id ? 'active' : ''}" data-tree-module-id="${moduleItem.id}" data-tree-parent-app-id="${appItem.id}">
-                  <span>${moduleItem.name}</span><strong>${moduleItem.scenarioCount}</strong>
-                </button>
-              `).join('')}
-            </div>
-          </div>
-        `).join('')}
+        ${renderScenarioTreeNodes(tree.apps)}
       </div>
     </section>
   `;
@@ -822,9 +828,17 @@ function renderScenarios() {
       table(['场景', '应用', '模块', '优先级', '状态', '操作'], scenarioRows, { className: 'scenarios-table-scroll' }) + '</section></div>' + renderCreateDialog() + renderEditDialog() + renderRunDialog());
   document.querySelector('#openCreateScenario')?.addEventListener('click', () => { state.createDialog = { open: true, message: '', scriptSource: 'path' }; renderScenarios(); });
   document.querySelector('#filterInput')?.addEventListener('input', async (event) => { state.filter = event.target.value; await syncSelectedScenarioWithVisibleList(); renderScenarios(); });
-  document.querySelector('[data-tree-all]')?.addEventListener('click', async () => { state.appFilter = ''; state.moduleFilter = ''; await syncSelectedScenarioWithVisibleList(); renderScenarios(); });
-  document.querySelectorAll('[data-tree-app-id]').forEach((button) => button.addEventListener('click', async () => { state.appFilter = button.dataset.treeAppId; state.moduleFilter = ''; await syncSelectedScenarioWithVisibleList(); renderScenarios(); }));
-  document.querySelectorAll('[data-tree-module-id]').forEach((button) => button.addEventListener('click', async () => { state.appFilter = button.dataset.treeParentAppId; state.moduleFilter = button.dataset.treeModuleId; await syncSelectedScenarioWithVisibleList(); renderScenarios(); }));
+  document.querySelector('[data-tree-all]')?.addEventListener('click', async () => { state.appFilter = ''; state.moduleFilter = ''; state.categoryFilter = ''; await syncSelectedScenarioWithVisibleList(); renderScenarios(); });
+  document.querySelectorAll('[data-tree-category-id]').forEach((button) => button.addEventListener('click', async () => {
+    const tree = buildScenarioTree(state.apps, state.modules, state.scenarios);
+    const category = findScenarioTreeNode(tree.apps, button.dataset.treeCategoryId);
+    if (!category) return;
+    state.appFilter = category.type === 'app' ? category.id : category.appId;
+    state.moduleFilter = '';
+    state.categoryFilter = category.id;
+    await syncSelectedScenarioWithVisibleList();
+    renderScenarios();
+  }));
   document.querySelectorAll('[data-recommend]').forEach((button) => button.addEventListener('click', async () => { const scenario = scenarioByKey(button.dataset.recommend); if (scenario) await openEditDialog(scenario); }));
   wireScenarioRowControls(); wireCreateDialog(); wireEditDialog(); wireRunDialog();
 }

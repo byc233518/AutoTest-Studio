@@ -15,6 +15,16 @@ test('打包器使用 lockfile 中固定的 Playwright 版本', async () => {
   assert.match(readLockedPlaywrightVersion(lock), /^\d+\.\d+\.\d+$/);
 });
 
+test('便携包不把 CommonJS 场景脚本强制解释为 ESM', async () => {
+  const builder = await import('../../scripts/build-portable-recorder.mjs');
+  assert.equal(typeof builder.portablePackageManifest, 'function');
+
+  const manifest = builder.portablePackageManifest('1.54.2');
+  assert.equal(Object.hasOwn(manifest, 'type'), false);
+  assert.equal(manifest.dependencies.playwright, '1.54.2');
+  assert.equal(manifest.dependencies['@playwright/test'], '1.54.2');
+});
+
 test('绿色包布局包含 EXE、Node、Playwright、浏览器和数据目录', () => {
   const layout = portableLayout('D:/dist/JMOM录制器');
   assert.equal(layout.root, path.resolve('D:/dist/JMOM录制器'));

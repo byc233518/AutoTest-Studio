@@ -1,10 +1,16 @@
+import { readFileSync } from 'node:fs';
+
+const repositoryCatalog = JSON.parse(
+  readFileSync(new URL('./repository-scenarios.generated.json', import.meta.url), 'utf8')
+);
+
 const scenarios = [
   {
     id: 'SCN-AUTH-LOGIN',
     key: 'auth-login',
     appId: 'APP-BASE',
     moduleId: 'MOD-BASE-AUTH',
-    module: '基座 / Auth',
+    module: '系统入口 / 登录认证',
     name: '登录验证',
     description: '验证 JMOM 测试环境账号可登录并进入首页。',
     priority: 'P0',
@@ -24,7 +30,7 @@ const scenarios = [
     key: 'wms-customer-create',
     appId: 'APP-WMS',
     moduleId: 'MOD-WMS-CUSTOMER',
-    module: 'WMS / ImsCustomer',
+    module: '基础设定 / 基础数据 / 客户档案',
     name: '客户主数据录入',
     description: '通过 WMS 客户档案页面新增客户并按编号查询验证。',
     priority: 'P1',
@@ -50,7 +56,7 @@ const scenarios = [
     key: 'wms-vendor-create',
     appId: 'APP-WMS',
     moduleId: 'MOD-WMS-VENDOR',
-    module: 'WMS / ImsVendor',
+    module: '基础设定 / 基础数据 / 供应商',
     name: '供应商主数据录入',
     description: '通过 WMS 供应商页面新增供应商并按编号查询验证。',
     priority: 'P1',
@@ -77,7 +83,7 @@ const scenarios = [
     key: 'wms-part-create',
     appId: 'APP-WMS',
     moduleId: 'MOD-WMS-PART',
-    module: 'WMS / ImsPart',
+    module: '基础设定 / 基础数据 / 料号管理',
     name: '物料主数据录入',
     description: '通过 WMS 料号管理页面新增物料并按料号查询验证。',
     priority: 'P1',
@@ -102,7 +108,7 @@ const scenarios = [
     key: 'wms-locator-create',
     appId: 'APP-WMS',
     moduleId: 'MOD-WMS-LOCATOR',
-    module: 'WMS / ImsLocator',
+    module: '基础设定 / 仓库建模 / 储位管理',
     name: '库位维护录入',
     description: '通过 WMS 储位维护页面新增储位并按储位码查询验证。',
     priority: 'P1',
@@ -166,7 +172,7 @@ const scenarios = [
     key: 'wms-po-create',
     appId: 'APP-WMS',
     moduleId: 'MOD-WMS-PO',
-    module: 'WMS / ImsPoMst',
+    module: '配置中心 / 表单管理 / 导入配置',
     name: '采购订单创建',
     description:
       '采购订单（ImsPoMst）无独立 CRUD 页面，通过 Excel 导入创建。本场景验证导入配置页就绪，并文档化导入列 schema；实际建单依赖供应商与物料主数据。',
@@ -220,7 +226,7 @@ const scenarios = [
     key: 'wms-so-create',
     appId: 'APP-WMS',
     moduleId: 'MOD-WMS-SO',
-    module: 'WMS / ImsSoMst',
+    module: '配置中心 / 表单管理 / 导入配置',
     name: '销售订单创建',
     description:
       '销售订单（ImsSoMst）无独立 CRUD 页面，通过 Excel 导入创建。本场景验证导入配置页就绪，并文档化导入列 schema；实际建单依赖客户与物料主数据。',
@@ -251,7 +257,7 @@ const scenarios = [
     key: 'mes-workorder-create',
     appId: 'APP-MES',
     moduleId: 'MOD-MES-WORKORDER',
-    module: 'MES / ProductConfiguration / Wo',
+    module: '生产管理 / 生产计划 / 工单管理',
     name: '生产工单创建',
     description: '通过 MES 生产工单页面创建虚拟工单，并按工单号或客户订单号查询验证。',
     priority: 'P1',
@@ -284,7 +290,7 @@ const scenarios = [
     key: 'mes-workshop-line-create',
     appId: 'APP-MES',
     moduleId: 'MOD-MES-WORKSHOP-LINE',
-    module: 'MES / SfcsFactoryModeling',
+    module: '基础设定 / 工厂建模 / 工厂建模',
     name: '车间/线体创建',
     description: '通过 MES 工厂建模页面创建车间和线体，并验证树形结构及列表数据。',
     priority: 'P1',
@@ -312,7 +318,7 @@ const scenarios = [
     key: 'mes-barcode-pass',
     appId: 'APP-MES',
     moduleId: 'MOD-MES-BARCODE-PASS',
-    module: 'MES / ProductProcessing',
+    module: '生产管理 / 生产作业 / 条码报工',
     name: '条码过站',
     description: '打开 MES 生产作业看板（桌面方案编码如 S20250032），选择参与排程的线体后扫码过站。',
     priority: 'P1',
@@ -343,7 +349,7 @@ const scenarios = [
     key: 'mes-barcode-report',
     appId: 'APP-MES',
     moduleId: 'MOD-MES-BARCODE-REPORT',
-    module: 'MES / DesktopReportWork',
+    module: '生产管理 / 生产作业 / 条码报工',
     name: '条码报工全流程',
     description: '创建工单、生成 10 个条码、配置工艺路线，进入条码报工页面选择线体/工序/工单后逐个扫码报工。',
     priority: 'P1',
@@ -392,7 +398,7 @@ const scenarios = [
     key: 'base-excel-import',
     appId: 'APP-BASE',
     moduleId: 'MOD-BASE-IMPORT',
-    module: '基座 / ImportExcel',
+    module: '配置中心 / 表单管理 / 导入配置',
     name: 'Excel 批量导入',
     description: '打开导入配置页（#/ImportConfig），验证页面加载及基本信息/导出模板等能力入口可用。',
     priority: 'P1',
@@ -412,28 +418,97 @@ const scenarios = [
         是否可空值: '否'
       }
     }
+  },
+  {
+    id: 'SCN-BASE-USER-CREATE',
+    key: 'base-user-create',
+    appId: 'APP-BASE',
+    moduleId: 'MOD-BASE-USER',
+    module: '系统管理 / 用户权限 / 用户管理',
+    name: '用户管理新增',
+    description: '通过基座用户管理页面新增用户，自动选择当前环境可用的角色、用户类型和组织架构，并按账号查询验证。',
+    priority: 'P1',
+    status: 'published',
+    version: '1.0.0',
+    owner: '自动化负责人',
+    scriptEntry: 'tests/base-user.spec.js',
+    dependsOn: [],
+    dataSchema: {
+      columns: ['用户账号', '用户昵称'],
+      required: ['用户账号', '用户昵称'],
+      example: {
+        用户账号: 'AT-USER-001',
+        用户昵称: '自动化用户001'
+      }
+    }
+  },
+  {
+    id: 'SCN-WMS-STOCK-QUERY',
+    key: 'wms-stock-query',
+    appId: 'APP-WMS',
+    moduleId: 'MOD-WMS-STOCK',
+    module: '仓库管理 / 库存管理 / 库存管理',
+    name: '库存查询与追溯入口',
+    description: '打开 WMS 库存查询页面，验证库存主表及子条码、收料单据、捡料单据和库存交易日志追溯入口可用。',
+    priority: 'P1',
+    status: 'published',
+    version: '1.0.0',
+    owner: '自动化负责人',
+    scriptEntry: 'tests/wms-stock.spec.js',
+    dependsOn: [],
+    dataSchema: {
+      columns: [],
+      required: [],
+      example: {}
+    }
+  },
+  {
+    id: 'SCN-MES-WOBOM-QUERY',
+    key: 'mes-wobom-query',
+    appId: 'APP-MES',
+    moduleId: 'MOD-MES-WOBOM',
+    module: '生产管理 / 生产计划 / 生产BOM',
+    name: '生产 BOM 查询与同步入口',
+    description: '打开 MES 生产 BOM 页面，验证列表加载、全量同步和按单号同步入口可用。',
+    priority: 'P1',
+    status: 'published',
+    version: '1.0.0',
+    owner: '自动化负责人',
+    scriptEntry: 'tests/mes-wobom.spec.js',
+    dependsOn: ['mes-workorder-create'],
+    dataSchema: {
+      columns: [],
+      required: [],
+      example: {}
+    }
   }
 ];
 
 const apps = [
   { id: 'APP-BASE', key: 'jmom-base', name: '基座系统', description: 'JMOM 登录、权限、导入导出与平台能力。', sort: 1 },
-  { id: 'APP-WMS', key: 'jmom-wms', name: 'WMS 仓储管理', description: '客户、供应商、物料、库位、采购和销售业务。', sort: 2 },
-  { id: 'APP-MES', key: 'jmom-mes', name: 'MES 制造执行', description: '工单、投料、工艺路线、流程卡与生产执行。', sort: 3 }
+  { id: 'APP-WMS', key: 'jmom-wms', name: '仓储管理', description: '客户、供应商、物料、库位、采购和销售业务。', sort: 2 },
+  { id: 'APP-MES', key: 'jmom-mes', name: '制造执行', description: '工单、投料、工艺路线、流程卡与生产执行。', sort: 3 },
+  { id: 'APP-QMS', key: 'jmom-qms', name: '质量管理', description: '抽样方案、检验作业、SPC 分析与质量报表。', sort: 4 },
+  { id: 'APP-TPM', key: 'jmom-tpm', name: '设备管理', description: '模具、钢网、刮刀、飞达与设备互联管理。', sort: 5 },
+  { id: 'APP-LEGACY-MES', key: 'jmom-legacy-mes', name: '旧版制造执行', description: '旧版 MES 的生产、质量、设备和报表功能。', sort: 6 }
 ];
 
 const modules = [
   { id: 'MOD-BASE-AUTH', appId: 'APP-BASE', name: '登录认证', prefix: 'Auth', sort: 1 },
-  { id: 'MOD-BASE-IMPORT', appId: 'APP-BASE', name: 'Excel 批量导入', prefix: 'ImportExcel', sort: 2 },
+  { id: 'MOD-BASE-IMPORT', appId: 'APP-BASE', name: '表格批量导入', prefix: 'ImportExcel', sort: 2 },
+  { id: 'MOD-BASE-USER', appId: 'APP-BASE', name: '用户管理', prefix: 'User', sort: 3 },
   { id: 'MOD-WMS-CUSTOMER', appId: 'APP-WMS', name: '客户管理', prefix: 'ImsCustomer', sort: 1 },
   { id: 'MOD-WMS-PART', appId: 'APP-WMS', name: '物料管理', prefix: 'ImsPart', sort: 2 },
   { id: 'MOD-WMS-VENDOR', appId: 'APP-WMS', name: '供应商管理', prefix: 'ImsVendor', sort: 3 },
   { id: 'MOD-WMS-LOCATOR', appId: 'APP-WMS', name: '库位维护', prefix: 'ImsLocator', sort: 4 },
   { id: 'MOD-WMS-PO', appId: 'APP-WMS', name: '采购订单', prefix: 'ImsPoMst', sort: 5 },
   { id: 'MOD-WMS-SO', appId: 'APP-WMS', name: '销售订单', prefix: 'ImsSoMst', sort: 6 },
+  { id: 'MOD-WMS-STOCK', appId: 'APP-WMS', name: '库存查询', prefix: 'ImsStock', sort: 7 },
   { id: 'MOD-MES-WORKORDER', appId: 'APP-MES', name: '生产工单', prefix: 'ProductionMangement', sort: 1 },
   { id: 'MOD-MES-WORKSHOP-LINE', appId: 'APP-MES', name: '车间/线体建模', prefix: 'SfcsFactoryModeling', sort: 2 },
   { id: 'MOD-MES-BARCODE-PASS', appId: 'APP-MES', name: '条码过站', prefix: 'ProductProcessing', sort: 3 },
-  { id: 'MOD-MES-BARCODE-REPORT', appId: 'APP-MES', name: '条码报工', prefix: 'DesktopReportWork', sort: 4 }
+  { id: 'MOD-MES-BARCODE-REPORT', appId: 'APP-MES', name: '条码报工', prefix: 'DesktopReportWork', sort: 4 },
+  { id: 'MOD-MES-WOBOM', appId: 'APP-MES', name: '生产 BOM', prefix: 'WoBom', sort: 5 }
 ];
 
 export function seedPlatform(database) {
@@ -497,12 +572,16 @@ export function seedPlatform(database) {
   for (const app of apps) {
     database.ensureApp(app);
   }
-  for (const module of modules) {
+  for (const module of [...modules, ...repositoryCatalog.modules]) {
     database.ensureModule(module);
   }
-  for (const scenario of scenarios) {
+  for (const scenario of [...scenarios, ...repositoryCatalog.scenarios]) {
     database.ensureScenario({ ...scenario, projectId: 'PRJ-JMOM' });
   }
+  database.syncGeneratedCatalog({
+    scenarioIds: repositoryCatalog.scenarios.map((scenario) => scenario.id),
+    moduleIds: repositoryCatalog.modules.map((module) => module.id)
+  });
   if (!database.listEntities('suite').length) {
     database.createEntity({ id: 'STE-SMOKE', type: 'suite', name: '核心冒烟测试', payload: { description: '登录、主数据和核心生产链快速验证', scenarioKeys: ['auth-login', 'wms-customer-create', 'wms-part-create', 'mes-workorder-create'], executionMode: 'headless' }, createdBy: 'system', prefix: 'STE' });
     database.createEntity({ id: 'STE-WMS-MASTER', type: 'suite', name: 'WMS 主数据初始化', payload: { description: '按依赖顺序准备客户、供应商、物料和库位', scenarioKeys: ['wms-customer-create', 'wms-vendor-create', 'wms-part-create', 'wms-locator-create'], executionMode: 'headless' }, createdBy: 'system', prefix: 'STE' });

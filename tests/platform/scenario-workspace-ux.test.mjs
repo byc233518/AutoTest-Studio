@@ -97,3 +97,42 @@ test('草稿执行按钮仍使用统一 RunDialog 且不按状态禁用', async 
   assert.match(source, /@click="runRef\.open\(row\)"/);
   assert.doesNotMatch(source, /:disabled="row\.status==='draft'"/);
 });
+
+test('场景分类在桌面按菜单树展示并在移动端保留路径选择器', async () => {
+  const source = await read('frontend/src/views/ScenariosView.vue');
+  assert.match(source, /buildScenarioTree/);
+  assert.match(source, /findScenarioTreeNode/);
+  assert.match(source, /mobile-category-select/);
+  assert.match(source, /flattenCategoryOptions/);
+});
+
+test('发布结果直接合并到场景目录且目录刷新异常不会形成未处理 Promise', async () => {
+  const [view, drawer, store] = await Promise.all([
+    read('frontend/src/views/ScenariosView.vue'),
+    read('frontend/src/components/ScenarioDrawer.vue'),
+    read('frontend/src/stores/platform.js')
+  ]);
+  assert.match(view, /@changed="handleCatalogChanged"/);
+  assert.match(view, /@saved="handleCatalogChanged"/);
+  assert.match(view, /store\.mergeScenario\(nextScenario\)/);
+  assert.match(view, /await store\.loadCatalog\(\)/);
+  assert.match(view, /ElMessage\.error/);
+  assert.doesNotMatch(view, /@(?:changed|saved)="store\.loadCatalog\(\)"/);
+  assert.match(drawer, /emit\('changed', scenario\.value\)/);
+  assert.match(store, /function mergeScenario\(next\)/);
+});
+
+test('场景目录加载期间显示 Loading 且并发请求全部结束后再关闭', async () => {
+  const [view, store] = await Promise.all([
+    read('frontend/src/views/ScenariosView.vue'),
+    read('frontend/src/stores/platform.js')
+  ]);
+  assert.match(view, /v-loading="store\.loading"/);
+  assert.match(view, /element-loading-text="场景加载中\.\.\."/);
+  assert.match(view, /:aria-busy="store\.loading"/);
+  assert.match(store, /catalogLoadCount \+= 1/);
+  assert.match(store, /loading\.value = true/);
+  assert.match(store, /finally\s*\{/);
+  assert.match(store, /catalogLoadCount -= 1/);
+  assert.match(store, /loading\.value = catalogLoadCount > 0/);
+});
