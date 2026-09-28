@@ -47,6 +47,56 @@ export async function testLlmConnection(setting, { fetchImpl = globalThis.fetch,
   }
 }
 
+function normalizeModelId(item) {
+  if (typeof item === 'string') return item.trim();
+  if (!item || typeof item !== 'object') return '';
+  return String(item.id || item.model || item.name || '').trim();
+}
+
+export async function listLlmModels(setting, { fetchImpl = globalThis.fetch, timeoutMs = 15_000 } = {}) {
+  if (!setting?.baseUrl) {
+    throw new Error('请先填写 Base URL');
+  }
+  if (!setting?.apiKey) {
+    throw new Error('请先填写 API Key');
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(`${setting.baseUrl.replace(/\/$/, '')}/models`, {
+      method: 'GET',
+      headers: {
+        authorization: `Bearer ${setting.apiKey}`
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(detail ? `HTTP ${response.status}: ${detail.slice(0, 160)}` : `HTTP ${response.status}`);
+    }
+    const body = await response.json().catch(() => null);
+    const raw = Array.isArray(body?.data)
+      ? body.data
+      : Array.isArray(body?.models)
+        ? body.models
+        : Array.isArray(body)
+          ? body
+          : [];
+    const models = [...new Set(raw.map(normalizeModelId).filter(Boolean))].sort((left, right) =>
+      left.localeCompare(right, 'en')
+    );
+    if (!models.length) {
+      throw new Error('供应商未返回可用模型');
+    }
+    return models;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('获取模型列表超时');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function generateSampleRowsSmart(database, scenario, options = {}) {
   const count = Math.max(1, Math.min(Number(options.count) || 3, 20));
   const offset = Math.max(0, Math.min(Number(options.offset) || 0, 100000));

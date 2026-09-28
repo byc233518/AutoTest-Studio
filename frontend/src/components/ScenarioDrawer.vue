@@ -20,6 +20,7 @@
       <el-tab-pane label="基本信息" name="base">
         <div class="drawer-actions">
           <el-button type="primary" @click="formRef.open(scenario)">编辑基本信息</el-button>
+          <el-button @click="openFieldsEditor">维护数据字段</el-button>
         </div>
         <el-descriptions border :column="1">
           <el-descriptions-item label="用例 key">{{ scenario?.key }}</el-descriptions-item>
@@ -30,6 +31,14 @@
             <el-text tag="code">{{ scenario?.scriptEntry || '尚未绑定' }}</el-text>
           </el-descriptions-item>
           <el-descriptions-item label="负责人">{{ scenario?.owner || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="数据字段">
+            <div v-if="dataColumns.length" class="field-tags">
+              <el-tag v-for="column in dataColumns" :key="column" size="small" :type="requiredColumns.has(column) ? 'danger' : 'info'">
+                {{ column }}{{ requiredColumns.has(column) ? ' *' : '' }}
+              </el-tag>
+            </div>
+            <span v-else>尚未配置字段，可在「测试数据」中维护</span>
+          </el-descriptions-item>
         </el-descriptions>
       </el-tab-pane>
 
@@ -40,6 +49,14 @@
           </el-select>
           <el-input v-model="datasetName" placeholder="数据集名称" />
           <el-button :icon="Plus" @click="resetDataRows">新建空白</el-button>
+        </div>
+
+        <div class="field-schema-bar">
+          <div>
+            <strong>数据字段</strong>
+            <el-text type="info">共 {{ dataColumns.length }} 个；维护字段后可继续编辑表格数据</el-text>
+          </div>
+          <el-button type="primary" plain @click="openFieldsEditor">维护字段</el-button>
         </div>
 
         <div class="data-entry-toolbar">
@@ -55,6 +72,11 @@
 
         <el-table v-loading="dataLoading" :data="dataRows" border max-height="430" class="editable-grid" empty-text="暂无数据，请增加一行、导入文件或自动生成">
           <el-table-column type="index" width="52" />
+          <el-table-column v-if="!dataColumns.length" label="字段" min-width="220">
+            <template #default>
+              <el-button link type="primary" @click="openFieldsEditor">先维护数据字段</el-button>
+            </template>
+          </el-table-column>
           <el-table-column v-for="column in dataColumns" :key="column" :label="column" min-width="140">
             <template #header>
               {{ column }}<span v-if="requiredColumns.has(column)" class="required"> *</span>
@@ -170,6 +192,39 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="fieldsEditorVisible" title="维护数据字段" width="min(720px, 94vw)" append-to-body destroy-on-close>
+      <el-alert
+        title="增删改字段会同步到当前用例，并自动调整下方表格列；已保存的数据集如列不一致，可通过「字段迁移」处理。"
+        type="info"
+        :closable="false"
+        show-icon
+        class="fields-editor-alert"
+      />
+      <el-table :data="editingFields" border max-height="360" size="small" empty-text="暂无字段，请点击下方增加">
+        <el-table-column label="字段名称" min-width="180">
+          <template #default="{ row }"><el-input v-model="row.name" placeholder="字段名" /></template>
+        </el-table-column>
+        <el-table-column label="必填" width="72" align="center">
+          <template #default="{ row }"><el-checkbox v-model="row.required" /></template>
+        </el-table-column>
+        <el-table-column label="示例值" min-width="220">
+          <template #default="{ row }"><el-input v-model="row.example" placeholder="用于生成样例数据" /></template>
+        </el-table-column>
+        <el-table-column width="64" align="center">
+          <template #default="scope">
+            <el-button link type="danger" @click="editingFields.splice(scope.$index, 1)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-button class="add-field" :icon="Plus" @click="editingFields.push({ name: '', previousName: '', required: false, example: '' })">
+        增加字段
+      </el-button>
+      <template #footer>
+        <el-button @click="fieldsEditorVisible = false">取消</el-button>
+        <el-button type="primary" :loading="fieldsSaving" @click="saveFields">保存字段</el-button>
+      </template>
+    </el-dialog>
+
     <ScenarioFormDialog ref="formRef" @saved="scenarioSaved" />
     <RecordingReviewDialog v-model="reviewVisible" :recording="reviewRecording" @applied="reviewApplied" />
     <SchemaSyncDialog ref="schemaRef" v-model="schemaVisible" :scenario-key="scenario?.key" @synced="schemaSynced" @migration-required="schemaMigrationRequired" />
@@ -227,6 +282,9 @@ const reviewVisible = ref(false);
 const reviewRecording = ref(null);
 const schemaVisible = ref(false);
 const migrationVisible = ref(false);
+const fieldsEditorVisible = ref(false);
+const fieldsSaving = ref(false);
+const editingFields = ref([]);
 const reviewOpenedFor = ref('');
 const schemaRef = ref();
 const migrationRef = ref();
@@ -362,6 +420,84 @@ function openAiGeneration() {
   aiDialogVisible.value = true;
 }
 
+function openFieldsEditor() {
+  const schema = scenario.value?.dataSchema || { columns: [], required: [], example: {} };
+  editingFields.value = (schema.columns || []).map((name) => ({
+    name,
+    previousName: name,
+    required: (schema.required || []).includes(name),
+    example: schema.example?.[name] ?? ''
+  }));
+  if (!editingFields.value.length) {
+    editingFields.value.push({ name: '', previousName: '', required: false, example: '' });
+  }
+  fieldsEditorVisible.value = true;
+}
+
+function remapDataRows(fields) {
+  dataRows.value = dataRows.value.map((row) => {
+    const next = {};
+    for (const field of fields) {
+      const previous = field.previousName || field.name;
+      if (Object.hasOwn(row, previous)) next[field.name] = row[previous];
+      else if (Object.hasOwn(row, field.name)) next[field.name] = row[field.name];
+      else next[field.name] = field.example || '';
+    }
+    return next;
+  });
+}
+
+async function saveFields() {
+  const fields = editingFields.value
+    .map((item) => ({
+      name: String(item.name || '').trim(),
+      previousName: String(item.previousName || '').trim(),
+      required: Boolean(item.required),
+      example: String(item.example ?? '')
+    }))
+    .filter((item) => item.name);
+  if (!fields.length) {
+    ElMessage.warning('请至少配置一个字段');
+    return;
+  }
+  if (new Set(fields.map((item) => item.name)).size !== fields.length) {
+    ElMessage.warning('字段名称不能重复');
+    return;
+  }
+  fieldsSaving.value = true;
+  try {
+    const dataSchema = {
+      columns: fields.map((item) => item.name),
+      required: fields.filter((item) => item.required).map((item) => item.name),
+      example: Object.fromEntries(fields.map((item) => [item.name, item.example]))
+    };
+    const result = await api(`/api/scenarios/${scenario.value.key}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        name: scenario.value.name,
+        description: scenario.value.description || '',
+        module: scenario.value.directory || scenario.value.module || '',
+        directory: scenario.value.directory || scenario.value.module || '',
+        appId: scenario.value.appId || '',
+        moduleId: scenario.value.moduleId || '',
+        priority: scenario.value.priority || 'P2',
+        owner: scenario.value.owner || '',
+        scriptEntry: scenario.value.scriptEntry || '',
+        dataSchema
+      })
+    });
+    remapDataRows(fields);
+    scenario.value = { ...scenario.value, ...result, dataSchema: result.dataSchema || dataSchema };
+    fieldsEditorVisible.value = false;
+    emit('changed', scenario.value);
+    ElMessage.success('数据字段已更新');
+  } catch (error) {
+    ElMessage.error(error.message);
+  } finally {
+    fieldsSaving.value = false;
+  }
+}
+
 async function confirmAiGeneration() {
   await generate(true, aiConfig.value);
   aiDialogVisible.value = false;
@@ -376,6 +512,11 @@ function markDataChanged() {
 }
 
 function addDataRow() {
+  if (!dataColumns.value.length) {
+    ElMessage.warning('请先维护数据字段');
+    openFieldsEditor();
+    return;
+  }
   markDataChanged();
   dataRows.value.push(blankDataRow());
 }
@@ -704,6 +845,11 @@ defineExpose({ open });
 .dataset-toolbar { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto; gap: 10px; margin-bottom: 12px; }
 .dataset-toolbar .el-select { width: 100%; }
 .data-entry-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.field-schema-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-fill-color-blank); }
+.field-schema-bar > div { display: grid; gap: 2px; }
+.field-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.fields-editor-alert { margin-bottom: 12px; }
+.add-field { margin-top: 10px; }
 .data-save-actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 14px; }
 .required { color: var(--el-color-danger); }
 .script-section { min-height: 430px; }

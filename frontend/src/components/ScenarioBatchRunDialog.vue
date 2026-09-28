@@ -10,7 +10,7 @@
     :close-on-click-modal="false"
     @closed="handleClosed"
   >
-    <div v-loading="starting" class="batch-run-body">
+    <div v-loading="starting || loadingDatasets" class="batch-run-body">
       <div v-if="!currentRun" class="selection-summary">
         <strong>已选择 {{ scenarioIds.length }} 个用例</strong>
         <span>{{ scenarioNames }}</span>
@@ -32,9 +32,46 @@
         </el-form-item>
       </el-form>
 
+      <section v-if="!currentRun" class="dataset-picker">
+        <div class="dataset-picker-header">
+          <strong>为每个用例选择测试数据</strong>
+          <el-text type="info">未选择时将使用该用例最近一次有效数据集</el-text>
+        </div>
+        <el-table :data="datasetRows" size="small" max-height="280" empty-text="请先勾选要执行的用例">
+          <el-table-column type="index" label="#" width="46" align="center" />
+          <el-table-column label="测试用例" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">
+              <div class="case-cell">
+                <strong>{{ row.name }}</strong>
+                <span>{{ row.key }}</span>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="测试数据" min-width="260">
+            <template #default="{ row }">
+              <el-select
+                v-model="datasetIds[row.id]"
+                class="wide"
+                clearable
+                filterable
+                placeholder="自动使用最近有效数据"
+              >
+                <el-option
+                  v-for="item in row.datasets"
+                  :key="item.id"
+                  :label="`${item.name}（${item.rowCount ?? item.row_count ?? 0} 行）`"
+                  :value="item.id"
+                />
+              </el-select>
+              <el-text v-if="!row.datasets.length" type="warning" size="small">暂无可用数据集</el-text>
+            </template>
+          </el-table-column>
+        </el-table>
+      </section>
+
       <el-alert
         v-if="!currentRun"
-        title="批次将使用各用例最近一次有效数据集；缺少数据的用例会在执行报告中标记失败。"
+        title="建议先在各用例工作台准备好数据集。批量执行不会现场新建数据，只会使用你选定或自动匹配的历史数据。"
         type="info"
         show-icon
         :closable="false"
@@ -124,7 +161,10 @@ const emit = defineEmits(['started', 'updated']);
 const store = usePlatformStore();
 const visible = ref(false);
 const starting = ref(false);
+const loadingDatasets = ref(false);
 const selectedScenarios = ref([]);
+const datasetRows = ref([]);
+const datasetIds = ref({});
 const environment = ref('');
 const executionMode = ref('headless');
 const currentRun = ref(null);
@@ -205,22 +245,67 @@ function durationLabel(run) {
   return `${Math.floor(duration / 60000)} 分 ${Math.round(duration % 60000 / 1000)} 秒`;
 }
 
-function open(rows) {
+function preferredDatasetId(datasets = []) {
+  return datasets.find((item) => item.validationStatus === 'valid' || item.validation_status === 'valid')?.id
+    || datasets[0]?.id
+    || '';
+}
+
+async function loadDatasetOptions(rows) {
+  loadingDatasets.value = true;
+  try {
+    const loaded = await Promise.all(rows.map(async (scenario) => {
+      const key = scenario.key;
+      const id = scenario.id || scenario.key;
+      let datasets = [];
+      try {
+        datasets = key ? await api(`/api/scenarios/${encodeURIComponent(key)}/datasets`) : [];
+      } catch {
+        datasets = [];
+      }
+      return {
+        id,
+        key,
+        name: scenario.name || key || id,
+        datasets: Array.isArray(datasets) ? datasets : (datasets?.datasets || [])
+      };
+    }));
+    datasetRows.value = loaded;
+    const next = {};
+    for (const row of loaded) {
+      next[row.id] = preferredDatasetId(row.datasets);
+    }
+    datasetIds.value = next;
+  } finally {
+    loadingDatasets.value = false;
+  }
+}
+
+function isExecutableScenario(scenario) {
+  return Boolean(scenario) && scenario.status !== 'draft' && scenario.readiness?.ready;
+}
+
+async function open(rows) {
   stopPolling();
-  selectedScenarios.value = [...rows];
+  selectedScenarios.value = rows.filter(isExecutableScenario);
   environment.value = defaultEnvironment();
   executionMode.value = 'headless';
   currentRun.value = null;
   reportMarkdown.value = '';
   reportSource.value = '';
   monitorTab.value = 'items';
+  datasetRows.value = [];
+  datasetIds.value = {};
   visible.value = true;
+  await loadDatasetOptions(selectedScenarios.value);
 }
 
 function close() {
   stopPolling();
   visible.value = false;
   selectedScenarios.value = [];
+  datasetRows.value = [];
+  datasetIds.value = {};
   environment.value = '';
   currentRun.value = null;
   reportMarkdown.value = '';
@@ -234,6 +319,8 @@ function handleClosed() {
 async function openRun(run) {
   stopPolling();
   selectedScenarios.value = [];
+  datasetRows.value = [];
+  datasetIds.value = {};
   currentRun.value = run;
   reportMarkdown.value = '';
   reportSource.value = '';
@@ -243,6 +330,15 @@ async function openRun(run) {
   if (isActiveStatus(currentRun.value?.status)) startPolling();
 }
 
+function selectedDatasetMapping() {
+  const mapping = {};
+  for (const row of datasetRows.value) {
+    const datasetId = datasetIds.value[row.id];
+    if (datasetId) mapping[row.id] = datasetId;
+  }
+  return mapping;
+}
+
 async function startBatch() {
   starting.value = true;
   try {
@@ -250,6 +346,7 @@ async function startBatch() {
       method: 'POST',
       body: JSON.stringify({
         scenarioIds: scenarioIds.value,
+        datasetIds: selectedDatasetMapping(),
         environment: environment.value,
         executionMode: executionMode.value
       })
@@ -335,6 +432,11 @@ defineExpose({ open, openRun, close });
 .run-config-grid :deep(.el-segmented) { width: 100%; }
 .run-config-grid :deep(.el-segmented__item) { flex: 1; }
 .wide { width: 100%; }
+.dataset-picker { display: grid; gap: 8px; }
+.dataset-picker-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.case-cell { display: grid; min-width: 0; gap: 2px; }
+.case-cell strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.case-cell span { color: var(--el-text-color-secondary); font-size: 12px; }
 .run-overview { display: grid; gap: 10px; padding: 11px 12px; background: var(--el-fill-color-lighter); border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
 .run-identity, .run-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .run-identity > div { min-width: 0; display: grid; gap: 2px; }

@@ -5,7 +5,7 @@
         <span class="login-brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span>
         <div>
           <h1>AutoTest Studio</h1>
-          <p>场景、数据、执行与证据的一体化工作台</p>
+          <p>面向任意 Web 系统的自动化测试工作台</p>
         </div>
       </div>
 

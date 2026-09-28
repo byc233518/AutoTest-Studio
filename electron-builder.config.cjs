@@ -100,7 +100,9 @@ module.exports = {
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
     shortcutName: 'AutoTest Studio',
+    // Keep stock auto-delete off; desktop/installer.nsh prompts whether to retain history data.
     deleteAppDataOnUninstall: false,
+    include: path.join(projectRoot, 'desktop', 'installer.nsh'),
     runAfterFinish: false
   },
   beforePack: async () => {

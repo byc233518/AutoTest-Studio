@@ -1,6 +1,22 @@
 # AutoTest Studio
 
-这是面向制造业 B/S 系统的 Windows 桌面自动化测试客户端。客户端默认完全本地离线运行，把 Playwright 脚本、测试数据、执行环境、测试计划和执行报告保存在用户选择的项目目录中；不同项目使用独立数据库和物理目录。当前版本保留 Web 服务边界，后续可以在不改变项目数据模型的前提下接入服务端能力。
+这是通用的 Windows 桌面自动化测试客户端，面向任意浏览器 Web 系统。  
+客户端默认完全本地离线运行，把 Playwright 脚本、测试数据、执行环境、测试计划和执行报告保存在用户选择的项目目录中；不同项目使用独立数据库和物理目录。当前版本保留 Web 服务边界，后续可以在不改变项目数据模型的前提下接入服务端能力。
+
+被测对象不绑定行业：通过项目内的「环境配置」指定 Base URL、账号与变量即可切换客户或产品。仓库内制造业 MES/WMS 相关用例与索引仅为当前演示样例。
+
+## 技术栈
+
+| 层级 | 技术 |
+|------|------|
+| 桌面壳 | Electron 40 + electron-builder |
+| 前端 | Vue 3 + Vue Router + Pinia + Element Plus + Vite 7 |
+| 后端 / API | Node.js 22+、Express 5、SQLite |
+| 自动化 | Playwright（优先本机 Chrome，其次 Edge） |
+| 本地录制器 | .NET 10 WinForms 绿色免安装包 |
+| 可选部署 | Docker Compose |
+
+示例被测系统的仓库路径与版本差异见 `AGENTS.md` 附录、`docs/项目索引.md`。
 
 ## 核心能力
 
@@ -43,6 +59,13 @@ npx.cmd playwright install ffmpeg
 ```
 
 打包过程不会下载组件；需要复用其他缓存目录时，可通过 `AUTOTEST_DESKTOP_BROWSER_CACHE` 指定。
+
+卸载时会弹出「是否保留历史数据」提示：
+
+- 选「是」：保留 `%APPDATA%` 下的项目列表、偏好与默认项目数据，便于重装后续用。
+- 选「否」：删除上述工作台应用数据。
+- 静默卸载默认保留数据；如需清理可附加参数 `--delete-app-data`。
+- 用户自行选择目录创建的测试项目不会随卸载删除。
 
 新建桌面项目只初始化 15 个手工维护的核心用例，不再自动导入代码扫描生成的历史用例。现阶段先按登录、WMS 主数据和 MES 核心流程逐个完成真实环境验证；其他用例在验证脚本和数据后，再通过录制、新建或用例包导入逐批加入。升级已有项目不会删除其中已经维护的历史用例。
 
@@ -108,9 +131,9 @@ sh docker/docker-deploy.sh
 
 该脚本会修复平台数据目录权限、构建镜像、启动或更新容器并执行健康检查，也可以通过 Jenkins 的 Publish over SSH 在远端调用。
 
-## 被测系统测试环境
+## 示例被测环境（可替换）
 
-默认被测环境来自 `Agents.md`：
+下列变量仅对应仓库当前演示用环境，接入其他系统时改成目标地址与账号即可：
 
 - `AUTOTEST_BASE_URL=http://172.16.100.11:46069`
 - `AUTOTEST_USERNAME=byc`
@@ -124,7 +147,6 @@ $env:AUTOTEST_USERNAME='byc'
 $env:AUTOTEST_PASSWORD='Abcd1234'
 npm start
 ```
-
 ## 本地录制
 
 普通测试同事推荐使用绿色免安装录制器，无需安装 Node.js、npm、Playwright 或 .NET Runtime。

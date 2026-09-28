@@ -77,6 +77,8 @@ export class DesktopHost {
     this.activeProject = null;
     this.switchOperation = Promise.resolve();
     this.disposed = false;
+    this.allowClose = false;
+    this.closePromptOpen = false;
   }
 
   async initialize() {
@@ -159,6 +161,11 @@ export class DesktopHost {
       }
     });
     this.window.once('ready-to-show', () => this.window?.show());
+    this.window.on('close', (event) => {
+      if (this.allowClose) return;
+      event.preventDefault();
+      void this.confirmClose();
+    });
     this.window.on('closed', () => {
       this.window = null;
     });
@@ -179,6 +186,50 @@ export class DesktopHost {
       }
       event.preventDefault();
     });
+  }
+
+  async confirmClose() {
+    if (this.closePromptOpen || !this.window || this.window.isDestroyed()) return;
+    this.closePromptOpen = true;
+    try {
+      const detail = await this.describeActiveWork();
+      const { response } = await dialog.showMessageBox(this.window, {
+        type: 'question',
+        buttons: ['取消', '退出'],
+        defaultId: 0,
+        cancelId: 0,
+        title: '退出确认',
+        message: '确定要退出 AutoTest Studio 吗？',
+        detail: detail || '退出后正在进行的本地执行与录制会中断。'
+      });
+      if (response !== 1 || !this.window || this.window.isDestroyed()) return;
+      this.allowClose = true;
+      this.window.close();
+    } finally {
+      this.closePromptOpen = false;
+    }
+  }
+
+  async describeActiveWork() {
+    try {
+      const database = this.localServer?.app?.locals?.database;
+      if (!database?.raw) return '';
+      const activeRuns = Number(database.raw.prepare(`
+        SELECT COUNT(*) AS count FROM runs WHERE status IN ('queued', 'running')
+      `).get()?.count || 0);
+      const activePlanRuns = Number(database.raw.prepare(`
+        SELECT COUNT(*) AS count FROM test_plan_runs WHERE status IN ('queued', 'running')
+      `).get()?.count || 0);
+      const activeRecordings = await this.localServer.app.locals.getActiveRecordingCount?.() || 0;
+      const tasks = [
+        activeRuns ? `${activeRuns} 个用例执行` : '',
+        activePlanRuns ? `${activePlanRuns} 个测试计划` : '',
+        activeRecordings ? `${activeRecordings} 个录制任务` : ''
+      ].filter(Boolean);
+      return tasks.length ? `当前仍有${tasks.join('、')}未结束，退出将中断这些任务。` : '';
+    } catch {
+      return '';
+    }
   }
 
   async loadActiveProject() {
@@ -352,6 +403,7 @@ export class DesktopHost {
   async dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.allowClose = true;
     for (const channel of Object.values(DESKTOP_CHANNELS)) ipcMain.removeHandler(channel);
     await this.switchOperation.catch(() => {});
     await this.stopProjectServer();
@@ -380,6 +432,11 @@ if (!ownsSingleInstance) {
   app.on('window-all-closed', () => app.quit());
   app.on('before-quit', (event) => {
     if (quitInProgress || !desktopHost) return;
+    if (!desktopHost.allowClose) {
+      event.preventDefault();
+      void desktopHost.confirmClose();
+      return;
+    }
     event.preventDefault();
     quitInProgress = true;
     desktopHost.dispose()

@@ -140,6 +140,50 @@ test('AI 设置更新可保留密钥且连通性检测会真实调用服务', as
   assert.equal(calls[0].options.headers.authorization, 'Bearer secret-key');
 });
 
+test('可从供应商拉取模型列表，并支持请求体覆盖 Base URL / API Key', async (t) => {
+  const calls = [];
+  const ctx = await createTestContext(t, {
+    llmFetch: async (url, options) => {
+      calls.push({ url, options });
+      return new Response(JSON.stringify({
+        data: [
+          { id: 'model-b' },
+          { id: 'model-a' },
+          { id: 'model-a' }
+        ]
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+  });
+  const cookie = await ctx.loginCookie('admin', 'Admin123!');
+  await configureLlm(ctx, cookie);
+
+  const response = await ctx.fetch('/api/settings/llm/models', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      baseUrl: 'http://127.0.0.1:18080/v1',
+      apiKey: ''
+    })
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).models, ['model-a', 'model-b']);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'http://127.0.0.1:18080/v1/models');
+  assert.equal(calls[0].options.method, 'GET');
+  assert.equal(calls[0].options.headers.authorization, 'Bearer secret-key');
+});
+
+test('缺少 Base URL 或 API Key 时拉取模型列表返回 400', async (t) => {
+  const ctx = await createTestContext(t);
+  const cookie = await ctx.loginCookie('admin', 'Admin123!');
+  const response = await ctx.fetch('/api/settings/llm/models', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({})
+  });
+  assert.equal(response.status, 400);
+});
+
 test('测试数据生成使用注入的 fetch 并传递 AbortSignal', async (t) => {
   const calls = [];
   const ctx = await createTestContext(t, {

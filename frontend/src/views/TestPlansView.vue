@@ -151,7 +151,7 @@
                 <template #default="{ row }">{{ scenarioDirectory(row.scenarioId) }}</template>
               </el-table-column>
               <el-table-column label="数据集" min-width="160" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.datasetId || '执行时使用默认数据' }}</template>
+                <template #default="{ row }">{{ datasetLabel(row) }}</template>
               </el-table-column>
               <el-table-column label="状态" width="92" align="center">
                 <template #default="{ row }">
@@ -315,13 +315,13 @@
       <div class="editor-case-heading">
         <div>
           <strong>测试用例</strong>
-          <span>共 {{ editorItems.length }} 个，按下列顺序执行</span>
+          <span>仅可添加「可执行」用例；共 {{ editorItems.length }} 个，按下列顺序执行</span>
         </div>
         <el-button type="primary" plain :icon="Plus" @click="openCasePicker">
-          添加测试用例
+          添加可执行用例
         </el-button>
       </div>
-      <el-table :data="editorItems" size="small" max-height="330" empty-text="请添加测试用例" row-key="scenarioId">
+      <el-table :data="editorItems" size="small" max-height="330" empty-text="请添加可执行测试用例" row-key="scenarioId">
         <el-table-column type="index" label="#" width="46" align="center" />
         <el-table-column label="测试用例" min-width="210">
           <template #default="{ row }">
@@ -331,9 +331,33 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="数据集 ID（可选）" min-width="190">
+        <el-table-column label="就绪" width="88" align="center">
           <template #default="{ row }">
-            <el-input v-model="row.datasetId" placeholder="使用默认数据" clearable />
+            <el-tag size="small" :type="scenarioReady(row.scenarioId) ? 'success' : 'warning'">
+              {{ scenarioReady(row.scenarioId) ? '可执行' : '未就绪' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="测试数据" min-width="220">
+          <template #default="{ row }">
+            <el-select
+              v-model="row.datasetId"
+              class="wide"
+              clearable
+              filterable
+              placeholder="自动使用最近有效数据"
+              :loading="datasetsLoading"
+            >
+              <el-option
+                v-for="item in datasetsForScenario(row.scenarioId)"
+                :key="item.id"
+                :label="`${item.name}（${item.rowCount || 0} 行）`"
+                :value="item.id"
+              />
+            </el-select>
+            <el-text v-if="!datasetsForScenario(row.scenarioId).length" type="warning" size="small">
+              暂无可用数据集
+            </el-text>
           </template>
         </el-table-column>
         <el-table-column label="顺序" width="92" align="center">
@@ -384,13 +408,20 @@
 
     <el-dialog
       v-model="casePickerVisible"
-      title="添加测试用例"
+      title="添加可执行测试用例"
       width="680px"
       top="7vh"
       append-to-body
       destroy-on-close
       :close-on-click-modal="false"
     >
+      <el-alert
+        class="case-picker-alert"
+        title="仅列出状态为「可执行」的用例（已发布且脚本、数据、环境等就绪）。"
+        type="info"
+        show-icon
+        :closable="false"
+      />
       <div class="case-picker-toolbar">
         <el-input
           v-model="caseKeyword"
@@ -410,7 +441,7 @@
           :default-expanded-keys="caseTree.map((node) => node.id)"
           :indent="16"
           :filter-node-method="filterCaseNode"
-          empty-text="暂无可选测试用例"
+          empty-text="暂无可执行测试用例"
           @check="updateCheckedCaseCount"
         >
           <template #default="{ data }">
@@ -485,6 +516,8 @@ const casePickerVisible = ref(false);
 const caseTreeRef = ref();
 const caseKeyword = ref('');
 const checkedCaseCount = ref(0);
+const datasetsLoading = ref(false);
+const datasetsByScenarioId = reactive({});
 let runPollTimer;
 
 const executionModeOptions = [
@@ -507,7 +540,7 @@ const scenarioLookup = computed(() => {
   }
   return values;
 });
-const caseTree = computed(() => buildCaseTree(scenarios.value));
+const caseTree = computed(() => buildCaseTree(scenarios.value.filter(isExecutableScenario)));
 const runSummary = computed(() => ({
   total: Number(currentRun.value?.summary?.total ?? currentRun.value?.totalItems ?? currentRun.value?.items?.length ?? 0),
   passed: Number(currentRun.value?.summary?.passed ?? currentRun.value?.passedItems ?? 0),
@@ -601,6 +634,7 @@ async function selectPlan(planId) {
   if (!plan) return;
   runConfig.environment = plan.environment || defaultEnvironment();
   runConfig.executionMode = plan.executionMode || 'headless';
+  await ensureDatasetsLoaded(plan.items.map((item) => item.scenarioId));
   await loadLatestPlanRun(plan).catch((error) => {
     if (error?.status !== 404) ElMessage.error(error.message || '最近批次加载失败');
   });
@@ -651,6 +685,14 @@ function scenarioFor(id) {
   return scenarioLookup.value.get(id);
 }
 
+function isExecutableScenario(scenario) {
+  return Boolean(scenario) && scenario.status !== 'draft' && scenario.readiness?.ready;
+}
+
+function scenarioReady(scenarioId) {
+  return isExecutableScenario(scenarioFor(scenarioId));
+}
+
 function scenarioName(id) {
   return scenarioFor(id)?.name || `已移除用例（${id}）`;
 }
@@ -662,6 +704,58 @@ function scenarioKey(id) {
 function scenarioDirectory(id) {
   const scenario = scenarioFor(id);
   return scenario?.directory || scenario?.module || '未分类';
+}
+
+function preferredDatasetId(datasets = []) {
+  return datasets.find((item) => item.validationStatus === 'valid' || item.validation_status === 'valid')?.id
+    || datasets[0]?.id
+    || '';
+}
+
+function datasetsForScenario(scenarioId) {
+  return datasetsByScenarioId[scenarioId] || [];
+}
+
+function datasetLabel(row) {
+  if (!row?.datasetId) return '执行时使用默认数据';
+  const matched = datasetsForScenario(row.scenarioId).find((item) => item.id === row.datasetId);
+  return matched ? `${matched.name}（${matched.rowCount || 0} 行）` : row.datasetId;
+}
+
+async function ensureDatasetsLoaded(scenarioIds = []) {
+  const pending = [...new Set(scenarioIds.filter(Boolean))]
+    .filter((scenarioId) => !Object.prototype.hasOwnProperty.call(datasetsByScenarioId, scenarioId));
+  if (!pending.length) return;
+  datasetsLoading.value = true;
+  try {
+    await Promise.all(pending.map(async (scenarioId) => {
+      const scenario = scenarioFor(scenarioId);
+      const key = scenario?.key;
+      if (!key) {
+        datasetsByScenarioId[scenarioId] = [];
+        return;
+      }
+      try {
+        const payload = await api(`/api/scenarios/${encodeURIComponent(key)}/datasets`);
+        datasetsByScenarioId[scenarioId] = Array.isArray(payload) ? payload : (payload?.datasets || []);
+      } catch {
+        datasetsByScenarioId[scenarioId] = [];
+      }
+    }));
+  } finally {
+    datasetsLoading.value = false;
+  }
+}
+
+async function refreshEditorDatasets() {
+  await ensureDatasetsLoaded(editorItems.value.map((item) => item.scenarioId));
+  for (const item of editorItems.value) {
+    const datasets = datasetsForScenario(item.scenarioId);
+    if (!item.datasetId) item.datasetId = preferredDatasetId(datasets);
+    else if (datasets.length && !datasets.some((dataset) => dataset.id === item.datasetId)) {
+      item.datasetId = preferredDatasetId(datasets);
+    }
+  }
 }
 
 function batchItem(scenarioId) {
@@ -690,7 +784,7 @@ function durationLabel(run) {
   return `${Math.max(0, Math.round((end - start) / 1000))} 秒`;
 }
 
-function openCreatePlan() {
+async function openCreatePlan() {
   editingPlanId.value = '';
   Object.assign(editorForm, {
     name: '',
@@ -703,7 +797,7 @@ function openCreatePlan() {
   editorVisible.value = true;
 }
 
-function openEditPlan(plan) {
+async function openEditPlan(plan) {
   editingPlanId.value = plan.id;
   Object.assign(editorForm, {
     name: plan.name,
@@ -714,13 +808,18 @@ function openEditPlan(plan) {
   editorItems.value = plan.items.map((item) => ({ ...item }));
   editorError.value = '';
   editorVisible.value = true;
+  await refreshEditorDatasets();
 }
 
 async function savePlan() {
   editorError.value = '';
   try {
     await editorFormRef.value?.validate();
-    if (!editorItems.value.length) throw new Error('请至少添加一个测试用例');
+    if (!editorItems.value.length) throw new Error('请至少添加一个可执行测试用例');
+    const notReady = editorItems.value.filter((item) => !scenarioReady(item.scenarioId));
+    if (notReady.length) {
+      throw new Error(`有 ${notReady.length} 个用例尚未可执行，请移除后再保存`);
+    }
     savingPlan.value = true;
     const body = {
       name: editorForm.name.trim(),
@@ -787,16 +886,23 @@ function updateCheckedCaseCount() {
     : 0;
 }
 
-function confirmCaseSelection() {
+async function confirmCaseSelection() {
   const selectedNodes = caseTreeRef.value?.getCheckedNodes(true).filter((node) => node.type === 'scenario') || [];
   const selectedIds = new Set(selectedNodes.map((node) => node.scenarioId));
+  const executableIds = new Set(
+    scenarios.value.filter(isExecutableScenario).map((scenario) => scenario.id || scenario.key)
+  );
   const existing = new Map(editorItems.value.map((item) => [item.scenarioId, item]));
-  const retained = editorItems.value.filter((item) => selectedIds.has(item.scenarioId));
+  // 选择器里看不到的未就绪用例先保留，保存时再统一校验
+  const retained = editorItems.value.filter((item) =>
+    !executableIds.has(item.scenarioId) || selectedIds.has(item.scenarioId)
+  );
   for (const node of selectedNodes) {
     if (!existing.has(node.scenarioId)) retained.push({ scenarioId: node.scenarioId, datasetId: '' });
   }
   editorItems.value = retained;
   casePickerVisible.value = false;
+  await refreshEditorDatasets();
 }
 
 function moveEditorItem(index, offset) {
@@ -864,6 +970,11 @@ function buildCaseTree(source) {
 
 async function startBatch() {
   if (!selectedPlan.value) return;
+  const notReady = selectedPlan.value.items.filter((item) => !scenarioReady(item.scenarioId));
+  if (notReady.length) {
+    ElMessage.warning(`计划中有 ${notReady.length} 个用例尚未可执行，请先调整计划`);
+    return;
+  }
   startingRun.value = true;
   try {
     const result = await api(`/api/test-plans/${encodeURIComponent(selectedPlan.value.id)}/run`, {
@@ -1494,6 +1605,8 @@ function parseMarkdown(source) {
 }
 
 .editor-error { margin-top: 10px; }
+
+.case-picker-alert { margin-bottom: 10px; }
 
 .case-picker-toolbar { margin-bottom: 8px; }
 

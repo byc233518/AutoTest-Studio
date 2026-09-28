@@ -20,7 +20,7 @@ import {
   markLocalRunStarted
 } from './platform/runner.mjs';
 import { rowsToCsv } from './platform/sample-data.mjs';
-import { generateSampleRowsSmart, testLlmConnection } from './platform/llm.mjs';
+import { generateSampleRowsSmart, listLlmModels, testLlmConnection } from './platform/llm.mjs';
 import { publicLlmSetting } from './platform/settings.mjs';
 import { normalizeExecutionMode } from './platform/execution-mode.mjs';
 import { createBrowserStatus } from './platform/system-browsers.mjs';
@@ -2339,6 +2339,28 @@ export async function createApp(options = {}) {
       return response.json({ ok: true, message: 'AI 服务连接成功' });
     } catch (error) {
       return jsonError(response, 502, `AI 服务连接失败：${error.message}`);
+    }
+  });
+
+  app.post('/api/settings/llm/models', requireAuth, async (request, response) => {
+    const current = database.getSetting('llm');
+    const currentValue = current ? JSON.parse(current.value) : {};
+    const baseUrl = String(request.body?.baseUrl || currentValue.baseUrl || '').trim();
+    const apiKey = String(request.body?.apiKey || '').trim() || currentValue.apiKey || '';
+    if (!baseUrl) {
+      return jsonError(response, 400, '请先填写 Base URL');
+    }
+    if (!apiKey) {
+      return jsonError(response, 400, '请先填写 API Key');
+    }
+    try {
+      const models = await listLlmModels(
+        { baseUrl, apiKey },
+        { fetchImpl: app.locals.llmFetch }
+      );
+      return response.json({ models });
+    } catch (error) {
+      return jsonError(response, 502, `获取模型列表失败：${error.message}`);
     }
   });
 

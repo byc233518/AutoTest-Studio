@@ -546,7 +546,7 @@ export function seedPlatform(database, {
   database.ensureProject({
     id: 'PRJ-AUTOTEST',
     name: 'AutoTest Studio',
-    description: '制造业 MES + WMS 一体化平台自动化测试项目'
+    description: '通用自动化测试项目（可替换为任意被测系统）'
   });
   for (const env of [
     {
