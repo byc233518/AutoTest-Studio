@@ -252,7 +252,17 @@ function openBatchMove() {
 
 function openBatchRun() {
   if (!selectedCount.value) return;
-  batchRunRef.value?.open(selectedRows.value);
+  const executable = selectedRows.value.filter((scenario) =>
+    scenario.status !== 'draft' && scenario.readiness?.ready
+  );
+  if (!executable.length) {
+    ElMessage.warning('所选用例均不可执行，请先准备脚本、数据与环境');
+    return;
+  }
+  if (executable.length < selectedRows.value.length) {
+    ElMessage.info(`已忽略 ${selectedRows.value.length - executable.length} 个不可执行用例`);
+  }
+  batchRunRef.value?.open(executable);
 }
 
 function openLatestBatch() {

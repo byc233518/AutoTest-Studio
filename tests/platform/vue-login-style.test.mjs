@@ -32,7 +32,7 @@ test('登录页提供 AutoTest Studio 品牌视觉与三项平台能力', async 
   }
 
   assert.match(source, /AutoTest Studio/);
-  assert.match(source, /场景、数据、执行与证据的一体化工作台/);
+  assert.match(source, /面向任意 Web 系统的自动化测试工作台/);
   assert.match(source, /<h3>场景管理<\/h3>[\s\S]*?<small>脚本、数据、环境与依赖统一沉淀<\/small>/);
   assert.match(source, /<h3>执行闭环<\/h3>[\s\S]*?<small>预检、执行、过程与结果全程追踪<\/small>/);
   assert.match(source, /<h3>证据回放<\/h3>[\s\S]*?<small>步骤、截图、录像与报告集中查看<\/small>/);
