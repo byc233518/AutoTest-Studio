@@ -1,10 +1,10 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { startServer } from '../server/index.mjs';
-import { ProjectRegistry, projectLayout, readProjectManifest } from './project-registry.mjs';
+import { ProjectRegistry, allocateEmptyDirectory, deleteProjectDirectory, projectFolderName, projectLayout, readProjectManifest } from './project-registry.mjs';
 import {
   archiveFileName,
   rewriteProjectIdentity,
@@ -17,6 +17,7 @@ const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const DESKTOP_CHANNELS = Object.freeze({
   listProjects: 'autotest:projects:list',
   createProject: 'autotest:projects:create',
+  suggestProjectRoot: 'autotest:projects:suggest-root',
   registerProject: 'autotest:projects:register',
   selectProject: 'autotest:projects:select',
   currentProject: 'autotest:projects:current',
@@ -44,6 +45,9 @@ export function resolveDesktopPaths(options = {}) {
       : isPackaged
         ? appPath
         : developmentRoot,
+    installRoot: isPackaged
+      ? path.dirname(path.resolve(options.execPath || process.execPath))
+      : developmentRoot,
     preloadPath: path.resolve(moduleDirectory, 'preload.cjs')
   };
 }
@@ -90,6 +94,7 @@ export class DesktopHost {
   }
 
   async initialize() {
+    if (process.platform === 'win32') process.env.PYTHONIOENCODING = 'utf-8';
     this.registerIpcHandlers();
     const initialProject = await this.ensureInitialProject();
     await this.startProjectServer(initialProject);
@@ -288,12 +293,9 @@ export class DesktopHost {
     });
     this.handle(DESKTOP_CHANNELS.currentProject, async () => publicProject(this.activeProject, true));
     this.handle(DESKTOP_CHANNELS.chooseProjectDirectory, (options) => this.chooseProjectDirectory(options));
+    this.handle(DESKTOP_CHANNELS.suggestProjectRoot, async (input = {}) => this.suggestProjectRoot(input));
     this.handle(DESKTOP_CHANNELS.createProject, async (input = {}) => {
-      const rootPath = input.rootPath || await this.chooseProjectDirectory({
-        title: '选择新项目目录',
-        buttonLabel: '选择目录'
-      });
-      if (!rootPath) return null;
+      const rootPath = String(input.rootPath || '').trim() || await this.allocateDefaultProjectRoot(input.name);
       const project = await this.registry.createProject({ ...input, rootPath });
       if (input.activate !== false) await this.selectProject(project.id);
       const saved = await this.registry.getProject(project.id);
@@ -355,6 +357,35 @@ export class DesktopHost {
       properties: ['openDirectory', 'createDirectory', 'dontAddToRecent']
     });
     return result.canceled ? null : result.filePaths[0] || null;
+  }
+
+  async resolveWritableProjectsRoot() {
+    const preferred = path.join(this.resources.installRoot, 'projects');
+    const fallback = path.join(this.registryDirectory, 'workspaces');
+    for (const candidate of [preferred, fallback]) {
+      try {
+        await mkdir(candidate, { recursive: true });
+        const probe = path.join(candidate, `.write-probe-${process.pid}-${Date.now()}`);
+        await writeFile(probe, '', { flag: 'wx' });
+        await unlink(probe);
+        return candidate;
+      } catch {
+        /* try next location */
+      }
+    }
+    throw new Error('无法在安装目录或用户目录下创建项目文件夹');
+  }
+
+  async allocateDefaultProjectRoot(name) {
+    return allocateEmptyDirectory(await this.resolveWritableProjectsRoot(), name);
+  }
+
+  async suggestProjectRoot(input = {}) {
+    const parent = await this.resolveWritableProjectsRoot();
+    return {
+      parent,
+      rootPath: path.join(parent, projectFolderName(input.name || '新项目'))
+    };
   }
 
   async chooseProjectArchive(options = {}) {
@@ -439,17 +470,30 @@ export class DesktopHost {
   }
 
   async removeProject(projectId) {
+    const input = projectId && typeof projectId === 'object' ? projectId : { projectId };
+    const id = input.projectId;
+    const deleteFiles = Boolean(input.deleteFiles);
     const projects = await this.registry.listProjects();
-    if (this.activeProject?.id === projectId && projects.length === 1) {
+    if (this.activeProject?.id === id && projects.length === 1) {
       throw new Error('不能移除当前唯一项目，请先新建或注册另一个项目');
     }
-    if (this.activeProject?.id === projectId) await this.assertCanSwitchProjects();
-    const removed = await this.registry.removeProject(projectId);
-    if (this.activeProject?.id === projectId) {
+    const wasActive = this.activeProject?.id === id;
+    if (wasActive) {
+      await this.assertCanSwitchProjects();
+      await this.stopProjectServer();
+      this.activeProject = null;
+    }
+    const removed = await this.registry.removeProject(id);
+    let filesDeleted = false;
+    if (deleteFiles) {
+      await deleteProjectDirectory(removed.rootPath);
+      filesDeleted = true;
+    }
+    if (wasActive) {
       const nextProject = (await this.registry.listProjects())[0];
       await this.selectProject(nextProject.id);
     }
-    return publicProject(removed);
+    return { ...publicProject(removed), filesDeleted };
   }
 
   focusWindow() {

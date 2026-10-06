@@ -99,10 +99,11 @@ function finishStepsByStatus(steps = [], status) {
 }
 
 function initialProcessState(run, scenario, dataset) {
+  const datasetName = dataset?.name || '无需测试数据';
   return {
     runId: run.id,
     scenarioName: scenario.name,
-    datasetName: dataset.name,
+    datasetName,
     executionMode: run.execution_mode || 'headless',
     status: 'running',
     canWatchLive: run.execution_mode === 'ui',
@@ -114,7 +115,7 @@ function initialProcessState(run, scenario, dataset) {
     startedAt: now(),
     updatedAt: now(),
     steps: [
-      { id: 'prepare', title: '读取样本数据', status: 'running', startedAt: now() },
+      { id: 'prepare', title: dataset?.rows_path ? '读取样本数据' : '准备执行', status: 'running', startedAt: now() },
       { id: 'browser', title: '启动浏览器并打开测试环境', status: 'pending' },
       { id: 'scenario', title: `执行场景：${scenario.name}`, status: 'pending' },
       { id: 'report', title: '整理截图、录像和报告', status: 'pending' }
@@ -159,6 +160,24 @@ function completeAllSteps(steps, status = 'passed') {
   }));
 }
 
+function finalizeExecutionSteps(steps = [], status, summary = {}) {
+  const testsRan = Number(summary.total || 0) > 0;
+  if (!testsRan) return finishStepsByStatus(steps, status);
+  const advanced = steps.map((step) => {
+    if (step.id === 'prepare' && step.status !== 'passed') {
+      return { ...step, status: 'passed', finishedAt: step.finishedAt || now() };
+    }
+    if (step.id === 'browser' && step.status === 'pending') {
+      return { ...step, status: 'passed', startedAt: step.startedAt || now(), finishedAt: now() };
+    }
+    return step;
+  });
+  if (status === 'failed') {
+    return finishStepsByStatus(markStepRunning(advanced, 'scenario'), 'failed');
+  }
+  return completeAllSteps(markStepRunning(advanced, 'report'), status === 'skipped' ? 'skipped' : 'passed');
+}
+
 function delay(ms) {
   return ms ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 }
@@ -168,8 +187,8 @@ export function createRun(database, input) {
     id: database.nextId('RUN'),
     scenarioId: input.scenario.id,
     scenarioName: input.scenario.name,
-    datasetId: input.dataset.id,
-    datasetName: input.dataset.name,
+    datasetId: input.dataset?.id || '',
+    datasetName: input.dataset?.name || '无需测试数据',
     environment: input.environment,
     executionMode: input.executionMode,
     executionLocation: input.executionLocation || 'server',
@@ -196,7 +215,9 @@ async function writeMockScreenshot(reportDir, scenario, text) {
 
 async function writeMockReport(app, run, scenario, dataset, reportDir) {
   await mkdir(reportDir, { recursive: true });
-  const rows = JSON.parse(await readFile(dataset.rows_path, 'utf8'));
+  const rows = dataset?.rows_path
+    ? JSON.parse(await readFile(dataset.rows_path, 'utf8'))
+    : [{}];
   const stepDelay = app.locals.mockRunStepDelayMs || 0;
   let processState = await readJson(path.resolve(reportDir, 'process.json'), initialProcessState(run, scenario, dataset));
 
@@ -230,7 +251,7 @@ async function writeMockReport(app, run, scenario, dataset, reportDir) {
 <title>${scenario.name} - 执行报告</title>
 <body>
   <h1>${scenario.name}</h1>
-  <p>样本数据：${dataset.name}</p>
+  <p>样本数据：${dataset?.name || '无需测试数据'}</p>
   <p>通过：${summary.passed} / ${summary.total}</p>
   <p>过程资产：截图、录像回放、HTML 报告。</p>
 </body>
@@ -417,7 +438,7 @@ async function executePlaywright(app, run, scenario, dataset, reportDir) {
     ...process.env,
     AUTOTEST_RUN_ID: run.id,
     AUTOTEST_SCENARIO_KEY: scenario.key,
-    AUTOTEST_DATASET_PATH: dataset.rows_path,
+    AUTOTEST_DATASET_PATH: dataset?.rows_path || '',
     AUTOTEST_RESULT_DIR: reportDir,
     AUTOTEST_PROCESS_FILE: path.resolve(reportDir, 'process.json'),
     AUTOTEST_EXECUTION_MODE: run.execution_mode || 'headless',
@@ -430,7 +451,8 @@ async function executePlaywright(app, run, scenario, dataset, reportDir) {
     AUTOTEST_BASE_URL: environment.base_url,
     AUTOTEST_USERNAME: environment.username,
     AUTOTEST_PASSWORD: environment.password,
-    AUTOTEST_GLOBAL_VARIABLES: JSON.stringify(environmentVariablesObject(environment))
+    AUTOTEST_GLOBAL_VARIABLES: JSON.stringify(environmentVariablesObject(environment)),
+    PYTHONIOENCODING: 'utf-8'
   };
   let exitCode;
   let signal = null;
@@ -471,7 +493,7 @@ async function executePlaywright(app, run, scenario, dataset, reportDir) {
     latestScreenshotUrl: existsSync(path.resolve(reportDir, screenshotFile)) ? artifactUrl(run.id, screenshotFile) : processState.latestScreenshotUrl,
     videoReplayUrl: existsSync(path.resolve(reportDir, 'replay.html')) ? artifactUrl(run.id, 'replay.html') : null,
     videoFileUrl: existsSync(path.resolve(reportDir, 'video.webm')) ? artifactUrl(run.id, 'video.webm') : null,
-    steps: finishStepsByStatus(processState.steps || [], status)
+    steps: finalizeExecutionSteps(processState.steps || [], status, summary)
   });
 
   return { reportDir, summary, exitCode, signal, status };

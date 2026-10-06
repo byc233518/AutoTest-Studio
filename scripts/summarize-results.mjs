@@ -2,6 +2,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+function stripAnsi(text) {
+  return String(text || '').replace(/\u001B\[[0-9;]*[A-Za-z]/g, '');
+}
+
 function collectSpecs(suite, items = []) {
   for (const spec of suite.specs || []) {
     for (const test of spec.tests || []) {
@@ -12,7 +16,7 @@ function collectSpecs(suite, items = []) {
         expectedStatus: test.expectedStatus,
         status: result.status || test.status || 'unknown',
         durationMs: result.duration || 0,
-        error: result.error?.message || result.errors?.[0]?.message || ''
+        error: stripAnsi(result.error?.message || result.errors?.[0]?.message || '')
       });
     }
   }
@@ -21,6 +25,8 @@ function collectSpecs(suite, items = []) {
   }
   return items;
 }
+
+export { stripAnsi, collectSpecs };
 
 function toMarkdown(summary) {
   const lines = [

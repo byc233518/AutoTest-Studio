@@ -358,24 +358,27 @@
         </el-table-column>
         <el-table-column label="测试数据" min-width="220">
           <template #default="{ row }">
-            <el-select
-              v-model="row.datasetId"
-              class="wide"
-              clearable
-              filterable
-              placeholder="自动使用最近有效数据"
-              :loading="datasetsLoading"
-            >
-              <el-option
-                v-for="item in datasetsForScenario(row.scenarioId)"
-                :key="item.id"
-                :label="`${item.name}（${item.rowCount || 0} 行）`"
-                :value="item.id"
-              />
-            </el-select>
-            <el-text v-if="!datasetsForScenario(row.scenarioId).length" type="warning" size="small">
-              暂无可用数据集
-            </el-text>
+            <el-text v-if="!scenarioNeedsDataset(row.scenarioId)" type="success" size="small">本用例不需要测试数据</el-text>
+            <template v-else>
+              <el-select
+                v-model="row.datasetId"
+                class="wide"
+                clearable
+                filterable
+                placeholder="自动使用最近有效数据"
+                :loading="datasetsLoading"
+              >
+                <el-option
+                  v-for="item in datasetsForScenario(row.scenarioId)"
+                  :key="item.id"
+                  :label="`${item.name}（${item.rowCount || 0} 行）`"
+                  :value="item.id"
+                />
+              </el-select>
+              <el-text v-if="!datasetsForScenario(row.scenarioId).length" type="warning" size="small">
+                暂无可用数据集
+              </el-text>
+            </template>
           </template>
         </el-table-column>
         <el-table-column label="顺序" width="92" align="center">
@@ -716,6 +719,13 @@ function isExecutableScenario(scenario) {
   return Boolean(scenario) && scenario.status !== 'draft' && scenario.readiness?.ready;
 }
 
+function scenarioNeedsDataset(scenarioId) {
+  const scenario = scenarioFor(scenarioId);
+  if (scenario?.requiresDataset != null) return Boolean(scenario.requiresDataset);
+  const schema = scenario?.dataSchema || {};
+  return Boolean((schema.columns || []).length || (schema.required || []).length);
+}
+
 function scenarioReady(scenarioId) {
   return isExecutableScenario(scenarioFor(scenarioId));
 }
@@ -778,6 +788,10 @@ async function refreshEditorDatasets() {
   await ensureDatasetsLoaded(editorItems.value.map((item) => item.scenarioId));
   for (const item of editorItems.value) {
     const datasets = datasetsForScenario(item.scenarioId);
+    if (!scenarioNeedsDataset(item.scenarioId)) {
+      item.datasetId = '';
+      continue;
+    }
     if (!item.datasetId) item.datasetId = preferredDatasetId(datasets);
     else if (datasets.length && !datasets.some((dataset) => dataset.id === item.datasetId)) {
       item.datasetId = preferredDatasetId(datasets);

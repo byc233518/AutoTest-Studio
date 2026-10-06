@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
   PROJECT_ASSET_DIRECTORIES,
   ProjectRegistry,
+  allocateEmptyDirectory,
+  deleteProjectDirectory,
+  projectFolderName,
   projectLayout,
   readProjectManifest
 } from '../../desktop/project-registry.mjs';
@@ -120,6 +123,18 @@ test('取消注册只修改注册表，不删除项目目录或其中资产', as
   assert.equal((await stat(projectLayout(rootPath).databaseFile)).isFile(), true);
 });
 
+test('删除项目目录会校验清单后移除全部资产', async (t) => {
+  const workspace = await temporaryWorkspace(t);
+  const rootPath = path.join(workspace, 'projects', 'gone');
+  const registry = createRegistry(path.join(workspace, 'registry'));
+  const project = await registry.createProject({ name: '待删除', rootPath });
+  await writeFile(path.join(rootPath, 'data', 'rows.json'), '[]\n', 'utf8');
+
+  await registry.removeProject(project.id);
+  await deleteProjectDirectory(rootPath);
+  await assert.rejects(stat(rootPath), (error) => error.code === 'ENOENT');
+});
+
 test('重新选择已登记项目时校验清单 ID', async (t) => {
   const workspace = await temporaryWorkspace(t);
   const rootPath = path.join(workspace, 'projects', 'manifest-mismatch');
@@ -138,4 +153,17 @@ test('重新选择已登记项目时校验清单 ID', async (t) => {
     registry.selectProject(selected.id),
     (error) => error.code === 'PROJECT_ID_MISMATCH'
   );
+});
+
+test('项目目录名会去掉非法字符，并在占用时顺延空目录', async (t) => {
+  const workspace = await temporaryWorkspace(t);
+  assert.equal(projectFolderName('回归 A/B'), '回归-A-B');
+  assert.equal(projectFolderName('   '), 'project');
+
+  const first = await allocateEmptyDirectory(workspace, '回归 A/B');
+  assert.equal(path.basename(first), '回归-A-B');
+  await mkdir(first, { recursive: true });
+  await writeFile(path.join(first, 'keep.txt'), 'x', 'utf8');
+  const second = await allocateEmptyDirectory(workspace, '回归 A/B');
+  assert.equal(path.basename(second), '回归-A-B-2');
 });

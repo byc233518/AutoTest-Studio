@@ -8,7 +8,11 @@ function loadRows() {
   if (!datasetPath) {
     return [];
   }
-  return JSON.parse(fs.readFileSync(datasetPath, 'utf8'));
+  try {
+    return JSON.parse(fs.readFileSync(datasetPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`读取样本数据失败：${error.message}`);
+  }
 }
 
 function shouldRun(key) {

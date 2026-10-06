@@ -4,7 +4,7 @@
       <div><h2>执行结果 · {{ process?.scenarioName }}</h2><span class="muted">{{ run?.runId }} · {{ process?.currentStep }}</span></div>
     </template>
     <div v-loading="loading">
-      <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
+      <el-alert v-if="failureDetail" :title="failureDetail" type="error" show-icon :closable="false" />
       <div class="result-metrics">
         <el-statistic title="数据总数" :value="run?.businessSummary?.totalRows || 0" />
         <el-statistic title="成功" :value="run?.businessSummary?.passedRows || 0" />
@@ -42,6 +42,11 @@ import { api } from '../api';
 const visible=ref(false), run=ref(), process=ref(), loading=ref(false), asset=ref(''), error=ref('');
 let timer;
 const statusText=computed(()=>({passed:'通过',failed:'失败',running:'执行中',queued:'排队中',skipped:'已跳过'})[process.value?.status || run.value?.status] || '-');
+const failureDetail=computed(()=>{
+  const fromApi = error.value || process.value?.error || '';
+  const fromTest = (process.value?.resultTests || []).find((item) => item.error)?.error || '';
+  return String(fromApi || fromTest).replace(/\u001B\[[0-9;]*[A-Za-z]/g, '').trim();
+});
 const reportUrl=computed(()=>process.value?.artifacts?.find(item=>item.type==='html-report')?.url);
 const previewArtifacts=computed(()=>(process.value?.artifacts || []).filter(item=>['screenshot','video'].includes(item.type)));
 const stepType=status=>({passed:'success',failed:'danger',running:'primary',pending:'info'})[status] || 'info';

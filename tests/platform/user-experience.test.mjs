@@ -30,6 +30,34 @@ test('执行预检返回脚本、数据、环境和依赖检查', async (t) => {
   assert.equal(body.blockers.includes('dataset'), true);
 });
 
+test('没有数据字段的用例执行预检不要求数据集且可直接启动', async (t) => {
+  const context = await createTestContext(t);
+  const cookie = await context.loginCookie('tester', 'Tester123!');
+  const catalog = await (await context.fetch('/api/scenarios', { headers: { cookie } })).json();
+  const scenario = catalog.scenarios.find((item) => item.key === 'sample-open-page');
+  assert.equal(scenario.requiresDataset, false);
+  assert.equal(scenario.readiness.ready, true);
+  assert.equal(scenario.readiness.blockers.includes('dataset'), false);
+
+  const preflight = await context.fetch('/api/scenarios/sample-open-page/preflight?environment=test', { headers: { cookie } });
+  assert.equal(preflight.status, 200);
+  const body = await preflight.json();
+  const datasetCheck = body.checks.find((item) => item.type === 'dataset');
+  assert.equal(datasetCheck.ready, true);
+  assert.equal(datasetCheck.label, '本用例不需要测试数据');
+  assert.equal(body.ready, true);
+
+  const run = await context.fetch('/api/runs', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ scenarioId: scenario.id, environment: 'test' })
+  });
+  assert.equal(run.status, 202);
+  const created = await run.json();
+  const finished = await context.waitForRun(created.runId);
+  assert.equal(finished.status, 'passed');
+});
+
 test('平台提供测试套件、调度计划、通知和审计接口', async (t) => {
   const context = await createTestContext(t);
   const admin = await context.loginCookie('admin', 'Admin123!');

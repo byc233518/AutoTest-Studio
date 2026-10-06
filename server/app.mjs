@@ -7,7 +7,7 @@ import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promise
 import { createReadStream, existsSync } from 'node:fs';
 import { createPlatformDatabase } from './platform/database.mjs';
 import { seedPlatform } from './platform/seed.mjs';
-import { parseDatasetFile, validateRows } from './platform/datasets.mjs';
+import { EMPTY_DATASET, parseDatasetFile, scenarioRequiresDataset, validateRows } from './platform/datasets.mjs';
 import { migrateRows } from './platform/dataset-migration.mjs';
 import { diffSchemas, normalizeSchema, synchronizeScriptSchema } from './platform/schema-sync.mjs';
 import {
@@ -231,7 +231,7 @@ function requireAuth(request, response, next) {
   const token = sessionCookie(request);
   const session = token ? request.app.locals.database.getSession(token) : null;
   if (!session) {
-    return jsonError(response, 401, '\u8bf7\u5148\u767b\u5f55');
+    return jsonError(response, 401, '请先登录');
   }
   request.user = session;
   return next();
@@ -253,7 +253,8 @@ function toPublicScenario(row) {
     description: row.description,
     scriptEntry: row.script_entry,
     dataSchema: JSON.parse(row.data_schema),
-    dependsOn: JSON.parse(row.depends_on || '[]')
+    dependsOn: JSON.parse(row.depends_on || '[]'),
+    requiresDataset: scenarioRequiresDataset(row)
   };
 }
 
@@ -351,10 +352,17 @@ async function writeExclusiveMigrationFile({ database, uploadsDir, scenarioId, r
 function scenarioReadiness(database, scenario, environmentKey = '') {
   const resolvedEnvironmentKey = environmentKey || database.getDefaultEnvironment()?.key || '';
   const dependencies = checkScenarioDependencies(database, scenario);
+  const requiresDataset = scenarioRequiresDataset(scenario);
+  const hasValidDataset = database.listDatasets(scenario.id).some((item) => item.validation_status === 'valid');
   const checks = [
     { type: 'status', label: '场景已发布', ready: scenario.status === 'published', action: '发布场景' },
     { type: 'script', label: '已绑定自动化脚本', ready: Boolean(scenario.script_entry), action: '上传脚本' },
-    { type: 'dataset', label: '已有有效样本数据', ready: database.listDatasets(scenario.id).some((item) => item.validation_status === 'valid'), action: '上传数据' },
+    {
+      type: 'dataset',
+      label: requiresDataset ? '已有有效样本数据' : '本用例不需要测试数据',
+      ready: !requiresDataset || hasValidDataset,
+      action: requiresDataset ? '上传数据' : ''
+    },
     { type: 'environment', label: '执行环境可用', ready: Boolean(database.getEnvironmentByKey(resolvedEnvironmentKey)), action: '配置环境' },
     { type: 'dependencies', label: '前置依赖已完成', ready: dependencies.every((item) => item.status === 'ready'), action: '执行依赖链', detail: dependencies }
   ];
@@ -648,12 +656,12 @@ async function processArtifacts(database, run, reportPath, summary, processState
   const artifacts = runWithArtifacts(database, run).processArtifacts;
   const created = new Set(artifacts.map((artifact) => artifact.type));
   const candidates = [
-    { type: 'html-report', label: 'HTML 鎶ュ憡', fileName: 'index.html' },
-    { type: 'screenshot', label: '杩囩▼鎴浘', fileName: 'screenshot.png' },
-    { type: 'screenshot', label: '杩囩▼鎴浘', fileName: 'screenshot.svg' },
-    { type: 'video', label: '褰曞儚鍥炴斁', fileName: 'replay.html' },
-    { type: 'video-file', label: '褰曞儚鏂囦欢', fileName: 'video.webm' },
-    { type: 'trace', label: 'Trace ???', fileName: 'trace.zip' }
+    { type: 'html-report', label: 'HTML 报告', fileName: 'index.html' },
+    { type: 'screenshot', label: '过程截图', fileName: 'screenshot.png' },
+    { type: 'screenshot', label: '过程截图', fileName: 'screenshot.svg' },
+    { type: 'video', label: '录像回放', fileName: 'replay.html' },
+    { type: 'video-file', label: '录像文件', fileName: 'video.webm' },
+    { type: 'trace', label: 'Trace 文件', fileName: 'trace.zip' }
   ];
 
   for (const candidate of candidates) {
@@ -711,7 +719,7 @@ async function runProcessPayload(app, run) {
     latestScreenshotUrl: processState.latestScreenshotUrl || screenshot?.previewUrl || null,
     videoReplayUrl: processState.videoReplayUrl || replay?.previewUrl || null,
     videoFileUrl: processState.videoFileUrl || videoFile?.previewUrl || null,
-    currentStep: skippedOnly ? '\u672c\u6b21\u7528\u4f8b\u5168\u90e8\u8df3\u8fc7\uff0c\u672a\u4ea7\u751f\u6d4f\u89c8\u5668\u753b\u9762' : processState.currentStep || (run.status === 'queued' ? '?? Runner ??' : ''),
+    currentStep: skippedOnly ? '本次用例全部跳过，未产生浏览器画面' : processState.currentStep || (run.status === 'queued' ? '等待执行引擎启动' : ''),
     startedAt: processState.startedAt || run.started_at,
     finishedAt: processState.finishedAt || run.finished_at,
     updatedAt: processState.updatedAt || run.finished_at || run.started_at || run.created_at,
@@ -1205,10 +1213,10 @@ export async function createApp(options = {}) {
   app.post('/api/modules', requireAuth, (request, response) => {
     const body = request.body || {};
     if (!body.appId || !body.name || !body.prefix) {
-      return jsonError(response, 400, '璇峰～鍐欐墍灞炲簲鐢ㄣ€佹ā鍧楀悕绉板拰鍓嶇紑');
+      return jsonError(response, 400, '请填写所属应用、模块名称和前缀');
     }
     if (!database.getAppById(body.appId)) {
-      return jsonError(response, 400, '鎵€灞炲簲鐢ㄤ笉瀛樺湪');
+      return jsonError(response, 400, '所属应用不存在');
     }
     const created = database.createModule({
       appId: body.appId,
@@ -1225,7 +1233,7 @@ export async function createApp(options = {}) {
       return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
     }
     if (request.body?.appId && !database.getAppById(request.body.appId)) {
-      return jsonError(response, 400, '鎵€灞炲簲鐢ㄤ笉瀛樺湪');
+      return jsonError(response, 400, '所属应用不存在');
     }
     return response.json(toPublicModule(database.updateModule(existing.id, request.body || {})));
   });
@@ -1519,7 +1527,7 @@ export async function createApp(options = {}) {
       }
       const dataset = database.getDatasetById(request.params.datasetId);
       if (!dataset || dataset.scenario_id !== scenario.id) {
-        return jsonError(response, 404, '娴嬭瘯鏁版嵁闆嗕笉瀛樺湪');
+        return jsonError(response, 404, '测试数据集不存在');
       }
       const rows = JSON.parse(await readFile(dataset.rows_path, 'utf8'));
       return response.json({ ...toPublicDataset(dataset), rows });
@@ -1535,7 +1543,7 @@ export async function createApp(options = {}) {
         return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       if (!request.file) {
-        return jsonError(response, 400, '璇烽€夋嫨 Excel 鎴?CSV 鏂囦欢');
+        return jsonError(response, 400, '请选择 Excel 或 CSV 文件');
       }
       const schema = JSON.parse(scenario.data_schema);
       const parsed = await parseDatasetFile(request.file.path, request.file.originalname);
@@ -1609,7 +1617,7 @@ export async function createApp(options = {}) {
         return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
       }
       if (!scenario.script_entry) {
-        return jsonError(response, 404, '鍦烘櫙灏氭湭缁戝畾鑴氭湰');
+        return jsonError(response, 404, '场景尚未绑定脚本');
       }
       if (!isManagedScriptEntry(scenario.script_entry)) {
         return jsonError(response, 400, '脚本入口必须位于受管目录');
@@ -1620,7 +1628,7 @@ export async function createApp(options = {}) {
         scriptEntry: scenario.script_entry
       });
       if (!script) {
-        return jsonError(response, 400, '鑴氭湰璺緞鏃犳晥');
+        return jsonError(response, 400, '脚本路径无效');
       }
       return response.json({
         scenarioKey: scenario.key,
@@ -2096,13 +2104,20 @@ export async function createApp(options = {}) {
       }
       const executionLocation = 'server';
       const scenario = database.getScenarioById(scenarioId);
-      const dataset = database.getDatasetById(datasetId);
-      if (!scenario || !dataset || dataset.scenario_id !== scenario.id) {
-        return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
+      const requiresDataset = scenarioRequiresDataset(scenario);
+      const dataset = datasetId ? database.getDatasetById(datasetId) : null;
+      if (!scenario) {
+        return jsonError(response, 400, '请求参数无效');
+      }
+      if (requiresDataset && (!dataset || dataset.scenario_id !== scenario.id)) {
+        return jsonError(response, 400, '请先准备测试数据');
+      }
+      if (dataset && dataset.scenario_id !== scenario.id) {
+        return jsonError(response, 400, '请求参数无效');
       }
       const envRow = database.getEnvironmentByKey(environment || database.getDefaultEnvironment()?.key || '');
       if (!envRow) {
-        return jsonError(response, 400, `鎵ц鐜涓嶅瓨鍦? ${environment}`);
+        return jsonError(response, 400, `执行环境不存在: ${environment}`);
       }
       const dependsOn = JSON.parse(scenario.depends_on || '[]');
       const shouldEnforce = Boolean(enforceDependencies) && !skipDependencyCheck && dependsOn.length > 0;
@@ -2115,7 +2130,7 @@ export async function createApp(options = {}) {
       }
       const run = createRun(database, {
         scenario,
-        dataset,
+        dataset: dataset || EMPTY_DATASET,
         environment: envRow.key,
         executionMode,
         executionLocation,
@@ -2446,7 +2461,7 @@ export async function createApp(options = {}) {
       if (!tokenValid && !sessionValid) {
         if (request.file?.path) await rm(request.file.path, { force: true });
         temporaryUploadPath = '';
-        return jsonError(response, 401, '褰曞埗涓婁紶鍑瘉鏃犳晥鎴栧凡杩囨湡');
+        return jsonError(response, 401, '录制上传凭证无效或已过期');
       }
       if (!request.file) {
         return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
@@ -2490,7 +2505,7 @@ export async function createApp(options = {}) {
         app.locals.paths.dataDir
       );
       if (!uploadScriptEntry) {
-        return jsonError(response, 400, '褰曞埗鑴氭湰鏃犳晥');
+        return jsonError(response, 400, '录制脚本无效');
       }
       let scriptEntry = uploadScriptEntry;
       let scenario = null;
@@ -2788,7 +2803,7 @@ export async function createApp(options = {}) {
 <body style="margin:0;background:#101828;color:#fff;font-family:Arial,'Microsoft YaHei',sans-serif">
   <main style="padding:18px">
     <h1 style="margin:0 0 8px;font-size:20px">\u5b9e\u65f6\u6267\u884c\u8fc7\u7a0b</h1>
-    <p style="margin:0 0 16px;color:#d0d5dd">${process.scenarioName} 路 ${process.currentStep || process.status}</p>
+    <p style="margin:0 0 16px;color:#d0d5dd">${process.scenarioName} · ${process.currentStep || process.status}</p>
     ${process.latestScreenshotUrl
       ? `<img src="${process.latestScreenshotUrl}" alt="\u5b9e\u65f6\u6267\u884c\u622a\u56fe" style="width:100%;max-height:72vh;object-fit:contain;border-radius:10px;background:#fff" />`
       : '<div style="display:grid;min-height:320px;place-items:center;border:1px solid #344054;border-radius:10px;color:#98a2b3">\u7b49\u5f85\u6d4f\u89c8\u5668\u753b\u9762...</div>'}

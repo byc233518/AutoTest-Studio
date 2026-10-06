@@ -35,7 +35,7 @@
       <section v-if="!currentRun" class="dataset-picker">
         <div class="dataset-picker-header">
           <strong>为每个用例选择测试数据</strong>
-          <el-text type="info">未选择时将使用该用例最近一次有效数据集</el-text>
+          <el-text type="info">未选择时，有数据字段的用例使用最近有效数据集；无字段的用例可直接执行。</el-text>
         </div>
         <el-table :data="datasetRows" size="small" max-height="280" empty-text="请先勾选要执行的用例">
           <el-table-column type="index" label="#" width="46" align="center" />
@@ -49,21 +49,24 @@
           </el-table-column>
           <el-table-column label="测试数据" min-width="260">
             <template #default="{ row }">
-              <el-select
-                v-model="datasetIds[row.id]"
-                class="wide"
-                clearable
-                filterable
-                placeholder="自动使用最近有效数据"
-              >
-                <el-option
-                  v-for="item in row.datasets"
-                  :key="item.id"
-                  :label="`${item.name}（${item.rowCount ?? item.row_count ?? 0} 行）`"
-                  :value="item.id"
-                />
-              </el-select>
-              <el-text v-if="!row.datasets.length" type="warning" size="small">暂无可用数据集</el-text>
+              <el-text v-if="!row.requiresDataset" type="success" size="small">本用例不需要测试数据</el-text>
+              <template v-else>
+                <el-select
+                  v-model="datasetIds[row.id]"
+                  class="wide"
+                  clearable
+                  filterable
+                  placeholder="自动使用最近有效数据"
+                >
+                  <el-option
+                    v-for="item in row.datasets"
+                    :key="item.id"
+                    :label="`${item.name}（${item.rowCount ?? item.row_count ?? 0} 行）`"
+                    :value="item.id"
+                  />
+                </el-select>
+                <el-text v-if="!row.datasets.length" type="warning" size="small">暂无可用数据集</el-text>
+              </template>
             </template>
           </el-table-column>
         </el-table>
@@ -71,7 +74,7 @@
 
       <el-alert
         v-if="!currentRun"
-        title="建议先在各用例工作台准备好数据集。批量执行不会现场新建数据，只会使用你选定或自动匹配的历史数据。"
+        title="有数据字段的用例请先准备数据集。没有数据字段的用例可以直接批量执行。"
         type="info"
         show-icon
         :closable="false"
@@ -256,6 +259,12 @@ function durationLabel(run) {
   return `${Math.floor(duration / 60000)} 分 ${Math.round(duration % 60000 / 1000)} 秒`;
 }
 
+function scenarioNeedsDataset(scenario) {
+  if (scenario?.requiresDataset != null) return Boolean(scenario.requiresDataset);
+  const schema = scenario?.dataSchema || {};
+  return Boolean((schema.columns || []).length || (schema.required || []).length);
+}
+
 function preferredDatasetId(datasets = []) {
   return datasets.find((item) => item.validationStatus === 'valid' || item.validation_status === 'valid')?.id
     || datasets[0]?.id
@@ -278,13 +287,14 @@ async function loadDatasetOptions(rows) {
         id,
         key,
         name: scenario.name || key || id,
+        requiresDataset: scenarioNeedsDataset(scenario),
         datasets: Array.isArray(datasets) ? datasets : (datasets?.datasets || [])
       };
     }));
     datasetRows.value = loaded;
     const next = {};
     for (const row of loaded) {
-      next[row.id] = preferredDatasetId(row.datasets);
+      next[row.id] = row.requiresDataset ? preferredDatasetId(row.datasets) : '';
     }
     datasetIds.value = next;
   } finally {
