@@ -249,11 +249,24 @@ async function save() {
 }
 
 async function testConnection() {
+  if (!form.baseUrl.trim() || !form.model.trim()) {
+    ElMessage.warning('请先填写 Base URL 和模型');
+    return;
+  }
+  if (!form.apiKey.trim() && !current.value.apiKeyMasked) {
+    ElMessage.warning('请先填写 API Key');
+    return;
+  }
   testing.value = true;
   try {
     const result = await api('/api/settings/llm/test', {
       method: 'POST',
-      body: '{}'
+      body: JSON.stringify({
+        provider: form.provider,
+        model: form.model,
+        baseUrl: form.baseUrl,
+        apiKey: form.apiKey
+      })
     });
     ElMessage.success(result.message);
   } catch (error) {

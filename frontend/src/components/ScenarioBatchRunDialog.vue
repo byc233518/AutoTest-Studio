@@ -126,7 +126,17 @@
               <span>测试报告 <el-tag v-if="reportSource" size="small" type="info" effect="plain">{{ reportSource }}</el-tag></span>
             </template>
             <div v-loading="reportLoading" class="report-panel">
-              <pre v-if="reportMarkdown" class="report-markdown">{{ reportMarkdown }}</pre>
+              <div v-if="currentRun?.reportUrl" class="report-toolbar">
+                <el-button size="small" link type="primary" @click="downloadReport">下载报告</el-button>
+              </div>
+              <iframe
+                v-if="reportHtml"
+                class="report-iframe"
+                title="测试报告预览"
+                sandbox=""
+                :srcdoc="reportHtml"
+              />
+              <pre v-else-if="reportMarkdown" class="report-markdown">{{ reportMarkdown }}</pre>
               <el-empty v-else :description="reportEmptyText" :image-size="56" />
             </div>
           </el-tab-pane>
@@ -171,6 +181,7 @@ const currentRun = ref(null);
 const refreshing = ref(false);
 const reportLoading = ref(false);
 const reportMarkdown = ref('');
+const reportHtml = ref('');
 const reportSource = ref('');
 const monitorTab = ref('items');
 let pollTimer;
@@ -292,6 +303,7 @@ async function open(rows) {
   executionMode.value = 'headless';
   currentRun.value = null;
   reportMarkdown.value = '';
+  reportHtml.value = '';
   reportSource.value = '';
   monitorTab.value = 'items';
   datasetRows.value = [];
@@ -309,6 +321,7 @@ function close() {
   environment.value = '';
   currentRun.value = null;
   reportMarkdown.value = '';
+  reportHtml.value = '';
   reportSource.value = '';
 }
 
@@ -323,6 +336,7 @@ async function openRun(run) {
   datasetIds.value = {};
   currentRun.value = run;
   reportMarkdown.value = '';
+  reportHtml.value = '';
   reportSource.value = '';
   monitorTab.value = 'items';
   visible.value = true;
@@ -399,24 +413,38 @@ async function refreshCurrentRun() {
 
 async function loadReport(run) {
   reportMarkdown.value = '';
+  reportHtml.value = '';
   reportSource.value = '';
   if (!run?.id) return;
   reportLoading.value = true;
   try {
     const result = await api(`/api/test-plan-runs/${encodeURIComponent(run.id)}/report`);
     if (typeof result === 'string' && result.trim()) {
-      reportMarkdown.value = result;
-      reportSource.value = ['ai', 'llm'].includes(run?.summary?.source) ? 'AI 生成' : '规则生成';
+      const format = run?.reportFormat || run?.summary?.reportFormat
+        || (result.trimStart().startsWith('<') ? 'html' : 'markdown');
+      if (format === 'html' || format === 'word') {
+        reportHtml.value = result;
+        reportMarkdown.value = '';
+      } else {
+        reportMarkdown.value = result;
+        reportHtml.value = '';
+      }
+      reportSource.value = ['ai', 'llm'].includes(run?.summary?.source) ? 'AI 生成' : '';
     }
   } catch (error) {
     if (error?.status !== 404 && error?.status !== 409) ElMessage.error(error.message || '测试报告加载失败');
   } finally {
     reportLoading.value = false;
   }
-  if (!reportMarkdown.value && typeof run?.summary?.narrative === 'string') {
+  if (!reportMarkdown.value && !reportHtml.value && typeof run?.summary?.narrative === 'string') {
     reportMarkdown.value = run.summary.narrative;
-    reportSource.value = ['ai', 'llm'].includes(run.summary?.source) ? 'AI 生成' : '规则生成';
+    reportSource.value = ['ai', 'llm'].includes(run.summary?.source) ? 'AI 生成' : '';
   }
+}
+
+function downloadReport() {
+  if (!currentRun.value?.id) return;
+  window.open(`/api/test-plan-runs/${encodeURIComponent(currentRun.value.id)}/report?download=1`, '_blank');
 }
 
 defineExpose({ open, openRun, close });
@@ -452,6 +480,8 @@ defineExpose({ open, openRun, close });
 .monitor-tabs { min-height: 0; }
 .monitor-tabs :deep(.el-tabs__content) { min-height: 170px; }
 .report-panel { min-height: 180px; }
+.report-toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.report-iframe { width: 100%; min-height: 280px; border: 0; border-radius: 5px; background: #fff; }
 .report-markdown { max-height: 300px; margin: 0; padding: 12px 14px; overflow: auto; color: var(--el-text-color-primary); background: var(--el-fill-color-lighter); border-radius: 5px; font: 12px/1.65 "Microsoft YaHei", sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; }
 :global(.scenario-batch-run-dialog) { display: flex; max-height: calc(100vh - 40px); margin-bottom: 20px; flex-direction: column; overflow: hidden; }
 :global(.scenario-batch-run-dialog .el-dialog__header),

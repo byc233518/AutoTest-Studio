@@ -76,7 +76,7 @@
         <section class="settings-section">
           <div class="section-heading">
             <strong>报告信息</strong>
-            <span>用于 AI 测试报告封面和末页落款。</span>
+            <span>用于 测试报告封面和末页落款。</span>
           </div>
           <div class="form-grid">
             <el-form-item label="测试单位">

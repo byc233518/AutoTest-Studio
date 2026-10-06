@@ -85,6 +85,14 @@ import {
   readGeneralSettings
 } from './platform/test-plans.mjs';
 import {
+  REPORT_FORMAT_OPTIONS,
+  REPORT_MODULE_OPTIONS,
+  normalizeReportTemplatesSetting,
+  previewReportTemplate,
+  readReportTemplatesSetting,
+  reportFormatMeta
+} from './platform/report-templates.mjs';
+import {
   createScenarioPackage,
   parseScenarioPackage,
   ScenarioPackageError
@@ -2049,10 +2057,47 @@ export async function createApp(options = {}) {
       if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
         return jsonError(response, 404, '测试报告不存在');
       }
-      return response.type('text/markdown; charset=utf-8').send(await readFile(reportPath, 'utf8'));
+      if (!existsSync(reportPath)) return jsonError(response, 404, '测试报告不存在');
+      const summary = (() => {
+        try { return JSON.parse(batch.summary_json || '{}'); } catch { return {}; }
+      })();
+      const format = summary.reportFormat
+        || (reportPath.endsWith('.html') ? 'html' : reportPath.endsWith('.doc') ? 'word' : 'markdown');
+      const meta = reportFormatMeta(format);
+      const download = String(request.query.download || '') === '1';
+      if (download) {
+        return response.download(reportPath, path.basename(reportPath), {
+          headers: { 'content-type': meta.contentType }
+        });
+      }
+      let content = await readFile(reportPath, 'utf8');
+      if (format === 'html' || format === 'word') {
+        const baseHref = `/api/test-plan-runs/${encodeURIComponent(batch.id)}/report-asset/`;
+        if (/<base\s/i.test(content)) {
+          content = content.replace(/<base\s[^>]*>/i, `<base href="${baseHref}" />`);
+        } else {
+          content = content.replace(/<head([^>]*)>/i, `<head$1><base href="${baseHref}" />`);
+        }
+      }
+      return response.type(meta.contentType).send(content);
     } catch (error) {
       return next(error);
     }
+  });
+
+  app.get('/api/test-plan-runs/:id/report-asset/*file', requireAuth, (request, response) => {
+    const batch = database.getTestPlanRunById(request.params.id);
+    if (!batch?.report_path) return jsonError(response, 404, '测试报告不存在');
+    const reportDir = path.dirname(path.resolve(batch.report_path));
+    const requestedFile = Array.isArray(request.params.file)
+      ? request.params.file.join('/')
+      : request.params.file;
+    const target = path.resolve(reportDir, requestedFile || '');
+    const relative = path.relative(reportDir, target);
+    if (!requestedFile || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative) || !existsSync(target)) {
+      return jsonError(response, 404, '报告资源不存在');
+    }
+    return response.sendFile(target);
   });
 
   app.get('/api/test-plan-runs/:id', requireAuth, (request, response) => {
@@ -2313,6 +2358,41 @@ export async function createApp(options = {}) {
     }
   });
 
+  app.get('/api/settings/report-templates', requireAuth, (request, response) => {
+    const setting = readReportTemplatesSetting(database);
+    response.json({
+      ...setting,
+      moduleOptions: REPORT_MODULE_OPTIONS,
+      formatOptions: REPORT_FORMAT_OPTIONS.map(({ value, label }) => ({ value, label }))
+    });
+  });
+
+  app.put('/api/settings/report-templates', requireAuth, (request, response) => {
+    try {
+      const current = readReportTemplatesSetting(database);
+      const value = normalizeReportTemplatesSetting(request.body || {}, current);
+      const row = database.setSetting('reportTemplates', value, request.user.user_id);
+      return response.json({
+        ...value,
+        updatedAt: row.updated_at,
+        moduleOptions: REPORT_MODULE_OPTIONS,
+        formatOptions: REPORT_FORMAT_OPTIONS.map(({ value: format, label }) => ({ value: format, label }))
+      });
+    } catch (error) {
+      return jsonError(response, 400, error.message);
+    }
+  });
+
+  app.post('/api/settings/report-templates/preview', requireAuth, (request, response) => {
+    try {
+      const template = request.body?.template || request.body || {};
+      const preview = previewReportTemplate(template);
+      return response.json(preview);
+    } catch (error) {
+      return jsonError(response, 400, error.message);
+    }
+  });
+
   app.put('/api/settings/llm', requireAuth, (request, response) => {
     const current = database.getSetting('llm');
     const currentValue = current ? JSON.parse(current.value) : {};
@@ -2326,13 +2406,20 @@ export async function createApp(options = {}) {
   });
 
   app.post('/api/settings/llm/test', requireAuth, async (request, response) => {
-    const setting = database.getSetting('llm');
-    const value = setting ? JSON.parse(setting.value) : null;
-    if (!value?.apiKey) {
-      return jsonError(response, 400, '请先配置 AI API Key');
+    const current = database.getSetting('llm');
+    const currentValue = current ? JSON.parse(current.value) : {};
+    const body = request.body || {};
+    const value = {
+      provider: String(body.provider ?? currentValue.provider ?? '').trim(),
+      model: String(body.model ?? currentValue.model ?? '').trim(),
+      baseUrl: String(body.baseUrl ?? currentValue.baseUrl ?? '').trim(),
+      apiKey: String(body.apiKey || '').trim() || currentValue.apiKey || ''
+    };
+    if (!value.apiKey) {
+      return jsonError(response, 400, '请先填写 API Key');
     }
-    if (!value.enabled) {
-      return jsonError(response, 400, 'AI 功能尚未启用');
+    if (!value.baseUrl || !value.model) {
+      return jsonError(response, 400, '请先填写 Base URL 和模型');
     }
     try {
       await testLlmConnection(value, { fetchImpl: app.locals.llmFetch });
