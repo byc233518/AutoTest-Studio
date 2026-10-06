@@ -1,8 +1,13 @@
 import path from 'node:path';
-import { mkdir, writeFile } from 'node:fs/promises';
 import { normalizeExecutionMode } from './execution-mode.mjs';
 import { normalizeBrowserChannel } from './system-browsers.mjs';
 import { createRun, executeRun } from './runner.mjs';
+import {
+  collectReportItemImages,
+  getActiveReportTemplate,
+  renderReportContent,
+  writeRenderedReport
+} from './report-templates.mjs';
 
 const GENERAL_DEFAULTS = Object.freeze({
   testingUnit: '',
@@ -40,16 +45,6 @@ function durationMs(startedAt, finishedAt) {
   const start = Date.parse(startedAt || '');
   const finish = Date.parse(finishedAt || '');
   return Number.isFinite(start) && Number.isFinite(finish) ? Math.max(0, finish - start) : 0;
-}
-
-function markdownCell(value) {
-  return String(value ?? '').replaceAll('|', '\\|').replaceAll(/\r?\n/g, ' ');
-}
-
-function formatDuration(milliseconds) {
-  if (milliseconds < 1000) return `${milliseconds} ms`;
-  const seconds = Math.round(milliseconds / 100) / 10;
-  return `${seconds} 秒`;
 }
 
 export function readGeneralSettings(database) {
@@ -188,6 +183,8 @@ export function publicTestPlanRun(database, row) {
     durationMs: durationMs(row.started_at, row.finished_at),
     summary: parseJson(row.summary_json, {}),
     reportUrl: row.report_path ? `/api/test-plan-runs/${row.id}/report` : null,
+    reportDownloadUrl: row.report_path ? `/api/test-plan-runs/${row.id}/report?download=1` : null,
+    reportFormat: parseJson(row.summary_json, {}).reportFormat || '',
     items: database.listTestPlanRunItems(row.id).map((item) => publicTestPlanRunItem(database, item))
   };
 }
@@ -199,6 +196,7 @@ function latestValidDataset(database, scenarioId) {
 export function createTestPlanBatch(database, plan, triggeredBy, overrides = {}) {
   const publicPlan = publicTestPlan(plan);
   const general = readGeneralSettings(database);
+  const reportTemplate = getActiveReportTemplate(database, overrides.reportTemplateId);
   const environment = Object.hasOwn(overrides, 'environment')
     ? requiredText(overrides.environment, '执行环境')
     : plan.environment;
@@ -238,6 +236,8 @@ export function createTestPlanBatch(database, plan, triggeredBy, overrides = {})
     planSnapshot: {
       ...publicPlan,
       general,
+      reportTemplateId: reportTemplate.id,
+      reportTemplate,
       triggeredAt: now(),
       runConfiguration: { environment, executionMode }
     }
@@ -312,43 +312,6 @@ export async function generateTestPlanNarrative(database, context, options = {})
   } catch (error) {
     return { narrative: fallback, source: 'rules', fallbackReason: error.message };
   }
-}
-
-function renderMarkdown({ batch, snapshot, environment, general, items, summary }) {
-  const lines = [
-    `# ${snapshot.name || '测试计划'}执行报告`,
-    '',
-    '## 报告信息',
-    '',
-    `- 测试单位：${general.testingUnit || '未配置'}`,
-    `- 测试人员：${general.testerName || '未配置'}`,
-    `- 执行环境：${environment?.name || batch.environment}（${batch.environment}）`,
-    `- 执行模式：${batch.execution_mode}`,
-    `- 开始时间：${batch.started_at || '-'}`,
-    `- 完成时间：${batch.finished_at || '-'}`,
-    `- 执行耗时：${formatDuration(summary.durationMs)}`,
-    '',
-    '## 执行结果',
-    '',
-    `- 用例总数：${summary.total}`,
-    `- 通过：${summary.passed}`,
-    `- 失败：${summary.failed}`,
-    '',
-    '## 智能总结',
-    '',
-    summary.narrative,
-    '',
-    '## 用例明细',
-    '',
-    '| 序号 | 测试用例 | 测试数据 | 状态 | 耗时 | 说明 |',
-    '| ---: | --- | --- | --- | ---: | --- |',
-    ...items.map((item) => `| ${item.position + 1} | ${markdownCell(item.scenarioName)} | ${markdownCell(item.datasetName || '-')} | ${item.status === 'passed' ? '通过' : '失败'} | ${formatDuration(item.durationMs)} | ${markdownCell(item.error || '-')} |`),
-    '',
-    '---',
-    '',
-    general.reportSignature || `${general.testingUnit || ''}${general.testingUnit && general.testerName ? ' / ' : ''}${general.testerName || ''}` || 'AutoTest Studio'
-  ];
-  return `${lines.join('\n')}\n`;
 }
 
 export async function executeTestPlanBatch(app, batchId) {
@@ -431,7 +394,18 @@ export async function executeTestPlanBatch(app, batchId) {
     : await generateTestPlanNarrative(database, context, {
       fetchImpl: app.locals.llmFetch
     });
-  const summary = { ...context, ...generated };
+  const reportTemplate = getActiveReportTemplate(database, snapshot.reportTemplateId);
+  const summary = {
+    ...context,
+    ...generated,
+    reportTemplate: {
+      id: reportTemplate.id,
+      name: reportTemplate.name,
+      outputFormat: reportTemplate.outputFormat,
+      includeImages: reportTemplate.includeImages,
+      modules: reportTemplate.modules
+    }
+  };
   const finalStatus = failed ? 'failed' : 'passed';
   batch = database.updateTestPlanRun(batchId, {
     passedItems: passed,
@@ -440,22 +414,32 @@ export async function executeTestPlanBatch(app, batchId) {
   });
   const publicItems = database.listTestPlanRunItems(batchId).map((item) => publicTestPlanRunItem(database, item));
   const reportDir = path.resolve(app.locals.paths.reportsDir, 'plan-runs', batchId);
-  const reportPath = path.resolve(reportDir, 'report.md');
   try {
-    await mkdir(reportDir, { recursive: true });
-    const reportWriter = app.locals.testPlanReportWriter || writeFile;
-    await reportWriter(reportPath, renderMarkdown({
+    const itemsWithImages = reportTemplate.includeImages || reportTemplate.modules.includes('images')
+      ? await collectReportItemImages(database, publicItems, reportDir)
+      : publicItems.map((item) => ({ ...item, images: [] }));
+    const rendered = renderReportContent({
       batch: { ...batch, status: finalStatus, finished_at: finishedAt },
       snapshot,
       environment,
       general: snapshot.general || GENERAL_DEFAULTS,
-      items: publicItems,
+      items: itemsWithImages,
       summary
-    }), 'utf8');
+    }, reportTemplate);
+    const { reportPath } = await writeRenderedReport(
+      reportDir,
+      rendered,
+      app.locals.testPlanReportWriter
+    );
     database.updateTestPlanRun(batchId, {
       status: finalStatus,
       reportPath,
-      finishedAt
+      finishedAt,
+      summary: {
+        ...summary,
+        reportFormat: rendered.format,
+        reportFileName: path.basename(reportPath)
+      }
     });
   } catch (error) {
     database.updateTestPlanRun(batchId, {

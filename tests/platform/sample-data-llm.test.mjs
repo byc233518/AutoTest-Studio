@@ -140,6 +140,36 @@ test('AI 设置更新可保留密钥且连通性检测会真实调用服务', as
   assert.equal(calls[0].options.headers.authorization, 'Bearer secret-key');
 });
 
+test('测试连接可使用未保存的表单内容', async (t) => {
+  const calls = [];
+  const ctx = await createTestContext(t, {
+    llmFetch: async (url, options) => {
+      calls.push({ url, method: options?.method, body: options?.body, authorization: options?.headers?.authorization });
+      return new Response(JSON.stringify({
+        id: 'chatcmpl-draft',
+        choices: [{ message: { content: 'OK' } }]
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+  });
+  const cookie = await ctx.loginCookie('admin', 'Admin123!');
+  const response = await ctx.fetch('/api/settings/llm/test', {
+    method: 'POST',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      provider: 'siliconflow',
+      model: 'draft-model',
+      baseUrl: 'http://127.0.0.1:18081/v1',
+      apiKey: 'draft-key'
+    })
+  });
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'http://127.0.0.1:18081/v1/chat/completions');
+  assert.equal(calls[0].authorization, 'Bearer draft-key');
+  assert.match(String(calls[0].body), /draft-model/);
+  assert.equal(ctx.app.locals.database.getSetting('llm'), undefined);
+});
+
 test('可从供应商拉取模型列表，并支持请求体覆盖 Base URL / API Key', async (t) => {
   const calls = [];
   const ctx = await createTestContext(t, {

@@ -46,6 +46,10 @@
             <el-icon><MagicStick /></el-icon>
             <template #title>AI 配置</template>
           </el-menu-item>
+          <el-menu-item index="report-templates">
+            <el-icon><Document /></el-icon>
+            <template #title>报告模板</template>
+          </el-menu-item>
           <el-menu-item index="system">
             <el-icon><Tools /></el-icon>
             <template #title>通用设置</template>
@@ -116,6 +120,7 @@
         <RunsView v-else-if="view === 'runs'" :scenario-filter="runScenarioFilter" />
         <EnvironmentsView v-else-if="view === 'environments'" />
         <AiSettingsView v-else-if="view === 'ai'" />
+        <ReportTemplatesView v-else-if="view === 'report-templates'" />
         <SystemSettingsView v-else-if="view === 'system'" />
       </el-main>
     </el-container>
@@ -128,6 +133,7 @@ import {
   Calendar,
   Collection,
   DataAnalysis,
+  Document,
   Expand,
   Fold,
   House,
@@ -150,6 +156,7 @@ import TestPlansView from './views/TestPlansView.vue';
 import RunsView from './views/RunsView.vue';
 import EnvironmentsView from './views/EnvironmentsView.vue';
 import AiSettingsView from './views/AiSettingsView.vue';
+import ReportTemplatesView from './views/ReportTemplatesView.vue';
 import SystemSettingsView from './views/SystemSettingsView.vue';
 
 const store = usePlatformStore();
@@ -165,6 +172,7 @@ const titles = {
   runs: '执行报告',
   environments: '环境配置',
   ai: 'AI 配置',
+  'report-templates': '报告模板',
   system: '通用设置'
 };
 const title = computed(() => titles[view.value] || '测试用例');

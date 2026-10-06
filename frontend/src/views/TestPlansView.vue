@@ -214,18 +214,36 @@
             <section class="ai-report" aria-labelledby="ai-report-title">
               <div class="section-heading">
                 <div>
-                  <strong id="ai-report-title">AI 测试报告</strong>
-                  <span>Markdown</span>
+                  <strong id="ai-report-title">测试报告</strong>
+                  <span>{{ reportFormatLabel }}</span>
                 </div>
-                <el-tag v-if="reportSource" size="small" effect="plain" type="info">
-                  {{ reportSource }}
-                </el-tag>
+                <div class="report-heading-actions">
+                  <el-tag v-if="reportSource" size="small" effect="plain" type="info">
+                    {{ reportSource }}
+                  </el-tag>
+                  <el-button
+                    v-if="currentRun?.reportUrl"
+                    size="small"
+                    link
+                    type="primary"
+                    @click="downloadReport"
+                  >
+                    下载
+                  </el-button>
+                </div>
               </div>
               <el-scrollbar class="report-scroll">
                 <div v-if="reportLoading" class="report-loading" aria-live="polite">
                   <el-icon class="is-loading"><Loading /></el-icon>
                   <span>报告加载中...</span>
                 </div>
+                <iframe
+                  v-else-if="reportHtml"
+                  class="report-iframe"
+                  title="测试报告预览"
+                  sandbox=""
+                  :srcdoc="reportHtml"
+                />
                 <article v-else-if="reportBlocks.length" class="markdown-report">
                   <template v-for="(block, index) in reportBlocks" :key="`${block.type}-${index}`">
                     <component :is="`h${block.level}`" v-if="block.type === 'heading'">{{ block.text }}</component>
@@ -495,6 +513,8 @@ const currentRun = ref(null);
 const runRefreshing = ref(false);
 const startingRun = ref(false);
 const reportMarkdown = ref('');
+const reportHtml = ref('');
+const reportFormat = ref('markdown');
 const reportLoading = ref(false);
 const reportSource = ref('');
 const runConfig = reactive({ environment: '', executionMode: 'headless' });
@@ -550,11 +570,16 @@ const runProgress = computed(() => {
   if (!runSummary.value.total) return 0;
   return Math.min(100, Math.round((runSummary.value.passed + runSummary.value.failed) / runSummary.value.total * 100));
 });
-const reportBlocks = computed(() => parseMarkdown(reportMarkdown.value));
+const reportBlocks = computed(() => (reportHtml.value ? [] : parseMarkdown(reportMarkdown.value)));
 const reportEmptyText = computed(() => {
   if (!currentRun.value) return '执行批次后生成测试报告';
   if (['queued', 'running'].includes(currentRun.value.status)) return '批次完成后生成测试报告';
-  return '当前批次暂无 AI 测试报告';
+  return '当前批次暂无测试报告';
+});
+const reportFormatLabel = computed(() => {
+  if (reportFormat.value === 'html') return 'HTML';
+  if (reportFormat.value === 'word') return 'Word';
+  return 'Markdown';
 });
 
 watch(caseKeyword, (value) => caseTreeRef.value?.filter(value));
@@ -629,6 +654,8 @@ async function selectPlan(planId) {
   selectedPlanId.value = planId || '';
   currentRun.value = null;
   reportMarkdown.value = '';
+  reportHtml.value = '';
+  reportFormat.value = 'markdown';
   reportSource.value = '';
   const plan = plans.value.find((item) => item.id === planId);
   if (!plan) return;
@@ -987,6 +1014,8 @@ async function startBatch() {
     currentRun.value = result.run || result.testPlanRun || result;
     latestRunByPlan[selectedPlan.value.id] = currentRun.value;
     reportMarkdown.value = '';
+    reportHtml.value = '';
+    reportFormat.value = 'markdown';
     reportSource.value = '';
     startRunPolling();
     ElMessage.success('测试批次已启动');
@@ -1033,14 +1062,25 @@ async function refreshCurrentRun() {
 async function loadRunReport(run) {
   const id = batchId(run);
   reportMarkdown.value = '';
+  reportHtml.value = '';
+  reportFormat.value = run?.reportFormat || run?.summary?.reportFormat || 'markdown';
   reportSource.value = '';
   if (!id || id === '-') return;
   reportLoading.value = true;
   try {
     const result = await api(`/api/test-plan-runs/${encodeURIComponent(id)}/report`);
     if (typeof result === 'string' && result.trim()) {
-      reportMarkdown.value = result;
-      reportSource.value = ['ai', 'llm'].includes(run?.summary?.source) ? 'AI 生成' : '规则生成';
+      const format = run?.reportFormat || run?.summary?.reportFormat
+        || (result.trimStart().startsWith('<') ? 'html' : 'markdown');
+      reportFormat.value = format;
+      if (format === 'html' || format === 'word') {
+        reportHtml.value = result;
+        reportMarkdown.value = '';
+      } else {
+        reportMarkdown.value = result;
+        reportHtml.value = '';
+      }
+      reportSource.value = ['ai', 'llm'].includes(run?.summary?.source) ? 'AI 生成' : '';
       return;
     }
   } catch (error) {
@@ -1053,8 +1093,16 @@ async function loadRunReport(run) {
   const narrative = run?.summary?.narrative;
   if (typeof narrative === 'string' && narrative.trim()) {
     reportMarkdown.value = narrative;
-    reportSource.value = ['ai', 'llm'].includes(run.summary?.source) ? 'AI 生成' : '规则生成';
+    reportHtml.value = '';
+    reportFormat.value = 'markdown';
+    reportSource.value = ['ai', 'llm'].includes(run.summary?.source) ? 'AI 生成' : '';
   }
+}
+
+function downloadReport() {
+  const id = batchId(currentRun.value);
+  if (!id || id === '-') return;
+  window.open(`/api/test-plan-runs/${encodeURIComponent(id)}/report?download=1`, '_blank');
 }
 
 function cleanInlineMarkdown(value) {
@@ -1385,6 +1433,20 @@ function parseMarkdown(source) {
   flex: none;
   padding: 7px 10px;
   border-bottom: 1px solid var(--plan-border);
+}
+
+.report-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-iframe {
+  width: 100%;
+  min-height: 360px;
+  height: 100%;
+  border: 0;
+  background: #fff;
 }
 
 .case-order-section :deep(.el-table) {
