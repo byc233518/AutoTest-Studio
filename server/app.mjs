@@ -11,13 +11,10 @@ import { parseDatasetFile, validateRows } from './platform/datasets.mjs';
 import { migrateRows } from './platform/dataset-migration.mjs';
 import { diffSchemas, normalizeSchema, synchronizeScriptSchema } from './platform/schema-sync.mjs';
 import {
-  completeLocalRun,
   createRun,
   ensureProcessFallbackScreenshot,
   executeRun,
-  initializeLocalRun,
-  isSkippedOnly,
-  markLocalRunStarted
+  isSkippedOnly
 } from './platform/runner.mjs';
 import { rowsToCsv } from './platform/sample-data.mjs';
 import { generateSampleRowsSmart, listLlmModels, testLlmConnection } from './platform/llm.mjs';
@@ -47,7 +44,6 @@ import {
   validateScenarioReleaseScript
 } from './platform/scenario-releases.mjs';
 import {
-  buildLocalRecordCommand,
   createRecordingUploadToken,
   resolveRecordingScriptEntry,
   startRecordingProcess,
@@ -59,20 +55,9 @@ import {
   moveRecordingUpload
 } from './platform/recordings.mjs';
 import {
-  createRecordingCode,
-  createRecordingCodeLimiter,
-  verifyRecordingCode
-} from './platform/recording-codes.mjs';
-import {
-  buildLocalExecutionBundle,
-  createLocalExecutionTicket,
-  hasValidLocalExecutionToken,
   readLocalExecutionMeta,
-  resolveLocalArtifactPath,
-  resolveLocalExecutionTicket,
   writeLocalExecutionMeta
 } from './platform/local-executions.mjs';
-import { buildDesktopLaunchUrl } from './platform/desktop-launch.mjs';
 import {
   createScenarioSelectionBatch,
   createTestPlanBatch,
@@ -100,7 +85,6 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(__dirname, '..');
-const RECORDER_ARCHIVE_NAME = 'AutoTest-Studio\u672c\u5730\u5f55\u5236\u5668-win-x64.zip';
 const SCENARIO_KEY_PATTERN = /^[a-z0-9]+(?:-+[a-z0-9]+)*$/;
 const LEGACY_SCENARIO_KEY_PATTERN = /^legacyMes(?:-+[a-z0-9]+)+$/;
 const ENVIRONMENT_VARIABLE_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -753,9 +737,6 @@ export async function createApp(options = {}) {
   const scriptsDir = path.resolve(options.scriptsDir || path.resolve(dataDir, 'scripts'));
   const temporaryDir = path.resolve(options.temporaryDir || path.resolve(dataDir, 'tmp'));
   const migrationWriteFile = options.migrationWriteFile || writeFile;
-  const recorderPackagePath = options.recorderPackagePath
-    || process.env.AUTOTEST_RECORDER_PACKAGE
-    || path.resolve(appWorkspaceRoot, 'dist', RECORDER_ARCHIVE_NAME);
   await mkdir(uploadsDir, { recursive: true });
   await mkdir(reportsDir, { recursive: true });
   await mkdir(recordingsDir, { recursive: true });
@@ -792,7 +773,6 @@ export async function createApp(options = {}) {
     recordingScriptsDir,
     scriptsDir,
     temporaryDir,
-    recorderPackagePath,
     workspaceRoot: appWorkspaceRoot
   };
   app.locals.runMode = options.runMode || process.env.AUTOTEST_RUN_MODE || 'playwright';
@@ -806,8 +786,6 @@ export async function createApp(options = {}) {
   app.locals.scenarioPackageScriptWriter = options.scenarioPackageScriptWriter || saveScenarioScriptContent;
   app.locals.silent = options.silent || false;
   app.locals.mockRunStepDelayMs = options.mockRunStepDelayMs || 0;
-  app.locals.recordingCodeLimiter = createRecordingCodeLimiter();
-  app.locals.localExecutionCodeLimiter = createRecordingCodeLimiter();
   app.locals.activeRecordingTasks = new Map();
   app.locals.activeRecordingProcesses = new Map();
   app.locals.activeExecutionTasks = new Set();
@@ -882,17 +860,6 @@ export async function createApp(options = {}) {
 
   app.get('/api/health', (request, response) => {
     response.json({ ok: true, service: 'autotest-studio', runMode: app.locals.runMode, desktopMode: app.locals.desktopMode });
-  });
-
-  app.get('/api/recorder/download', requireAuth, (request, response) => {
-    if (!existsSync(app.locals.paths.recorderPackagePath)) {
-      return jsonError(response, 404, '\u514d\u5b89\u88c5\u5f55\u5236\u5668\u5c1a\u672a\u6784\u5efa');
-    }
-    return response.download(
-      app.locals.paths.recorderPackagePath,
-      RECORDER_ARCHIVE_NAME,
-      { dotfiles: 'allow' }
-    );
   });
 
   app.post('/api/auth/login', (request, response) => {
@@ -2116,7 +2083,6 @@ export async function createApp(options = {}) {
         scenarioId,
         datasetId,
         environment,
-        executionLocation = 'server',
         enforceDependencies = false,
         skipDependencyCheck = false
       } = request.body || {};
@@ -2126,9 +2092,10 @@ export async function createApp(options = {}) {
       } catch (error) {
         return jsonError(response, 400, error.message);
       }
-      if (!['server', 'local'].includes(executionLocation)) {
-        return jsonError(response, 400, '执行位置无效');
+      if (request.body?.executionLocation === 'local') {
+        return jsonError(response, 400, '已取消本机绿色工具执行，请在桌面客户端内直接执行');
       }
+      const executionLocation = 'server';
       const scenario = database.getScenarioById(scenarioId);
       const dataset = database.getDatasetById(datasetId);
       if (!scenario || !dataset || dataset.scenario_id !== scenario.id) {
@@ -2155,27 +2122,6 @@ export async function createApp(options = {}) {
         executionLocation,
         triggeredBy: request.user.user_id
       });
-      if (executionLocation === 'local') {
-        const reportDir = await initializeLocalRun(app, run.id);
-        const ticket = await createLocalExecutionTicket({
-          reportDir,
-          runId: run.id,
-          createdBy: request.user.user_id
-        });
-        return response.status(202).json({
-          ...toPublicRun(database.getRunById(run.id)),
-          localExecution: {
-            code: ticket.code,
-            expiresAt: ticket.expiresAt,
-            toolDownloadUrl: '/api/recorder/download',
-            desktopLaunchUrl: buildDesktopLaunchUrl({
-              mode: 'execute',
-              platformUrl: `${request.protocol}://${request.get('host')}`,
-              code: ticket.code
-            })
-          }
-        });
-      }
       response.status(202).json(toPublicRun(run));
       if (app.locals.shuttingDown) {
         database.updateRun(run.id, {
@@ -2192,109 +2138,6 @@ export async function createApp(options = {}) {
       }
     } catch (error) {
       next(error);
-    }
-  });
-
-  app.post('/api/local-runs/resolve', async (request, response, next) => {
-    try {
-      const clientKey = request.ip || request.socket.remoteAddress || 'unknown';
-      const limit = app.locals.localExecutionCodeLimiter.check(clientKey);
-      if (!limit.allowed) {
-        response.setHeader('retry-after', String(Math.max(1, Math.ceil(limit.retryAfterMs / 1000))));
-        return jsonError(response, 429, '尝试次数过多，请稍后再试');
-      }
-      const resolved = await resolveLocalExecutionTicket({
-        reportsDir: app.locals.paths.reportsDir,
-        code: request.body?.code || ''
-      });
-      if (!resolved) {
-        app.locals.localExecutionCodeLimiter.fail(clientKey);
-        return jsonError(response, 401, '执行码无效、已使用或已过期');
-      }
-      const run = database.getRunById(resolved.meta.runId);
-      if (!run || run.execution_location !== 'local' || run.status !== 'queued') {
-        return jsonError(response, 409, '本地执行任务当前不可领取');
-      }
-      const scenario = database.getScenarioById(run.scenario_id);
-      const dataset = database.getDatasetById(run.dataset_id);
-      const environment = database.getEnvironmentByKey(run.environment);
-      if (!scenario || !dataset || !environment) {
-        return jsonError(response, 409, '执行任务关联的场景、数据集或环境不存在');
-      }
-      const bundle = await buildLocalExecutionBundle({
-        workspaceRoot: app.locals.paths.workspaceRoot,
-        dataDir: app.locals.paths.dataDir,
-        scenario,
-        dataset,
-        environment
-      });
-      const claimedAt = new Date().toISOString();
-      await writeLocalExecutionMeta(resolved.reportDir, {
-        ...resolved.meta,
-        status: 'running',
-        recordCodeHash: null,
-        recordCodeUsedAt: claimedAt,
-        claimedAt
-      });
-      await markLocalRunStarted(app, run.id);
-      app.locals.localExecutionCodeLimiter.clear(clientKey);
-      return response.json({
-        ...bundle,
-        runId: run.id,
-        token: resolved.meta.token,
-        executionMode: run.execution_mode || 'headed'
-      });
-    } catch (error) {
-      return next(error);
-    }
-  });
-
-  app.post('/api/local-runs/:runId/artifacts', upload.single('file'), async (request, response, next) => {
-    try {
-      const run = database.getRunById(request.params.runId);
-      const reportDir = path.resolve(app.locals.paths.reportsDir, request.params.runId);
-      const meta = await readLocalExecutionMeta(reportDir);
-      if (!run || run.execution_location !== 'local' || !hasValidLocalExecutionToken(meta, request.body?.token)) {
-        if (request.file) await rm(request.file.path, { force: true });
-        return jsonError(response, 401, '本地执行上传凭证无效或已过期');
-      }
-      if (!request.file) return jsonError(response, 400, '请选择要上传的执行结果文件');
-      const target = resolveLocalArtifactPath(reportDir, request.body?.path);
-      if (!target || path.basename(target) === 'local-execution.json') {
-        await rm(request.file.path, { force: true });
-        return jsonError(response, 400, '执行结果文件路径无效');
-      }
-      await mkdir(path.dirname(target), { recursive: true });
-      await rm(target, { force: true });
-      await rename(request.file.path, target);
-      return response.status(201).json({ ok: true, path: request.body.path });
-    } catch (error) {
-      return next(error);
-    }
-  });
-
-  app.post('/api/local-runs/:runId/finish', async (request, response, next) => {
-    try {
-      const run = database.getRunById(request.params.runId);
-      const reportDir = path.resolve(app.locals.paths.reportsDir, request.params.runId);
-      const meta = await readLocalExecutionMeta(reportDir);
-      if (!run || run.execution_location !== 'local' || !hasValidLocalExecutionToken(meta, request.body?.token)) {
-        return jsonError(response, 401, '本地执行上传凭证无效或已过期');
-      }
-      if (meta.status === 'finished') return jsonError(response, 409, '本地执行结果已经提交');
-      const completed = await completeLocalRun(app, run.id, {
-        exitCode: Number(request.body?.exitCode ?? 1),
-        error: String(request.body?.error || '')
-      });
-      await writeLocalExecutionMeta(reportDir, {
-        ...meta,
-        status: 'finished',
-        token: null,
-        finishedAt: new Date().toISOString()
-      });
-      return response.json(toPublicRun(runWithArtifacts(database, completed)));
-    } catch (error) {
-      return next(error);
     }
   });
 
@@ -2458,11 +2301,13 @@ export async function createApp(options = {}) {
       }
       const scenarioKey = request.body?.scenarioKey || '';
       const environmentKey = request.body?.environmentKey || database.getDefaultEnvironment()?.key || '';
-      const location = request.body?.location === 'server' ? 'server' : 'local';
-      const platformUrl = `${request.protocol}://${request.get('host')}`;
+      const location = 'server';
       const environment = database.getEnvironmentByKey(environmentKey) || database.getDefaultEnvironment();
       if (!environment) {
         return jsonError(response, 400, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
+      }
+      if (request.body?.location === 'local') {
+        return jsonError(response, 400, '已取消免安装录制器，请在桌面客户端内直接录制');
       }
       if (scenarioKey && !database.getScenarioByKey(scenarioKey)) {
         return jsonError(response, 404, '\u8d44\u6e90\u4e0d\u5b58\u5728');
@@ -2473,23 +2318,20 @@ export async function createApp(options = {}) {
       const startUrl = `${baseUrl}/#/login`;
       const uploadToken = createRecordingUploadToken();
       const uploadTokenExpires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-      const recordCode = location === 'local' ? createRecordingCode() : null;
       let processInfo = { pid: null, mode: location, startUrl };
       const recordMode = app.locals.recordMode || 'codegen';
 
-      if (location === 'server') {
-        if (recordMode === 'stub') {
-          await writeRecordingStub(outputPath, id, environment);
-        }
-        processInfo = startRecordingProcess({
-          workspaceRoot: app.locals.paths.workspaceRoot,
-          outputPath,
-          environment,
-          recordMode,
-          browserChannel: readGeneralSettings(database).browserChannel,
-          browserOptions: app.locals.browserDetectorOptions
-        });
+      if (recordMode === 'stub') {
+        await writeRecordingStub(outputPath, id, environment);
       }
+      processInfo = startRecordingProcess({
+        workspaceRoot: app.locals.paths.workspaceRoot,
+        outputPath,
+        environment,
+        recordMode,
+        browserChannel: readGeneralSettings(database).browserChannel,
+        browserOptions: app.locals.browserDetectorOptions
+      });
 
       await writeFile(
         path.resolve(app.locals.paths.recordingsDir, `${id}.meta.json`),
@@ -2505,8 +2347,8 @@ export async function createApp(options = {}) {
           startUrl,
           uploadToken,
           uploadTokenExpires,
-          recordCodeHash: recordCode?.hash || null,
-          recordCodeExpires: recordCode?.expiresAt || null,
+          recordCodeHash: null,
+          recordCodeExpires: null,
           recordCodeUsedAt: null,
           createdBy: request.user.user_id,
           createdAt: new Date().toISOString()
@@ -2539,61 +2381,12 @@ export async function createApp(options = {}) {
         location,
         scenarioKey: scenarioKey || null,
         startUrl,
-        mode: processInfo.mode,
-        localCommand: location === 'local'
-          ? buildLocalRecordCommand({ recordingId: id, uploadToken, startUrl, platformUrl })
-          : null,
-        uploadToken: location === 'local' ? uploadToken : null,
-        recordCode: recordCode?.code || null,
-        recordCodeExpires: recordCode?.expiresAt || null,
-        recorderDownloadUrl: location === 'local' ? '/api/recorder/download' : null,
-        desktopLaunchUrl: location === 'local'
-          ? buildDesktopLaunchUrl({ mode: 'record', platformUrl, code: recordCode.code })
-          : null
+        mode: processInfo.mode
       });
     } catch (error) {
       if (error?.code === 'SYSTEM_BROWSER_NOT_FOUND') {
         return jsonError(response, 400, error.message);
       }
-      return next(error);
-    }
-  });
-
-  app.post('/api/recordings/resolve', async (request, response, next) => {
-    try {
-      const clientKey = request.ip || request.socket.remoteAddress || 'unknown';
-      const limit = app.locals.recordingCodeLimiter.check(clientKey);
-      if (!limit.allowed) {
-        response.setHeader('retry-after', String(Math.max(1, Math.ceil(limit.retryAfterMs / 1000))));
-        return jsonError(response, 429, '\u8bf7\u6c42\u53c2\u6570\u65e0\u6548');
-      }
-
-      const code = request.body?.code || '';
-      const files = (await readdir(app.locals.paths.recordingsDir))
-        .filter((name) => name.endsWith('.meta.json'))
-        .sort()
-        .reverse();
-
-      for (const name of files) {
-        const metaPath = path.resolve(app.locals.paths.recordingsDir, name);
-        const meta = JSON.parse(await readFile(metaPath, 'utf8'));
-        if (meta.location !== 'local' || !verifyRecordingCode(meta, code).ok) continue;
-
-        meta.recordCodeUsedAt = new Date().toISOString();
-        meta.recordCodeHash = null;
-        await writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
-        app.locals.recordingCodeLimiter.clear(clientKey);
-        return response.json({
-          id: meta.id,
-          token: meta.uploadToken,
-          startUrl: meta.startUrl,
-          expiresAt: meta.uploadTokenExpires
-        });
-      }
-
-      app.locals.recordingCodeLimiter.fail(clientKey);
-      return jsonError(response, 401, '\u8bf7\u6c42\u5931\u8d25');
-    } catch (error) {
       return next(error);
     }
   });
