@@ -21,10 +21,10 @@ test('useLlm 未配置时回退规则生成并返回 fallbackReason', async (t) 
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/sample-data', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/sample-data', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
-    body: JSON.stringify({ count: 2, useLlm: true, rules: '客户编号以 QA- 开头且名称不重复' })
+    body: JSON.stringify({ count: 2, useLlm: true, rules: '记录编码以 QA- 开头且名称不重复' })
   });
 
   assert.equal(response.status, 200);
@@ -33,14 +33,14 @@ test('useLlm 未配置时回退规则生成并返回 fallbackReason', async (t) 
   assert.equal(typeof body.fallbackReason, 'string');
   assert.match(body.fallbackReason, /LLM/);
   assert.equal(body.rows.length, 2);
-  assert.equal(body.csv.includes('客户编号'), true);
+  assert.equal(body.csv.includes('记录编码'), true);
 });
 
 test('生成条数限制在 1 到 20 行', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/sample-data', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/sample-data', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ count: 200 })
@@ -53,7 +53,7 @@ test('未启用 useLlm 时直接使用规则生成', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/sample-data', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/sample-data', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ count: 1 })
@@ -69,15 +69,15 @@ test('追加自动生成时按当前行数继续编号', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/sample-data', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/sample-data', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ count: 2, offset: 3 })
   });
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.equal(body.rows[0].客户编号, 'AT-CUST-004');
-  assert.equal(body.rows[1].客户编号, 'AT-CUST-005');
+  assert.equal(body.rows[0].记录编码, 'AT-004');
+  assert.equal(body.rows[1].记录编码, 'AT-005');
 });
 
 test('LLM 连通性检测在缺少 apiKey 时返回 400', async (t) => {
@@ -223,11 +223,11 @@ test('测试数据生成使用注入的 fetch 并传递 AbortSignal', async (t) 
         choices: [{
           message: {
             content: JSON.stringify([{
-              客户编号: 'AI-CUST-001',
-              客户名称: 'AI 客户001',
-              联系人: 'AI 测试员',
-              客户类别: '自动化',
-              客户地址: '上海'
+              记录编码: 'AI-CUST-001',
+              记录名称: 'AI 客户001',
+              经办人: 'AI 测试员',
+              分类: '自动化',
+              说明: '上海'
             }])
           }
         }]
@@ -237,7 +237,7 @@ test('测试数据生成使用注入的 fetch 并传递 AbortSignal', async (t) 
   const cookie = await ctx.loginCookie('admin', 'Admin123!');
   await configureLlm(ctx, cookie);
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/sample-data', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/sample-data', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ count: 1, useLlm: true })
@@ -246,7 +246,7 @@ test('测试数据生成使用注入的 fetch 并传递 AbortSignal', async (t) 
   const body = await response.json();
   assert.equal(body.source, 'llm');
   assert.equal(body.fallbackReason, null);
-  assert.equal(body.rows[0].客户编号, 'AI-CUST-001');
+  assert.equal(body.rows[0].记录编码, 'AI-CUST-001');
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, 'http://127.0.0.1:18080/v1/chat/completions');
   assert.equal(calls[0].options.headers.authorization, 'Bearer secret-key');
@@ -263,7 +263,7 @@ test('测试数据生成网络失败时降级为规则数据并保留原因', as
   const cookie = await ctx.loginCookie('admin', 'Admin123!');
   await configureLlm(ctx, cookie);
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/sample-data', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/sample-data', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ count: 1, useLlm: true })
@@ -297,7 +297,7 @@ test('测试数据生成超时会中止请求并降级为规则数据', async (t
   await configureLlm(ctx, cookie);
 
   const startedAt = Date.now();
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/sample-data', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/sample-data', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ count: 1, useLlm: true })

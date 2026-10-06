@@ -31,26 +31,26 @@ test('所有角色都可创建草稿场景、编辑并发布', async (t) => {
       key: 'draft-customer-extra',
       name: '客户扩展草稿',
       description: 'P2 CRUD 测试',
-      module: 'WMS / ImsCustomer',
-      appId: 'APP-WMS',
-      moduleId: 'MOD-WMS-CUSTOMER',
-      dependsOn: ['auth-login'],
+      module: '示例 / 表单',
+      appId: 'APP-SAMPLE',
+      moduleId: 'MOD-SAMPLE-FORM',
+      dependsOn: ['sample-open-page'],
       dataSchema: {
-        columns: ['客户编号', '客户名称'],
-        required: ['客户编号', '客户名称'],
-        example: { 客户编号: 'AT-CUST-X', 客户名称: '扩展客户' }
+        columns: ['记录编码', '记录名称'],
+        required: ['记录编码', '记录名称'],
+        example: { 记录编码: 'AT-X', 记录名称: '扩展客户' }
       }
     })
   });
   assert.equal(created.status, 201);
   const draft = await created.json();
   assert.equal(draft.status, 'draft');
-  assert.deepEqual(draft.dependsOn, ['auth-login']);
+  assert.deepEqual(draft.dependsOn, ['sample-open-page']);
 
   const script = await ctx.fetch('/api/scenarios/draft-customer-extra/script', {
     method: 'PUT',
     headers: { cookie: maintainerCookie, 'content-type': 'application/json' },
-    body: JSON.stringify({ content: 'export const testDataSchema={columns:[\'客户编号\',\'客户名称\'],required:[\'客户编号\']};', fileName: 'draft-customer-extra.spec.js' })
+    body: JSON.stringify({ content: 'export const testDataSchema={columns:[\'记录编码\',\'记录名称\'],required:[\'记录编码\']};', fileName: 'draft-customer-extra.spec.js' })
   });
   assert.equal(script.status, 200);
 
@@ -60,7 +60,7 @@ test('所有角色都可创建草稿场景、编辑并发布', async (t) => {
   assert.equal(byKey.status, 200);
   const detail = await byKey.json();
   assert.equal(detail.key, 'draft-customer-extra');
-  assert.deepEqual(detail.dependsOn, ['auth-login']);
+  assert.deepEqual(detail.dependsOn, ['sample-open-page']);
 
   const published = await ctx.fetch('/api/scenarios/draft-customer-extra/publish', {
     method: 'POST',
@@ -80,7 +80,7 @@ test('所有角色都可创建草稿场景、编辑并发布', async (t) => {
 test('已发布场景详情包含 dependsOn 字段', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create', { headers: { cookie } });
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit', { headers: { cookie } });
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(Array.isArray(body.dependsOn), true);

@@ -187,7 +187,7 @@ async function loadCatalog() {
   state.selectedEnvironment = state.environments.find((e) => e.isDefault)?.key
     || state.environments[0]?.key
     || 'test';
-  state.selectedScenario ||= state.scenarios.find((scenario) => scenario.key === 'wms-customer-create') || state.scenarios[0] || null;
+  state.selectedScenario ||= state.scenarios.find((scenario) => scenario.key === 'sample-form-submit') || state.scenarios[0] || null;
   await loadDatasetsForScenarios(filteredScenarios());
   if (state.selectedScenario) {
     state.datasets = state.datasetsByScenario[state.selectedScenario.key] || [];
@@ -998,7 +998,7 @@ function renderRunDialog() {
               <div class="split">
                 <div class="field">
                   <label>数据集名称</label>
-                  <input name="dataName" value="${state.runDialog.dataName}" placeholder="例如：客户主数据回归样本" />
+                  <input name="dataName" value="${state.runDialog.dataName}" placeholder="例如：表单提交回归样本" />
                 </div>
                 <div class="field">
                   <label>CSV / Excel 文件</label>
@@ -1007,7 +1007,7 @@ function renderRunDialog() {
               </div>
             ` : ''}
             ${source === 'manual' ? `
-              <div class="field"><label>数据集名称</label><input name="dataName" value="${state.runDialog.dataName}" placeholder="例如：客户主数据-测试环境-冒烟" /></div>
+              <div class="field"><label>数据集名称</label><input name="dataName" value="${state.runDialog.dataName}" placeholder="例如：表单提交-测试环境-冒烟" /></div>
               <div class="manual-data-grid">${renderManualDataTable(scenario, state.runDialog.manualRows?.length ? state.runDialog.manualRows : [blankDataRow(scenario)])}</div>
               <div class="button-row"><button class="secondary" id="addRunManualRow" type="button">增加一行</button><button class="secondary" id="fillSampleCsv" type="button">生成样例数据</button><button class="secondary" id="fillAiSampleCsv" type="button">AI 生成</button></div>
             ` : ''}
@@ -1216,7 +1216,7 @@ function renderCreateDialog() {
           <div class="split">
             <div class="field">
               <label>场景名称 *</label>
-              <input name="name" placeholder="例如：客户主数据录入" required />
+              <input name="name" placeholder="例如：打开首页并搜索" required />
             </div>
             <div class="field">
               <label>场景 key *</label>
@@ -1256,7 +1256,7 @@ function renderCreateDialog() {
               ${scriptSource === 'path' ? `
                 <div class="field">
                   <label>脚本路径（可选）</label>
-                  <input name="scriptEntry" placeholder="例如：tests/wms-master-data.spec.js" />
+                  <input name="scriptEntry" placeholder="例如：tests/sample-form-submit.spec.js" />
                   <div class="muted">也可创建后在编辑弹窗上传或录制脚本</div>
                 </div>
               ` : ''}
@@ -1282,7 +1282,7 @@ function renderCreateDialog() {
           </div>
           <div class="field">
             <label>数据字段（逗号分隔，默认全部必填）</label>
-            <input name="columns" placeholder="例如：客户编号,客户名称,联系人" />
+            <input name="columns" placeholder="例如：记录编码,记录名称,说明" />
           </div>
           <div class="button-row" style="justify-content:flex-end">
             <button type="button" class="secondary" id="cancelCreateDialog">取消</button>

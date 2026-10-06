@@ -7,8 +7,8 @@ import { synchronizeScriptSchema } from '../../server/platform/schema-sync.mjs';
 const basicSource = `import { test, expect } from '@playwright/test';
 
 test('创建客户', async ({ page }) => {
-  await page.getByLabel('客户编码').fill('C001');
-  await page.getByPlaceholder('请输入客户名称').fill('测试客户');
+  await page.getByLabel('档案编码').fill('C001');
+  await page.getByPlaceholder('请输入记录名称').fill('测试客户');
   await expect(page.getByText('保存成功')).toBeVisible();
 });`;
 
@@ -18,8 +18,8 @@ test('分析两个固定输入并保留可读标签和可见断言', () => {
   assert.equal(result.supported, true);
   assert.deepEqual(result.warnings, []);
   assert.deepEqual(result.fields, [
-    { candidateId: 'field-1', label: '客户编码', type: 'text', example: 'C001', value: 'C001' },
-    { candidateId: 'field-2', label: '请输入客户名称', type: 'text', example: '测试客户', value: '测试客户' }
+    { candidateId: 'field-1', label: '档案编码', type: 'text', example: 'C001', value: 'C001' },
+    { candidateId: 'field-2', label: '请输入记录名称', type: 'text', example: '测试客户', value: '测试客户' }
   ]);
   assert.deepEqual(result.assertions, [
     { type: 'visible', label: '保存成功', value: '保存成功', locator: { kind: 'getByText', value: '保存成功' } }
@@ -31,8 +31,8 @@ test('参数化脚本使用 defineRecordedTests 和 schema', () => {
     source: basicSource,
     title: '客户录入',
     fields: [
-      { candidateId: 'field-1', key: 'customerCode', label: '客户编码', type: 'text', value: 'C001', required: true },
-      { candidateId: 'field-2', key: 'customerName', label: '客户名称', type: 'text', value: '测试客户', required: false }
+      { candidateId: 'field-1', key: 'customerCode', label: '档案编码', type: 'text', value: 'C001', required: true },
+      { candidateId: 'field-2', key: 'customerName', label: '记录名称', type: 'text', value: '测试客户', required: false }
     ],
     assertions: [{ type: 'visible', label: '保存成功' }]
   });
@@ -42,8 +42,8 @@ test('参数化脚本使用 defineRecordedTests 和 schema', () => {
     required: ['customerCode'],
     example: { customerCode: 'C001', customerName: '测试客户' },
     fields: [
-      { key: 'customerCode', label: '客户编码', type: 'text', required: true },
-      { key: 'customerName', label: '客户名称', type: 'text', required: false }
+      { key: 'customerCode', label: '档案编码', type: 'text', required: true },
+      { key: 'customerName', label: '记录名称', type: 'text', required: false }
     ]
   });
   assert.match(result.script, /const \{ defineRecordedTests \} = require\(process\.cwd\(\) \+ '\/tests\/support\/recorded-script'\);/);
@@ -62,7 +62,7 @@ test('candidateIds 将多个录制候选合并到同一个数据字段', () => {
       candidateId: 'field-1',
       candidateIds: ['field-1', 'field-2'],
       key: 'customerName',
-      label: '客户名称',
+      label: '记录名称',
       example: '测试客户',
       required: true
     }]
@@ -100,8 +100,8 @@ test('生成脚本可被场景 schema 提取器和字段同步器直接消费', 
     source: basicSource,
     title: '字段同步闭环',
     fields: [
-      { candidateId: 'field-1', key: 'customerCode', label: '客户编号', required: true, example: 'C001' },
-      { candidateId: 'field-2', key: 'customerName', label: '客户名称', example: '测试客户' }
+      { candidateId: 'field-1', key: 'customerCode', label: '记录编码', required: true, example: 'C001' },
+      { candidateId: 'field-2', key: 'customerName', label: '记录名称', example: '测试客户' }
     ]
   });
   const extracted = extractScriptDataSchema(built.script);
@@ -152,7 +152,7 @@ test('扩展操作', async ({ page }) => {
   await page.getByText('备注').type('加急');
   await page.getByLabel('附件').setInputFiles('C:/tmp/demo.xlsx');
   await expect(page.getByText('处理结果')).toHaveText('成功');
-  await expect(page.getByLabel('客户编码')).toHaveValue('C001');
+  await expect(page.getByLabel('档案编码')).toHaveValue('C001');
   await expect(page).toHaveURL('/customers');
 });`;
 
@@ -164,7 +164,7 @@ test('扩展操作', async ({ page }) => {
   ]);
   assert.deepEqual(result.assertions, [
     { type: 'text', label: '处理结果', value: '成功', locator: { kind: 'getByText', value: '处理结果' } },
-    { type: 'value', label: '客户编码', value: 'C001', locator: { kind: 'getByLabel', value: '客户编码' } },
+    { type: 'value', label: '档案编码', value: 'C001', locator: { kind: 'getByLabel', value: '档案编码' } },
     { type: 'url', value: '/customers', locator: { kind: 'page' } }
   ]);
 });
@@ -192,25 +192,25 @@ test('参数化时补充向导新增的 URL、文本和值断言', () => {
     fields: [],
     assertions: [
       { type: 'url', value: '/customers' },
-      { type: 'text', label: '客户编号', value: 'C001' },
-      { type: 'value', label: '客户编码', value: 'C001' }
+      { type: 'text', label: '记录编码', value: 'C001' },
+      { type: 'value', label: '档案编码', value: 'C001' }
     ]
   });
 
   assert.match(result.script, /await expect\(page\)\.toHaveURL\(["']\/customers["']\);/);
-  assert.match(result.script, /await expect\(page\.getByText\(["']客户编号["']\)\)\.toHaveText\(["']C001["']\);/);
-  assert.match(result.script, /await expect\(page\.getByLabel\(["']客户编码["']\)\)\.toHaveValue\(["']C001["']\);/);
+  assert.match(result.script, /await expect\(page\.getByText\(["']记录编码["']\)\)\.toHaveText\(["']C001["']\);/);
+  assert.match(result.script, /await expect\(page\.getByLabel\(["']档案编码["']\)\)\.toHaveValue\(["']C001["']\);/);
 });
 
 test('按计划字段 example 和 locator 断言对象生成稳定 source', () => {
   const result = buildDataDrivenScript({
     source: basicSource,
     title: '客户录入',
-    fields: [{ candidateId: 'field-1', key: 'customerCode', label: '客户编码', type: 'text', required: true, example: 'EX-001' }],
+    fields: [{ candidateId: 'field-1', key: 'customerCode', label: '档案编码', type: 'text', required: true, example: 'EX-001' }],
     assertions: [
       { type: 'visible', locator: { kind: 'text', value: '已保存' } },
       { type: 'text', locator: { kind: 'getByText', value: '处理结果' }, expected: '成功' },
-      { type: 'value', locator: { kind: 'getByLabel', value: '客户编码' }, expected: 'EX-001' },
+      { type: 'value', locator: { kind: 'getByLabel', value: '档案编码' }, expected: 'EX-001' },
       { type: 'url', locator: { kind: 'page', value: '' }, expected: '/customers' }
     ]
   });
@@ -220,7 +220,7 @@ test('按计划字段 example 和 locator 断言对象生成稳定 source', () =
   assert.match(result.source, /\.fill\(data\["customerCode"\]\)/);
   assert.match(result.source, /getByText\(["']已保存["']\)\)\.toBeVisible\(\)/);
   assert.match(result.source, /getByText\(["']处理结果["']\)\)\.toHaveText\(["']成功["']\)/);
-  assert.match(result.source, /getByLabel\(["']客户编码["']\)\)\.toHaveValue\(["']EX-001["']\)/);
+  assert.match(result.source, /getByLabel\(["']档案编码["']\)\)\.toHaveValue\(["']EX-001["']\)/);
   assert.match(result.source, /expect\(page\)\.toHaveURL\(["']\/customers["']\)/);
   assert.deepEqual(result.warnings, []);
 });

@@ -112,19 +112,19 @@ test('用例包导入失败时恢复原有删除墓碑，避免种子用例重�
     }
   });
   const database = ctx.app.locals.database;
-  const deletedSeedScenario = database.getScenarioByKey('auth-login');
+  const deletedSeedScenario = database.getScenarioByKey('sample-open-page');
   database.deleteScenarios([deletedSeedScenario.id]);
-  assert.equal(database.hasAssetTombstone('scenario', 'auth-login'), true);
+  assert.equal(database.hasAssetTombstone('scenario', 'sample-open-page'), true);
 
   const response = await importPackage(ctx, scenarioPackage(
-    scenario('auth-login'),
+    scenario('sample-open-page'),
     scenario('package-tombstone-rollback-second')
   ));
   assert.equal(response.status, 500);
-  assert.equal(database.getScenarioByKey('auth-login'), undefined);
+  assert.equal(database.getScenarioByKey('sample-open-page'), undefined);
   assert.equal(database.getScenarioByKey('package-tombstone-rollback-second'), undefined);
-  assert.equal(database.hasAssetTombstone('scenario', 'auth-login'), true);
+  assert.equal(database.hasAssetTombstone('scenario', 'sample-open-page'), true);
 
-  seedPlatform(database, { preserveExisting: true, includeRepositoryCatalog: false });
-  assert.equal(database.getScenarioByKey('auth-login'), undefined);
+  seedPlatform(database, { preserveExisting: true });
+  assert.equal(database.getScenarioByKey('sample-open-page'), undefined);
 });

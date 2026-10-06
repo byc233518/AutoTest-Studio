@@ -302,7 +302,7 @@
       >
         <div class="editor-fields">
           <el-form-item label="计划名称" prop="name">
-            <el-input v-model="editorForm.name" maxlength="80" show-word-limit placeholder="例如：WMS 核心回归" />
+            <el-input v-model="editorForm.name" maxlength="80" show-word-limit placeholder="例如：冒烟回归" />
           </el-form-item>
           <el-form-item label="默认环境" prop="environment">
             <el-select v-model="editorForm.environment" class="wide" placeholder="选择环境" filterable>

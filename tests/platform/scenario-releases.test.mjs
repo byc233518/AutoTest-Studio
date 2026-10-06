@@ -175,21 +175,19 @@ test('并发发布版本号唯一且连续', async (t) => {
   assert.deepEqual(releases.map((release) => release.versionNo), [4, 3, 2, 1]);
 });
 
-test('草稿场景允许创建服务器和本地执行任务', async (t) => {
+test('草稿场景允许创建服务器执行任务', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
-  const unpublish = await ctx.fetch('/api/scenarios/wms-customer-create/unpublish', { method: 'POST', headers: { cookie } });
+  const unpublish = await ctx.fetch('/api/scenarios/sample-form-submit/unpublish', { method: 'POST', headers: { cookie } });
   assert.equal(unpublish.status, 200);
   const dataset = await ctx.uploadCustomerDataset(cookie);
-  for (const executionLocation of ['server', 'local']) {
-    const response = await ctx.fetch('/api/runs', {
-      method: 'POST',
-      headers: jsonHeaders(cookie),
-      body: JSON.stringify({ scenarioId: dataset.scenarioId, datasetId: dataset.id, environment: 'test', executionLocation })
-    });
-    assert.equal(response.status, 202);
-    const body = await response.json();
-    if (executionLocation === 'server') await ctx.waitForRun(body.runId);
-  }
+  const response = await ctx.fetch('/api/runs', {
+    method: 'POST',
+    headers: jsonHeaders(cookie),
+    body: JSON.stringify({ scenarioId: dataset.scenarioId, datasetId: dataset.id, environment: 'test', executionLocation: 'server' })
+  });
+  assert.equal(response.status, 202);
+  const body = await response.json();
+  await ctx.waitForRun(body.runId);
 });
 

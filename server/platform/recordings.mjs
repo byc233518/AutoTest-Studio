@@ -48,7 +48,7 @@ export function buildRecordingStub(id, environment) {
 import { test, expect } from '@playwright/test';
 
 test('recorded flow ${id}', async ({ page }) => {
-  await page.goto(process.env.AUTOTEST_BASE_URL || '${baseUrl}/#/login');
+  await page.goto(process.env.AUTOTEST_BASE_URL || '${baseUrl}');
   // TODO: replace with recorded steps
   await expect(page).toHaveURL(/.+/);
 });
@@ -70,7 +70,7 @@ export function startRecordingProcess({
   browserOptions
 }) {
   const baseUrl = trimTrailingSlash(environment.base_url);
-  const startUrl = `${baseUrl}/#/login`;
+  const startUrl = baseUrl;
 
   if (recordMode === 'stub') {
     return { pid: null, mode: 'stub', startUrl };

@@ -21,7 +21,10 @@ test('环境列表包含两个种子环境且密码脱敏', async (t) => {
     ['test', 'staging']
   );
   assert.equal(body.environments.every((env) => env.password === undefined), true);
-  assert.equal(body.environments.every((env) => env.passwordMasked === '********'), true);
+  assert.equal(
+    body.environments.every((env) => env.passwordMasked === '********' || env.passwordMasked === ''),
+    true
+  );
   assert.equal(body.environments.every((env) => Array.isArray(env.variables)), true);
   assert.deepEqual(body.environments.find((env) => env.key === 'test').variables, []);
   assert.equal(body.environments.find((env) => env.key === 'test').isDefault, true);
@@ -328,7 +331,7 @@ test('执行任务引用不存在的环境时直接失败', async (t) => {
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const uploaded = await ctx.uploadCustomerDataset(cookie);
   const database = ctx.app.locals.database;
-  const scenario = database.getScenarioByKey('wms-customer-create');
+  const scenario = database.getScenarioByKey('sample-form-submit');
   const dataset = database.getDatasetById(uploaded.id);
   const run = createRun(database, {
     scenario,

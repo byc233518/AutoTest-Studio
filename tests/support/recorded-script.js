@@ -19,7 +19,9 @@ function loadRecordedRows(schema = {}) {
 }
 
 function recordedTitle(title, row) {
-  const label = row.name || row.code || row.locatorCode || row.customerCode || row.partCode || row.vendorCode || row.__rowNumber;
+  const skip = new Set(['__rowNumber']);
+  const firstValue = Object.entries(row).find(([key, value]) => !skip.has(key) && value != null && String(value).trim())?.[1];
+  const label = row.记录编码 || row.记录名称 || row.关键字 || row.name || row.code || firstValue || row.__rowNumber;
   return `${title} - ${label} #${row.__rowNumber}`;
 }
 

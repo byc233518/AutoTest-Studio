@@ -174,7 +174,7 @@
           <el-input-number v-model="aiConfig.count" :min="1" :max="20" />
         </el-form-item>
         <el-form-item label="生成规则">
-          <el-input v-model="aiConfig.rules" type="textarea" :rows="5" maxlength="2000" show-word-limit placeholder="例如：客户编号以 QA- 开头，地址覆盖上海和苏州，名称不要重复" />
+          <el-input v-model="aiConfig.rules" type="textarea" :rows="5" maxlength="2000" show-word-limit placeholder="例如：记录编码以 AT- 开头，名称不要重复" />
         </el-form-item>
       </el-form>
       <template #footer>

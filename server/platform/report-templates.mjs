@@ -244,24 +244,24 @@ export function buildPreviewReportContext(overrides = {}) {
     items: overrides.items || [
       {
         position: 0,
-        scenarioName: '客户主数据录入',
-        datasetName: '客户样例',
+        scenarioName: '表单填写与提交',
+        datasetName: '搜索样例',
         status: 'passed',
         durationMs: 42000,
         error: '',
         images: [
-          { label: '客户主数据录入截图', fileName: 'preview-customer.svg', relativePath: 'preview-customer.svg', dataUrl: previewSvgDataUrl('通过') }
+          { label: '表单填写与提交截图', fileName: 'preview-customer.svg', relativePath: 'preview-customer.svg', dataUrl: previewSvgDataUrl('通过') }
         ]
       },
       {
         position: 1,
-        scenarioName: '供应商主数据录入',
-        datasetName: '供应商样例',
+        scenarioName: '查询与筛选',
+        datasetName: '查询样例',
         status: 'failed',
         durationMs: 28000,
         error: '未找到可用数据集',
         images: [
-          { label: '供应商主数据录入截图', fileName: 'preview-vendor.svg', relativePath: 'preview-vendor.svg', dataUrl: previewSvgDataUrl('失败') }
+          { label: '查询与筛选截图', fileName: 'preview-vendor.svg', relativePath: 'preview-vendor.svg', dataUrl: previewSvgDataUrl('失败') }
         ]
       }
     ],

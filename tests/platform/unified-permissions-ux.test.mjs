@@ -2,13 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-test('应用模块和环境管理页面不再按角色进入只读模式', async () => {
-  const [catalog, environments] = await Promise.all([
-    readFile('frontend/src/views/CatalogManagementView.vue', 'utf8'),
-    readFile('frontend/src/views/EnvironmentsView.vue', 'utf8')
-  ]);
-
-  assert.doesNotMatch(catalog, /store\.user\?\.role|:readonly="readonly"/);
+test('环境管理页面不再按角色进入只读模式', async () => {
+  const environments = await readFile('frontend/src/views/EnvironmentsView.vue', 'utf8');
   assert.doesNotMatch(environments, /store\.user\?\.role|:readonly="readonly"/);
 });
 

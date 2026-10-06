@@ -34,9 +34,9 @@ test('客户端关闭时等待执行任务并持久化取消状态', async () =>
   try {
     app = await createApp(appOptions);
     const database = app.locals.database;
-    const scenario = database.getScenarioByKey('wms-customer-create');
+    const scenario = database.getScenarioByKey('sample-form-submit');
     const rowsPath = path.resolve(projectRoot, 'data', 'shutdown-rows.json');
-    await writeFile(rowsPath, JSON.stringify([{ 客户编号: 'SHUTDOWN-001' }]), 'utf8');
+    await writeFile(rowsPath, JSON.stringify([{ 记录编码: 'SHUTDOWN-001' }]), 'utf8');
     const dataset = database.createDataset({
       id: database.nextId('DAT'),
       scenarioId: scenario.id,

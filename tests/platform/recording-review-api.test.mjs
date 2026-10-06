@@ -9,7 +9,7 @@ import { buildLocalExecutionBundle } from '../../server/platform/local-execution
 
 const recordedSource = `const { test, expect } = require('@playwright/test');
 test('录制字段', async ({ page }) => {
-  await page.getByLabel('客户编号').fill('C-001');
+  await page.getByLabel('记录编码').fill('C-001');
   await expect(page).toHaveURL(/.+/);
 });
 `;
@@ -24,7 +24,7 @@ async function createRecording(ctx, cookie, key = 'recording-review-demo', sourc
   const started = await ctx.fetch('/api/recordings/start', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
-    body: JSON.stringify({ scenarioKey: key, location: 'local', environmentKey: 'test' })
+    body: JSON.stringify({ scenarioKey: key, location: 'server', environmentKey: 'test' })
   });
   assert.equal(started.status, 201);
   const recording = await started.json();
@@ -37,12 +37,12 @@ async function createRecording(ctx, cookie, key = 'recording-review-demo', sourc
 }
 
 test('录制上传写入分析结果、保持草稿并对重复内容幂等', async (t) => {
-  const ctx = await createTestContext(t);
+  const ctx = await createTestContext(t, { recordMode: 'stub' });
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const { recording, uploaded } = await createRecording(ctx, cookie);
   assert.equal(uploaded.status, 'draft');
   assert.equal(uploaded.analysis.supported, true);
-  assert.equal(uploaded.analysis.fields[0].label, '客户编号');
+  assert.equal(uploaded.analysis.fields[0].label, '记录编码');
   assert.equal(uploaded.scenario.status, 'draft');
   const meta = JSON.parse(await readFile(`${ctx.app.locals.paths.recordingsDir}/${recording.id}.meta.json`, 'utf8'));
   assert.deepEqual(meta.analysis, uploaded.analysis);
@@ -59,12 +59,12 @@ test('录制上传写入分析结果、保持草稿并对重复内容幂等', as
 });
 
 test('apply 成功保存数据驱动脚本，非法映射返回 422 且不覆盖原脚本，重复 apply 幂等', async (t) => {
-  const ctx = await createTestContext(t);
+  const ctx = await createTestContext(t, { recordMode: 'stub' });
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const { recording, uploaded } = await createRecording(ctx, cookie, 'recording-apply-demo');
   const body = {
     title: '客户录制数据驱动',
-    fields: [{ candidateId: uploaded.analysis.fields[0].candidateId, key: 'customerCode', label: '客户编号', type: 'text', example: 'C-001', required: true }],
+    fields: [{ candidateId: uploaded.analysis.fields[0].candidateId, key: 'customerCode', label: '记录编码', type: 'text', example: 'C-001', required: true }],
     assertions: uploaded.analysis.assertions
   };
   const applied = await ctx.fetch(`/api/recordings/${recording.id}/apply`, {
@@ -149,14 +149,14 @@ test('apply 成功保存数据驱动脚本，非法映射返回 422 且不覆盖
 });
 
 test('preview 返回真实参数化脚本且不会保存、改状态或创建版本', async (t) => {
-  const ctx = await createTestContext(t);
+  const ctx = await createTestContext(t, { recordMode: 'stub' });
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const { recording, uploaded } = await createRecording(ctx, cookie, 'recording-preview-demo');
   const beforeScenario = await (await ctx.fetch('/api/scenarios/recording-preview-demo', { headers: { cookie } })).json();
   const beforeVersions = await (await ctx.fetch('/api/scenarios/recording-preview-demo/script/versions', { headers: { cookie } })).json();
   const body = {
     title: '预览客户脚本',
-    fields: [{ candidateId: uploaded.analysis.fields[0].candidateId, candidateIds: [uploaded.analysis.fields[0].candidateId], key: 'customerCode', label: '客户编号', required: true }],
+    fields: [{ candidateId: uploaded.analysis.fields[0].candidateId, candidateIds: [uploaded.analysis.fields[0].candidateId], key: 'customerCode', label: '记录编码', required: true }],
     assertions: uploaded.analysis.assertions
   };
 
@@ -179,9 +179,9 @@ test('preview 返回真实参数化脚本且不会保存、改状态或创建版
 });
 
 test('apply 使用 candidateIds 将两个固定输入合并到同一字段', async (t) => {
-  const ctx = await createTestContext(t);
+  const ctx = await createTestContext(t, { recordMode: 'stub' });
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
-  const source = `const { test } = require('@playwright/test');\ntest('合并字段', async ({ page }) => {\n  await page.getByLabel('客户编码').fill('C-001');\n  await page.getByLabel('客户名称').fill('客户一');\n});\n`;
+  const source = `const { test } = require('@playwright/test');\ntest('合并字段', async ({ page }) => {\n  await page.getByLabel('档案编码').fill('C-001');\n  await page.getByLabel('记录名称').fill('客户一');\n});\n`;
   const { recording, uploaded } = await createRecording(ctx, cookie, 'recording-merge-demo', source);
   const candidateIds = uploaded.analysis.fields.map((field) => field.candidateId);
   const response = await ctx.fetch(`/api/recordings/${recording.id}/apply`, {
@@ -195,10 +195,10 @@ test('apply 使用 candidateIds 将两个固定输入合并到同一字段', asy
 });
 
 test('重复上传原始录制不会回绑覆盖已应用脚本，且 apply 校验录制归属', async (t) => {
-  const ctx = await createTestContext(t);
+  const ctx = await createTestContext(t, { recordMode: 'stub' });
   const ownerCookie = await ctx.loginCookie('tester', 'Tester123!');
   const { recording, uploaded } = await createRecording(ctx, ownerCookie, 'recording-upload-after-apply');
-  const fields = [{ candidateId: uploaded.analysis.fields[0].candidateId, key: 'customerCode', label: '客户编号', type: 'text', example: 'C-001', required: true }];
+  const fields = [{ candidateId: uploaded.analysis.fields[0].candidateId, key: 'customerCode', label: '记录编码', type: 'text', example: 'C-001', required: true }];
   const applied = await ctx.fetch(`/api/recordings/${recording.id}/apply`, {
     method: 'POST', headers: { cookie: ownerCookie, 'content-type': 'application/json' }, body: JSON.stringify({ title: '已应用', fields, assertions: [] })
   });
@@ -220,12 +220,12 @@ test('重复上传原始录制不会回绑覆盖已应用脚本，且 apply 校�
 });
 
 test('录制首次上传后再次上传不同内容会先保存旧原始脚本版本', async (t) => {
-  const ctx = await createTestContext(t);
+  const ctx = await createTestContext(t, { recordMode: 'stub' });
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const key = 'recording-upload-version-demo';
   const created = await ctx.fetch('/api/scenarios', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ key, name: key }) });
   assert.equal(created.status, 201);
-  const started = await ctx.fetch('/api/recordings/start', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ scenarioKey: key, location: 'local' }) });
+  const started = await ctx.fetch('/api/recordings/start', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ scenarioKey: key, location: 'server' }) });
   const recording = await started.json();
   const firstForm = new FormData();
   firstForm.append('token', recording.uploadToken);
@@ -243,18 +243,18 @@ test('录制首次上传后再次上传不同内容会先保存旧原始脚本�
 });
 
 test('脚本入口只允许受管目录，非法上传令牌会清理临时文件并限制大小', async (t) => {
-  const ctx = await createTestContext(t);
+  const ctx = await createTestContext(t, { recordMode: 'stub' });
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
-  const unsafe = await ctx.fetch('/api/scenarios/wms-customer-create', {
+  const unsafe = await ctx.fetch('/api/scenarios/sample-form-submit', {
     method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ scriptEntry: 'server/app.mjs' })
   });
   assert.equal(unsafe.status, 400);
-  const absolute = await ctx.fetch('/api/scenarios/wms-customer-create', {
+  const absolute = await ctx.fetch('/api/scenarios/sample-form-submit', {
     method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ scriptEntry: path.resolve(ctx.app.locals.paths.workspaceRoot, 'server', 'app.mjs') })
   });
   assert.equal(absolute.status, 400);
 
-  const started = await ctx.fetch('/api/recordings/start', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ location: 'local' }) });
+  const started = await ctx.fetch('/api/recordings/start', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ location: 'server' }) });
   const recording = await started.json();
   const bad = new FormData();
   bad.append('token', 'invalid');
@@ -273,7 +273,7 @@ test('脚本入口只允许受管目录，非法上传令牌会清理临时文�
 });
 
 test('contract 支持 platform、script、merge，动态冲突返回 409 且脚本不变', async (t) => {
-  const ctx = await createTestContext(t);
+  const ctx = await createTestContext(t, { recordMode: 'stub' });
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const source = `const testDataSchema = { columns: ['oldCode'], required: [], example: { oldCode: 'x' } };\nconst { test } = require('@playwright/test');\ntest('contract', async ({ page }) => { await page.getByLabel('编号').fill(data.oldCode); });\n`;
   for (const [key, resolution, targetSchema] of [
@@ -337,7 +337,7 @@ test('contract 支持 platform、script、merge，动态冲突返回 409 且脚�
 });
 
 test('merge 在脚本已匹配目标但平台 schema 不同时仍同步平台 schema', async (t) => {
-  const ctx = await createTestContext(t);
+  const ctx = await createTestContext(t, { recordMode: 'stub' });
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const key = 'contract-merge-platform-drift';
   assert.equal((await ctx.fetch('/api/scenarios', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ key, name: key }) })).status, 201);
@@ -355,7 +355,7 @@ test('merge 在脚本已匹配目标但平台 schema 不同时仍同步平台 sc
 });
 
 test('已有数据集时字段合约变更要求先走数据迁移', async (t) => {
-  const ctx = await createTestContext(t);
+  const ctx = await createTestContext(t, { recordMode: 'stub' });
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const key = 'contract-requires-migration';
   assert.equal((await ctx.fetch('/api/scenarios', {
@@ -391,7 +391,7 @@ test('已有数据集时字段合约变更要求先走数据迁移', async (t) =
 });
 
 test('script 相同 schema 和 raw 相同上传都保持已发布场景不变', async (t) => {
-  const ctx = await createTestContext(t);
+  const ctx = await createTestContext(t, { recordMode: 'stub' });
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const key = 'contract-script-noop-published';
   assert.equal((await ctx.fetch('/api/scenarios', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ key, name: key }) })).status, 201);
@@ -407,7 +407,7 @@ test('script 相同 schema 和 raw 相同上传都保持已发布场景不变', 
 
   const recordingKey = 'upload-raw-noop-published';
   assert.equal((await ctx.fetch('/api/scenarios', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ key: recordingKey, name: recordingKey }) })).status, 201);
-  const started = await ctx.fetch('/api/recordings/start', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ scenarioKey: recordingKey, location: 'local' }) });
+  const started = await ctx.fetch('/api/recordings/start', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ scenarioKey: recordingKey, location: 'server' }) });
   const recording = await started.json();
   const upload = new FormData();
   upload.append('token', recording.uploadToken);
@@ -427,15 +427,15 @@ test('script 相同 schema 和 raw 相同上传都保持已发布场景不变', 
 });
 
 test('录制 review 和 contract 未登录返回 401，缺少脚本返回 404', async (t) => {
-  const ctx = await createTestContext(t);
+  const ctx = await createTestContext(t, { recordMode: 'stub' });
   assert.equal((await ctx.fetch('/api/recordings/REC-MISSING')).status, 401);
   assert.equal((await ctx.fetch('/api/recordings/REC-MISSING/apply', { method: 'POST' })).status, 401);
-  assert.equal((await ctx.fetch('/api/scenarios/wms-customer-create/contract')).status, 401);
-  assert.equal((await ctx.fetch('/api/scenarios/wms-customer-create/contract', { method: 'PUT' })).status, 401);
+  assert.equal((await ctx.fetch('/api/scenarios/sample-form-submit/contract')).status, 401);
+  assert.equal((await ctx.fetch('/api/scenarios/sample-form-submit/contract', { method: 'PUT' })).status, 401);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   assert.equal((await ctx.fetch('/api/recordings/REC-MISSING/apply', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: '{}' })).status, 404);
-  assert.equal((await ctx.fetch('/api/scenarios/wms-customer-create/contract', { headers: { cookie } })).status, 404);
-  assert.equal((await ctx.fetch('/api/scenarios/wms-customer-create/contract', { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ resolution: 'script' }) })).status, 404);
+  assert.equal((await ctx.fetch('/api/scenarios/sample-form-submit/contract', { headers: { cookie } })).status, 404);
+  assert.equal((await ctx.fetch('/api/scenarios/sample-form-submit/contract', { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ resolution: 'script' }) })).status, 404);
   assert.equal((await ctx.fetch('/api/scenarios/not-found/contract', { headers: { cookie } })).status, 404);
   assert.equal((await ctx.fetch('/api/scenarios/not-found/contract', { method: 'PUT', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ resolution: 'script' }) })).status, 404);
 });

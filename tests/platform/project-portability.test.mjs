@@ -63,9 +63,9 @@ test('项目目录整体移动后仍能读取数据集和历史执行报告', as
   const form = new FormData();
   form.append('name', '可迁移客户数据');
   form.append('file', new Blob([
-    '客户编号,客户名称,联系人,客户类别,客户地址\nAT-MOVE-001,目录迁移客户,测试员,自动化,上海\n'
+    '记录编码,记录名称,经办人,分类,说明\nAT-MOVE-001,目录迁移客户,测试员,自动化,上海\n'
   ], { type: 'text/csv' }), 'portable.csv');
-  const uploadResponse = await project.fetch('/api/scenarios/wms-customer-create/datasets', {
+  const uploadResponse = await project.fetch('/api/scenarios/sample-form-submit/datasets', {
     method: 'POST',
     body: form
   });
@@ -114,13 +114,13 @@ test('项目目录整体移动后仍能读取数据集和历史执行报告', as
   await rename(oldRoot, newRoot);
   project = await openProject(newRoot);
 
-  const movedDatasetResponse = await project.fetch(`/api/scenarios/wms-customer-create/datasets/${dataset.id}`);
+  const movedDatasetResponse = await project.fetch(`/api/scenarios/sample-form-submit/datasets/${dataset.id}`);
   assert.equal(movedDatasetResponse.status, 200);
-  assert.equal((await movedDatasetResponse.json()).rows[0].客户编号, 'AT-MOVE-001');
+  assert.equal((await movedDatasetResponse.json()).rows[0].记录编码, 'AT-MOVE-001');
 
   const reportResponse = await project.fetch(`/api/runs/${createdRun.runId}/report-file/index.html`);
   assert.equal(reportResponse.status, 200);
-  assert.match(await reportResponse.text(), /客户主数据录入/);
+  assert.match(await reportResponse.text(), /表单填写与提交/);
 
   const reopenedDataset = project.app.locals.database.getDatasetById(dataset.id);
   const reopenedRun = project.app.locals.database.getRunById(createdRun.runId);

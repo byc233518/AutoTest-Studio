@@ -885,18 +885,10 @@ export function createPlatformDatabase(filename, pathOptions = {}) {
         SELECT * FROM scenarios
         ORDER BY
           CASE key
-            WHEN 'auth-login' THEN 0
-            WHEN 'wms-customer-create' THEN 1
-            WHEN 'wms-vendor-create' THEN 2
-            WHEN 'wms-part-create' THEN 3
-            WHEN 'wms-locator-create' THEN 4
-            WHEN 'wms-po-create' THEN 5
-            WHEN 'wms-so-create' THEN 6
-            WHEN 'mes-workorder-create' THEN 7
-            WHEN 'mes-workshop-line-create' THEN 8
-            WHEN 'mes-barcode-pass' THEN 9
-            WHEN 'mes-barcode-report' THEN 10
-            WHEN 'base-excel-import' THEN 11
+            WHEN 'sample-open-page' THEN 0
+            WHEN 'sample-form-submit' THEN 1
+            WHEN 'sample-search' THEN 2
+            WHEN 'sample-data-driven' THEN 3
             ELSE 99
           END,
           priority,

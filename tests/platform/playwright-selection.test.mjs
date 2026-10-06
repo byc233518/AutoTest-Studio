@@ -7,7 +7,7 @@ function listScenarioTests(scenarioKey) {
   const result = spawnSync(process.execPath, [
     path.resolve('node_modules', 'playwright', 'cli.js'),
     'test',
-    'tests/wms-master-data.spec.js',
+    'tests/sample-form-submit.spec.js',
     '--list'
   ], {
     cwd: process.cwd(),
@@ -25,14 +25,13 @@ function listScenarioTests(scenarioKey) {
   };
 }
 
-test('WMS 场景按平台选择只列出当前场景用例', () => {
-  const customer = listScenarioTests('wms-customer-create');
+test('示例场景按平台选择只列出当前场景用例', () => {
+  const form = listScenarioTests('sample-form-submit');
 
-  assert.equal(customer.status, 0);
-  assert.match(customer.output, /WMS/);
-  assert.match(customer.output, /客户/);
-  assert.doesNotMatch(customer.output, /供应商/);
-  assert.doesNotMatch(customer.output, /物料/);
-  assert.doesNotMatch(customer.output, /No tests found/);
-  assert.doesNotMatch(customer.output, /Total: 0 tests/);
+  assert.equal(form.status, 0);
+  assert.match(form.output, /表单填写与提交/);
+  assert.doesNotMatch(form.output, /查询与筛选/);
+  assert.doesNotMatch(form.output, /打开 Bing/);
+  assert.doesNotMatch(form.output, /No tests found/);
+  assert.doesNotMatch(form.output, /Total: 0 tests/);
 });

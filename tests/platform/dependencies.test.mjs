@@ -13,7 +13,7 @@ test('dependency-check 对有依赖且无成功执行的场景返回 pending', a
     body: JSON.stringify({
       key: 'dep-check-demo',
       name: '依赖检查演示',
-      dependsOn: ['auth-login', 'wms-customer-create'],
+      dependsOn: ['sample-open-page', 'sample-form-submit'],
       dataSchema: { columns: ['字段'], required: ['字段'], example: { 字段: '1' } }
     })
   });
@@ -27,7 +27,7 @@ test('dependency-check 对有依赖且无成功执行的场景返回 pending', a
   assert.equal(body.ready, false);
   assert.equal(body.checks.length, 2);
   assert.equal(body.checks.every((check) => check.status === 'pending'), true);
-  assert.equal(body.checks[0].key, 'auth-login');
+  assert.equal(body.checks[0].key, 'sample-open-page');
   assert.match(body.checks[0].message, /尚无成功执行记录|请先执行/);
 });
 
@@ -35,7 +35,7 @@ test('无依赖场景 dependency-check 视为就绪', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/dependency-check', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/dependency-check', {
     headers: { cookie }
   });
   assert.equal(response.status, 200);
@@ -55,7 +55,7 @@ test('enforceDependencies 为 true 时依赖未就绪会拒绝执行', async (t)
     body: JSON.stringify({
       key: 'dep-enforce-demo',
       name: '强制依赖演示',
-      dependsOn: ['auth-login'],
+      dependsOn: ['sample-open-page'],
       dataSchema: {
         columns: ['客户编号', '客户名称', '联系人', '客户类别', '客户地址'],
         required: ['客户编号', '客户名称', '联系人', '客户类别', '客户地址'],

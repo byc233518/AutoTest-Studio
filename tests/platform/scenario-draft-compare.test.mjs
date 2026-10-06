@@ -72,5 +72,5 @@ test('draft-compare 对不存在的场景或 release 返回 404', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   assert.equal((await ctx.fetch('/api/scenarios/not-found/releases/draft-compare', { headers: { cookie } })).status, 404);
-  assert.equal((await ctx.fetch('/api/scenarios/wms-customer-create/releases/draft-compare?releaseId=missing', { headers: { cookie } })).status, 404);
+  assert.equal((await ctx.fetch('/api/scenarios/sample-form-submit/releases/draft-compare?releaseId=missing', { headers: { cookie } })).status, 404);
 });

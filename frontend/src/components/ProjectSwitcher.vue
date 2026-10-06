@@ -1,6 +1,6 @@
 <template>
   <div v-if="desktop" class="project-switcher">
-    <el-popover v-model:visible="open" placement="bottom-start" :width="340" trigger="click">
+    <el-popover v-model:visible="open" placement="bottom-start" :width="360" trigger="click">
       <template #reference>
         <button class="project-trigger" type="button" :aria-expanded="open" aria-label="切换项目">
           <el-icon><FolderOpened /></el-icon>
@@ -39,6 +39,10 @@
           <el-button :icon="FolderAdd" @click="registerProject">打开已有项目</el-button>
           <el-button v-if="current" :icon="FolderOpened" circle aria-label="在资源管理器中显示" @click="revealCurrent" />
         </div>
+        <div class="project-panel-actions">
+          <el-button :icon="Download" :loading="exporting" :disabled="!current" @click="exportProject">导出项目</el-button>
+          <el-button :icon="Upload" :loading="importing" @click="importProject">导入项目</el-button>
+        </div>
       </div>
     </el-popover>
 
@@ -71,7 +75,7 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue';
-import { ArrowDown, Folder, FolderAdd, FolderOpened, Plus, Select } from '@element-plus/icons-vue';
+import { ArrowDown, Download, Folder, FolderAdd, FolderOpened, Plus, Select, Upload } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { usePlatformStore } from '../stores/platform';
 
@@ -80,6 +84,8 @@ const desktop = Boolean(window.autotestDesktop);
 const open = ref(false);
 const loading = ref(false);
 const creating = ref(false);
+const exporting = ref(false);
+const importing = ref(false);
 const createVisible = ref(false);
 const projects = ref([]);
 const current = ref(null);
@@ -163,6 +169,32 @@ async function revealCurrent() {
     ElMessage.error(error.message || '无法打开项目目录');
   }
 }
+
+async function exportProject() {
+  open.value = false;
+  exporting.value = true;
+  try {
+    const result = await window.autotestDesktop.exportProject();
+    if (result?.filePath) ElMessage.success(`项目已导出：${result.filePath}`);
+  } catch (error) {
+    ElMessage.error(error.message || '项目导出失败');
+  } finally {
+    exporting.value = false;
+  }
+}
+
+async function importProject() {
+  open.value = false;
+  importing.value = true;
+  try {
+    const result = await window.autotestDesktop.importProject({ activate: true });
+    if (result?.name) ElMessage.success(`已导入并打开项目：${result.name}`);
+  } catch (error) {
+    ElMessage.error(error.message || '项目导入失败');
+  } finally {
+    importing.value = false;
+  }
+}
 </script>
 
 <style scoped>
@@ -203,8 +235,10 @@ async function revealCurrent() {
 .project-option strong { font-size: 13px; }
 .project-option small { color: var(--el-text-color-secondary); font-size: 10px; }
 .selected-icon { flex: 0 0 auto; }
-.project-panel-actions { display: flex; padding-top: 9px; border-top: 1px solid var(--el-border-color-lighter); }
+.project-panel-actions { display: flex; flex-wrap: wrap; padding-top: 9px; gap: 8px; border-top: 1px solid var(--el-border-color-lighter); }
+.project-panel-actions + .project-panel-actions { margin-top: 8px; }
 .project-panel-actions .el-button:last-child { margin-left: auto; }
+.project-panel-actions + .project-panel-actions .el-button:last-child { margin-left: 0; }
 .browser-project { display: flex; align-items: center; max-width: 220px; gap: 7px; color: var(--el-text-color-regular); font-size: 13px; }
 .browser-project span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

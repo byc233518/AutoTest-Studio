@@ -7,7 +7,7 @@ async function uploadDataset(ctx, scenarioKey) {
   const form = new FormData();
   form.append('name', '计划执行数据');
   form.append('file', new Blob([
-    '客户编号,客户名称,联系人,客户类别,客户地址\nPLAN-CUST-001,计划客户,测试员,自动化,上海'
+    '记录编码,记录名称,经办人,分类,说明\nPLAN-001,计划记录,测试员,示例,说明'
   ], { type: 'text/csv' }), 'plan-customers.csv');
   const response = await ctx.fetch(`/api/scenarios/${scenarioKey}/datasets`, {
     method: 'POST',
@@ -31,8 +31,8 @@ async function waitForBatch(ctx, batchId) {
 test('桌面模式支持测试计划 CRUD、顺序执行、失败继续和 Markdown 报告', async (t) => {
   const ctx = await createTestContext(t, { desktopMode: true, mockRunStepDelayMs: 50 });
   const catalog = await (await ctx.fetch('/api/scenarios')).json();
-  const customer = catalog.scenarios.find((item) => item.key === 'wms-customer-create');
-  const vendor = catalog.scenarios.find((item) => item.key === 'wms-vendor-create');
+  const customer = catalog.scenarios.find((item) => item.key === 'sample-form-submit');
+  const vendor = catalog.scenarios.find((item) => item.key === 'sample-search');
   const dataset = await uploadDataset(ctx, customer.key);
 
   const settingsResponse = await ctx.fetch('/api/settings/general', {
@@ -129,8 +129,8 @@ test('桌面模式支持测试计划 CRUD、顺序执行、失败继续和 Markd
 test('测试计划拒绝错配数据集且通用设置拒绝非字符串字段', async (t) => {
   const ctx = await createTestContext(t, { desktopMode: true });
   const catalog = await (await ctx.fetch('/api/scenarios')).json();
-  const customer = catalog.scenarios.find((item) => item.key === 'wms-customer-create');
-  const vendor = catalog.scenarios.find((item) => item.key === 'wms-vendor-create');
+  const customer = catalog.scenarios.find((item) => item.key === 'sample-form-submit');
+  const vendor = catalog.scenarios.find((item) => item.key === 'sample-search');
   const dataset = await uploadDataset(ctx, customer.key);
 
   const invalidPlan = await ctx.fetch('/api/test-plans', {
@@ -188,7 +188,7 @@ test('测试计划总结在 LLM 可用时使用现有 AI 设置', async () => {
 test('启动批次可临时覆盖环境和执行模式且不修改计划默认值', async (t) => {
   const ctx = await createTestContext(t, { desktopMode: true });
   const catalog = await (await ctx.fetch('/api/scenarios')).json();
-  const customer = catalog.scenarios.find((item) => item.key === 'wms-customer-create');
+  const customer = catalog.scenarios.find((item) => item.key === 'sample-form-submit');
   const dataset = await uploadDataset(ctx, customer.key);
   const environmentResponse = await ctx.fetch('/api/environments', {
     method: 'POST',
@@ -254,7 +254,7 @@ test('报告写入失败时保留批次统计和规则总结', async (t) => {
     }
   });
   const catalog = await (await ctx.fetch('/api/scenarios')).json();
-  const customer = catalog.scenarios.find((item) => item.key === 'wms-customer-create');
+  const customer = catalog.scenarios.find((item) => item.key === 'sample-form-submit');
   const dataset = await uploadDataset(ctx, customer.key);
   const plan = await (await ctx.fetch('/api/test-plans', {
     method: 'POST',

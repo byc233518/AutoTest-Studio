@@ -7,11 +7,10 @@ function makeRunTag() {
 }
 
 const config = {
-  baseURL: trimTrailingSlash(process.env.AUTOTEST_BASE_URL || 'http://172.16.100.11:46069'),
-  username: process.env.AUTOTEST_USERNAME || 'byc',
-  password: process.env.AUTOTEST_PASSWORD || 'Abcd1234',
+  baseURL: trimTrailingSlash(process.env.AUTOTEST_BASE_URL || 'https://www.bing.com'),
+  username: process.env.AUTOTEST_USERNAME || '',
+  password: process.env.AUTOTEST_PASSWORD || '',
   runTag: process.env.AUTOTEST_DATA_TAG || makeRunTag()
 };
 
 module.exports = { config };
-

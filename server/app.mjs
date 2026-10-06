@@ -750,8 +750,7 @@ export async function createApp(options = {}) {
     reportsDir
   });
   seedPlatform(database, {
-    preserveExisting: Boolean(options.desktopMode),
-    includeRepositoryCatalog: !options.desktopMode
+    preserveExisting: Boolean(options.desktopMode)
   });
   applyProjectMetadata(database, options.project);
 
@@ -2315,7 +2314,7 @@ export async function createApp(options = {}) {
       const id = database.nextId('REC');
       const outputPath = path.resolve(app.locals.paths.recordingScriptsDir, `${id}.spec.js`);
       const baseUrl = environment.base_url.replace(/\/+$/, '');
-      const startUrl = `${baseUrl}/#/login`;
+      const startUrl = baseUrl;
       const uploadToken = createRecordingUploadToken();
       const uploadTokenExpires = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       let processInfo = { pid: null, mode: location, startUrl };
@@ -2355,7 +2354,7 @@ export async function createApp(options = {}) {
         }, null, 2)}\n`,
         'utf8'
       );
-      if (location === 'server') {
+      if (location === 'server' && recordMode !== 'stub') {
         app.locals.activeRecordingProcesses.set(id, {
           pid: processInfo.pid,
           child: processInfo.child || null
@@ -2381,7 +2380,9 @@ export async function createApp(options = {}) {
         location,
         scenarioKey: scenarioKey || null,
         startUrl,
-        mode: processInfo.mode
+        mode: processInfo.mode,
+        uploadToken,
+        uploadTokenExpires
       });
     } catch (error) {
       if (error?.code === 'SYSTEM_BROWSER_NOT_FOUND') {
