@@ -2,6 +2,7 @@ import path from 'node:path';
 import { normalizeExecutionMode } from './execution-mode.mjs';
 import { normalizeBrowserChannel } from './system-browsers.mjs';
 import { createRun, executeRun } from './runner.mjs';
+import { EMPTY_DATASET, scenarioRequiresDataset } from './datasets.mjs';
 import {
   collectReportItemImages,
   getActiveReportTemplate,
@@ -339,12 +340,15 @@ export async function executeTestPlanBatch(app, batchId) {
       const dataset = item.dataset_id ? database.getDatasetById(item.dataset_id) : null;
       if (!scenario) throw new Error('测试用例不存在');
       if (!environment) throw new Error(`执行环境不存在: ${batch.environment}`);
-      if (!dataset || dataset.scenario_id !== scenario.id || dataset.validation_status !== 'valid') {
+      if (!dataset && scenarioRequiresDataset(scenario)) {
+        throw new Error('没有可用的测试数据');
+      }
+      if (dataset && (dataset.scenario_id !== scenario.id || dataset.validation_status !== 'valid')) {
         throw new Error('没有可用的测试数据');
       }
       const run = createRun(database, {
         scenario,
-        dataset,
+        dataset: dataset || EMPTY_DATASET,
         environment: environment.key,
         executionMode: batch.execution_mode,
         executionLocation: 'server',

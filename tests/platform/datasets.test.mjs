@@ -3,7 +3,13 @@ import ExcelJS from 'exceljs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
+import { scenarioRequiresDataset } from '../../server/platform/datasets.mjs';
 import { createTestContext } from './helpers/test-context.mjs';
+
+test('没有数据字段时不要求测试数据', () => {
+  assert.equal(scenarioRequiresDataset({ data_schema: '{"columns":[],"required":[]}' }), false);
+  assert.equal(scenarioRequiresDataset({ dataSchema: { columns: ['关键字'], required: ['关键字'] } }), true);
+});
 
 async function uploadCustomerDataset(ctx, cookie, suffix) {
   const form = new FormData();

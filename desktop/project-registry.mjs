@@ -9,6 +9,7 @@ import {
   rename,
   stat,
   unlink,
+  rm,
   writeFile
 } from 'node:fs/promises';
 
@@ -455,4 +456,33 @@ export class ProjectRegistry {
       return clone(removed);
     });
   }
+}
+
+export async function deleteProjectDirectory(rootPath) {
+  const { layout } = await assertProjectLayout(rootPath);
+  await rm(layout.root, { recursive: true, force: true });
+  return layout.root;
+}
+
+export function projectFolderName(name) {
+  const safe = String(name ?? '')
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[. ]+|[. ]+$/g, '')
+    .slice(0, 40);
+  return safe || 'project';
+}
+
+export async function allocateEmptyDirectory(parentDirectory, baseName) {
+  const parent = path.resolve(nonEmptyText(parentDirectory, '项目父目录'));
+  await mkdir(parent, { recursive: true });
+  const folder = projectFolderName(baseName);
+  for (let index = 1; index < 1000; index += 1) {
+    const candidate = path.join(parent, index === 1 ? folder : `${folder}-${index}`);
+    if (!existsSync(candidate)) return candidate;
+    if ((await readdir(candidate)).length === 0) return candidate;
+  }
+  throw new ProjectRegistryError('PROJECT_ROOT_NOT_EMPTY', `无法在 ${parent} 下分配空的项目目录`);
 }

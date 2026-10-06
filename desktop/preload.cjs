@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const channels = Object.freeze({
   listProjects: 'autotest:projects:list',
   createProject: 'autotest:projects:create',
+  suggestProjectRoot: 'autotest:projects:suggest-root',
   registerProject: 'autotest:projects:register',
   selectProject: 'autotest:projects:select',
   currentProject: 'autotest:projects:current',
@@ -19,11 +20,12 @@ const channels = Object.freeze({
 const desktopApi = Object.freeze({
   listProjects: () => ipcRenderer.invoke(channels.listProjects),
   createProject: (input) => ipcRenderer.invoke(channels.createProject, input),
+  suggestProjectRoot: (input) => ipcRenderer.invoke(channels.suggestProjectRoot, input),
   registerProject: (input) => ipcRenderer.invoke(channels.registerProject, input),
   selectProject: (projectId) => ipcRenderer.invoke(channels.selectProject, projectId),
   switchProject: (projectId) => ipcRenderer.invoke(channels.selectProject, projectId),
   currentProject: () => ipcRenderer.invoke(channels.currentProject),
-  removeProject: (projectId) => ipcRenderer.invoke(channels.removeProject, projectId),
+  removeProject: (input) => ipcRenderer.invoke(channels.removeProject, input),
   revealProject: (projectId) => ipcRenderer.invoke(channels.revealProject, projectId),
   chooseProjectDirectory: (options) => ipcRenderer.invoke(channels.chooseProjectDirectory, options),
   exportProject: () => ipcRenderer.invoke(channels.exportProject),

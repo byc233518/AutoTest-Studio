@@ -37,12 +37,20 @@
                 {{ column }}{{ requiredColumns.has(column) ? ' *' : '' }}
               </el-tag>
             </div>
-            <span v-else>尚未配置字段，可在「测试数据」中维护</span>
+            <span v-else>没有数据字段，执行时不必准备测试数据</span>
           </el-descriptions-item>
         </el-descriptions>
       </el-tab-pane>
 
       <el-tab-pane label="测试数据" name="data">
+        <el-alert
+          v-if="!dataColumns.length"
+          title="当前用例没有数据字段，可以直接执行；若脚本需要变量，再维护字段并保存数据集。"
+          type="info"
+          show-icon
+          :closable="false"
+          class="data-optional-alert"
+        />
         <div class="dataset-toolbar">
           <el-select v-model="selectedDatasetId" clearable placeholder="加载已保存数据" @change="loadDataset">
             <el-option v-for="item in datasets" :key="item.id" :label="`${item.name}（${item.rowCount} 行）`" :value="item.id" />
@@ -829,6 +837,7 @@ defineExpose({ open });
 .field-schema-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-fill-color-blank); }
 .field-schema-bar > div { display: grid; gap: 2px; }
 .field-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.data-optional-alert { margin-bottom: 12px; }
 .fields-editor-alert { margin-bottom: 12px; }
 .add-field { margin-top: 10px; }
 .data-save-actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 14px; }

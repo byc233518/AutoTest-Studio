@@ -3,12 +3,12 @@
     <template #header>
       <div>
         <h2>执行场景</h2>
-        <span class="muted">{{ scenario?.name }} · 配置环境、数据和观察方式</span>
+        <span class="muted">{{ scenario?.name }} · 配置环境和观察方式{{ requiresDataset ? '、测试数据' : '' }}</span>
       </div>
     </template>
-    <el-steps :active="step" finish-status="success" simple>
+      <el-steps :active="requiresDataset ? step : Math.min(step, 1)" finish-status="success" simple>
       <el-step title="运行配置" />
-      <el-step title="测试数据" />
+      <el-step v-if="requiresDataset" title="测试数据" />
       <el-step title="确认执行" />
     </el-steps>
     <div class="dialog-body" v-loading="loading">
@@ -48,7 +48,7 @@
           :closable="false"
         />
       </template>
-      <template v-else-if="step === 1">
+      <template v-else-if="step === 1 && requiresDataset">
         <el-tabs v-model="source">
           <el-tab-pane label="历史数据集" name="history">
             <el-select v-model="form.datasetId" class="wide" placeholder="选择已经准备好的数据">
@@ -100,7 +100,7 @@
           <el-descriptions-item label="环境">{{ environmentName }}</el-descriptions-item>
           <el-descriptions-item label="执行位置">当前电脑</el-descriptions-item>
           <el-descriptions-item label="模式">{{ modeLabel }}</el-descriptions-item>
-          <el-descriptions-item label="数据来源">{{ sourceLabel }}</el-descriptions-item>
+          <el-descriptions-item label="数据来源">{{ requiresDataset ? sourceLabel : '无需测试数据' }}</el-descriptions-item>
         </el-descriptions>
         <el-alert
           title="执行后将自动进入执行详情，可实时查看步骤、截图和录像。"
@@ -112,8 +112,8 @@
     </div>
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button v-if="step" @click="step--">上一步</el-button>
-      <el-button v-if="step < 2" type="primary" :disabled="step === 0 && blockingChecks.length > 0" @click="next">下一步</el-button>
+      <el-button v-if="step" @click="back">上一步</el-button>
+      <el-button v-if="step < confirmStep" type="primary" :disabled="step === 0 && blockingChecks.length > 0" @click="next">下一步</el-button>
       <el-button v-else type="primary" :loading="loading" @click="run">开始执行</el-button>
     </template>
   </el-dialog>
@@ -146,6 +146,8 @@ const form = ref({
 });
 const columns = computed(() => scenario.value?.dataSchema?.columns || []);
 const required = computed(() => new Set(scenario.value?.dataSchema?.required || []));
+const requiresDataset = computed(() => Boolean(columns.value.length || required.value.size));
+const confirmStep = computed(() => requiresDataset.value ? 2 : 1);
 const environmentName = computed(
   () => store.environments.find((item) => item.key === form.value.environment)?.name || form.value.environment
 );
@@ -211,6 +213,7 @@ async function generate(useLlm) {
   }
 }
 function validateData() {
+  if (!requiresDataset.value) return;
   if (source.value === 'history' && !form.value.datasetId) throw new Error('请选择历史数据集');
   if (source.value === 'upload' && !uploadFile.value) throw new Error('请选择 JSON、Excel 或 CSV 文件');
   if (source.value === 'manual') {
@@ -229,6 +232,9 @@ function next() {
   } catch (error) {
     ElMessage.warning(error.message);
   }
+}
+function back() {
+  step.value -= 1;
 }
 function csv() {
   const esc = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
@@ -249,12 +255,12 @@ async function run() {
   loading.value = true;
   try {
     validateData();
-    const id = await createDataset();
+    const id = requiresDataset.value ? await createDataset() : '';
     const result = await api('/api/runs', {
       method: 'POST',
       body: JSON.stringify({
         scenarioId: scenario.value.id,
-        datasetId: id,
+        ...(id ? { datasetId: id } : {}),
         environment: form.value.environment,
         executionLocation: 'server',
         executionMode: form.value.executionMode

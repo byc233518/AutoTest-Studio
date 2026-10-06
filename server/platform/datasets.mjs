@@ -57,6 +57,30 @@ export async function parseDatasetFile(filePath, originalName) {
   return { rows: parseCsv(raw) };
 }
 
+export function parseScenarioDataSchema(scenario) {
+  const raw = scenario?.dataSchema ?? scenario?.data_schema;
+  if (!raw) return { columns: [], required: [], example: {} };
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw || '{}') || { columns: [], required: [], example: {} };
+    } catch {
+      return { columns: [], required: [], example: {} };
+    }
+  }
+  return raw;
+}
+
+export function scenarioRequiresDataset(scenario) {
+  const schema = parseScenarioDataSchema(scenario);
+  return Boolean((schema.required || []).length || (schema.columns || []).length);
+}
+
+export const EMPTY_DATASET = Object.freeze({
+  id: '',
+  name: '无需测试数据',
+  rows_path: ''
+});
+
 export function validateRows(rows, schema) {
   const errors = [];
   const headers = new Set(Object.keys(rows[0] || {}));
