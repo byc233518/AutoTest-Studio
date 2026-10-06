@@ -7,7 +7,7 @@ function scenario(overrides = {}) {
     key: 'customer-create', name: '客户创建', description: '创建客户并检查结果',
     module: 'WMS / 基础资料', priority: 'P0', owner: 'tester',
     dataSchema: { fields: [{ key: 'code', type: 'text', required: true, options: ['A', 'B'] }] },
-    dependsOn: ['auth-login'],
+    dependsOn: ['sample-open-page'],
     script: { fileName: 'customer.spec.js', content: "const { test } = require('@playwright/test');\n// 中文源码\r\n" },
     ...overrides
   };
@@ -40,12 +40,12 @@ test('导入复制对象且保留外部依赖和无脚本草稿', () => {
   const original = input(scenario({ script: null, directory: ' MES\\生产执行 ' }));
   const parsed = parseScenarioPackage(original);
   assert.equal(parsed.scenarios[0].directory, 'MES/生产执行');
-  assert.deepEqual(parsed.scenarios[0].dependsOn, ['auth-login']);
+  assert.deepEqual(parsed.scenarios[0].dependsOn, ['sample-open-page']);
   assert.equal(parsed.scenarios[0].script, null);
   parsed.scenarios[0].dataSchema.fields[0].key = 'changed';
   parsed.scenarios[0].dependsOn.push('another');
   assert.equal(original.scenarios[0].dataSchema.fields[0].key, 'code');
-  assert.deepEqual(original.scenarios[0].dependsOn, ['auth-login']);
+  assert.deepEqual(original.scenarios[0].dependsOn, ['sample-open-page']);
 });
 
 test('严格校验版本、包结构和 JSON 格式', () => {
@@ -100,7 +100,7 @@ test('拒绝非法目录、元数据与前置依赖', () => {
   for (const directory of ['../cases', 'cases/..', '/cases', 'C:\\cases', 'cases//inner', './cases']) {
     assert.throws(() => parseScenarioPackage(input(scenario({ directory }))), /用例目录/);
   }
-  for (const overrides of [{ name: '' }, { dataSchema: [] }, { dependsOn: 'auth-login' }, { dependsOn: ['a', 'a'] }, { dependsOn: ['customer-create'] }, { dependsOn: ['../a'] }, { script: { fileName: 'case.js', content: 123 } }]) {
+  for (const overrides of [{ name: '' }, { dataSchema: [] }, { dependsOn: 'sample-open-page' }, { dependsOn: ['a', 'a'] }, { dependsOn: ['customer-create'] }, { dependsOn: ['../a'] }, { script: { fileName: 'case.js', content: 123 } }]) {
     assert.throws(() => parseScenarioPackage(input(scenario(overrides))), ScenarioPackageError);
   }
 });

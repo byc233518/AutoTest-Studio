@@ -8,12 +8,12 @@ import { createTestContext } from './helpers/test-context.mjs';
 async function uploadCustomerDataset(ctx, cookie, suffix) {
   const form = new FormData();
   const csv = [
-    '客户编号,客户名称,联系人,客户类别,客户地址',
-    `AT-CUST-${suffix},自动化客户${suffix},测试员,自动化,上海`
+    '记录编码,记录名称,经办人,分类,说明',
+    `AT-${suffix},示例记录${suffix},测试员,自动化,上海`
   ].join('\n');
-  form.append('file', new Blob([csv], { type: 'text/csv' }), `customers-${suffix}.csv`);
-  form.append('name', `客户回归样本${suffix}`);
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets', {
+  form.append('file', new Blob([csv], { type: 'text/csv' }), `records-${suffix}.csv`);
+  form.append('name', `表单回归样本${suffix}`);
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/datasets', {
     method: 'POST',
     headers: { cookie },
     body: form
@@ -24,11 +24,11 @@ async function uploadCustomerDataset(ctx, cookie, suffix) {
 
 const migrationRequest = {
   targetSchema: {
-    columns: ['客户编码', '客户名称', '启用'],
-    required: ['客户编码', '启用'],
-    example: { 客户编码: '', 客户名称: '', 启用: '是' }
+    columns: ['档案编码', '记录名称', '启用'],
+    required: ['档案编码', '启用'],
+    example: { 档案编码: '', 记录名称: '', 启用: '是' }
   },
-  mappings: [{ from: '客户编号', to: '客户编码' }],
+  mappings: [{ from: '记录编码', to: '档案编码' }],
   defaults: { 启用: '是' }
 };
 
@@ -45,11 +45,11 @@ test('测试人员可以上传 CSV 样本数据并创建执行任务', async (t)
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const form = new FormData();
-  const csv = '\uFEFF客户编号,客户名称,联系人,客户类别,客户地址\nAT-CUST-001,自动化客户001,测试员,自动化,上海\n';
-  form.append('file', new Blob([csv], { type: 'text/csv' }), 'customers.csv');
-  form.append('name', '客户回归样本');
+  const csv = '\uFEFF记录编码,记录名称,经办人,分类,说明\nAT-001,示例记录001,测试员,自动化,上海\n';
+  form.append('file', new Blob([csv], { type: 'text/csv' }), 'records.csv');
+  form.append('name', '表单回归样本');
 
-  const upload = await ctx.fetch('/api/scenarios/wms-customer-create/datasets', {
+  const upload = await ctx.fetch('/api/scenarios/sample-form-submit/datasets', {
     method: 'POST',
     headers: { cookie },
     body: form
@@ -57,22 +57,22 @@ test('测试人员可以上传 CSV 样本数据并创建执行任务', async (t)
 
   assert.equal(upload.status, 201);
   const dataset = await upload.json();
-  assert.equal(dataset.name, '客户回归样本');
+  assert.equal(dataset.name, '表单回归样本');
   assert.equal(dataset.rowCount, 1);
   assert.equal(dataset.validationStatus, 'valid');
 
-  const loaded = await ctx.fetch(`/api/scenarios/wms-customer-create/datasets/${dataset.id}`, {
+  const loaded = await ctx.fetch(`/api/scenarios/sample-form-submit/datasets/${dataset.id}`, {
     headers: { cookie }
   });
   assert.equal(loaded.status, 200);
   const loadedBody = await loaded.json();
   assert.equal(loadedBody.id, dataset.id);
   assert.deepEqual(loadedBody.rows, [{
-    客户编号: 'AT-CUST-001',
-    客户名称: '自动化客户001',
-    联系人: '测试员',
-    客户类别: '自动化',
-    客户地址: '上海'
+    记录编码: 'AT-001',
+    记录名称: '示例记录001',
+    经办人: '测试员',
+    分类: '自动化',
+    说明: '上海'
   }]);
 
   const run = await ctx.fetch('/api/runs', {
@@ -94,10 +94,10 @@ test('Excel 或 CSV 导入先解析到统一表格且不会直接创建数据集
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const form = new FormData();
-  const csv = '客户编号,客户名称,联系人,客户类别,客户地址\nAT-CUST-002,预览客户,李四,经销商,苏州\n';
+  const csv = '记录编码,记录名称,经办人,分类,说明\nAT-002,预览客户,李四,经销商,苏州\n';
   form.append('file', new Blob([csv], { type: 'text/csv' }), 'preview.csv');
 
-  const preview = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/preview', {
+  const preview = await ctx.fetch('/api/scenarios/sample-form-submit/datasets/preview', {
     method: 'POST',
     headers: { cookie },
     body: form
@@ -106,9 +106,9 @@ test('Excel 或 CSV 导入先解析到统一表格且不会直接创建数据集
   const body = await preview.json();
   assert.equal(body.fileName, 'preview.csv');
   assert.equal(body.rows.length, 1);
-  assert.equal(body.rows[0].客户编号, 'AT-CUST-002');
+  assert.equal(body.rows[0].记录编码, 'AT-002');
 
-  const datasets = await ctx.fetch('/api/scenarios/wms-customer-create/datasets', { headers: { cookie } });
+  const datasets = await ctx.fetch('/api/scenarios/sample-form-submit/datasets', { headers: { cookie } });
   assert.equal(datasets.status, 200);
   assert.equal((await datasets.json()).length, 0);
 });
@@ -118,15 +118,15 @@ test('JSON 对象数组可以导入统一表格', async (t) => {
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const form = new FormData();
   const rows = [{
-    客户编号: 'AT-CUST-JSON',
-    客户名称: 'JSON 客户',
-    联系人: '测试员',
-    客户类别: '自动化',
-    客户地址: '深圳'
+    记录编码: 'AT-JSON',
+    记录名称: 'JSON 客户',
+    经办人: '测试员',
+    分类: '自动化',
+    说明: '深圳'
   }];
   form.append('file', new Blob([JSON.stringify({ rows })], { type: 'application/json' }), 'customers.json');
 
-  const preview = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/preview', {
+  const preview = await ctx.fetch('/api/scenarios/sample-form-submit/datasets/preview', {
     method: 'POST',
     headers: { cookie },
     body: form
@@ -140,18 +140,18 @@ test('可以下载包含当前场景字段和示例行的 Excel 模板', async (
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/template.xlsx', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/template.xlsx', {
     headers: { cookie }
   });
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type') || '', /spreadsheetml/);
-  assert.match(response.headers.get('content-disposition') || '', /wms-customer-create-template\.xlsx/);
+  assert.match(response.headers.get('content-disposition') || '', /sample-form-submit-template\.xlsx/);
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(Buffer.from(await response.arrayBuffer()));
   const worksheet = workbook.getWorksheet('测试数据');
-  assert.deepEqual(worksheet.getRow(1).values.slice(1), ['客户编号', '客户名称', '联系人', '客户类别', '客户地址']);
-  assert.equal(worksheet.getCell('A2').value, 'AT-CUST-001');
+  assert.deepEqual(worksheet.getRow(1).values.slice(1), ['记录编码', '记录名称', '经办人', '分类', '说明']);
+  assert.equal(worksheet.getCell('A2').value, 'AT-001');
   assert.equal(worksheet.getCell('A1').note, '必填字段');
 });
 
@@ -201,11 +201,11 @@ test('上传缺少必填列的样本数据会返回校验错误', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const form = new FormData();
-  const csv = '客户编号,客户名称\nAT-CUST-001,自动化客户001\n';
-  form.append('file', new Blob([csv], { type: 'text/csv' }), 'bad-customers.csv');
+  const csv = '记录名称,经办人\n示例记录001,测试员\n';
+  form.append('file', new Blob([csv], { type: 'text/csv' }), 'bad-records.csv');
   form.append('name', '错误样本');
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/datasets', {
     method: 'POST',
     headers: { cookie },
     body: form
@@ -214,17 +214,17 @@ test('上传缺少必填列的样本数据会返回校验错误', async (t) => {
   assert.equal(response.status, 422);
   const body = await response.json();
   assert.equal(body.message, '样本数据校验失败');
-  assert.deepEqual(body.errors, ['缺少必填列: 联系人', '缺少必填列: 客户类别', '缺少必填列: 客户地址']);
+  assert.deepEqual(body.errors, ['缺少必填列: 记录编码']);
 });
 
 test('字段迁移预览返回新行且不会写入数据集或修改场景 schema', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const source = await uploadCustomerDataset(ctx, cookie, '101');
-  const beforeScenario = await ctx.fetch('/api/scenarios/wms-customer-create', { headers: { cookie } });
+  const beforeScenario = await ctx.fetch('/api/scenarios/sample-form-submit', { headers: { cookie } });
   const beforeSchema = (await beforeScenario.json()).dataSchema;
 
-  const preview = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migration-preview', {
+  const preview = await ctx.fetch('/api/scenarios/sample-form-submit/datasets/migration-preview', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ ...migrationRequest, datasetIds: [source.id] })
@@ -232,11 +232,11 @@ test('字段迁移预览返回新行且不会写入数据集或修改场景 sche
 
   assert.equal(preview.status, 200);
   const body = await preview.json();
-  assert.deepEqual(body.datasets[0].rows, [{ 客户编码: 'AT-CUST-101', 客户名称: '自动化客户101', 启用: '是' }]);
+  assert.deepEqual(body.datasets[0].rows, [{ 档案编码: 'AT-101', 记录名称: '示例记录101', 启用: '是' }]);
   assert.deepEqual(body.datasets[0].errors, []);
-  const datasets = await ctx.fetch('/api/scenarios/wms-customer-create/datasets', { headers: { cookie } });
+  const datasets = await ctx.fetch('/api/scenarios/sample-form-submit/datasets', { headers: { cookie } });
   assert.equal((await datasets.json()).length, 1);
-  const afterScenario = await ctx.fetch('/api/scenarios/wms-customer-create', { headers: { cookie } });
+  const afterScenario = await ctx.fetch('/api/scenarios/sample-form-submit', { headers: { cookie } });
   assert.deepEqual((await afterScenario.json()).dataSchema, beforeSchema);
 });
 
@@ -248,7 +248,7 @@ test('一次确认可以为多个源数据集原子创建可追溯的新数据�
     uploadCustomerDataset(ctx, cookie, '202')
   ]);
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/datasets/migrate', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ ...migrationRequest, datasetIds: sources.map((dataset) => dataset.id) })
@@ -261,17 +261,17 @@ test('一次确认可以为多个源数据集原子创建可追溯的新数据�
   for (const dataset of body.datasets) {
     assert.deepEqual(dataset.dataSchema.columns, migrationRequest.targetSchema.columns);
     assert.deepEqual(dataset.migration.mappings, migrationRequest.mappings);
-    const loaded = await ctx.fetch(`/api/scenarios/wms-customer-create/datasets/${dataset.id}`, { headers: { cookie } });
+    const loaded = await ctx.fetch(`/api/scenarios/sample-form-submit/datasets/${dataset.id}`, { headers: { cookie } });
     assert.equal(loaded.status, 200);
     const loadedBody = await loaded.json();
     assert.equal(loadedBody.rows.length, 1);
     assert.equal(loadedBody.rows[0].启用, '是');
   }
-  const all = await ctx.fetch('/api/scenarios/wms-customer-create/datasets', { headers: { cookie } });
+  const all = await ctx.fetch('/api/scenarios/sample-form-submit/datasets', { headers: { cookie } });
   assert.equal((await all.json()).length, 4);
   for (const source of sources) {
-    const loaded = await ctx.fetch(`/api/scenarios/wms-customer-create/datasets/${source.id}`, { headers: { cookie } });
-    assert.ok(Object.hasOwn((await loaded.json()).rows[0], '客户编号'));
+    const loaded = await ctx.fetch(`/api/scenarios/sample-form-submit/datasets/${source.id}`, { headers: { cookie } });
+    assert.ok(Object.hasOwn((await loaded.json()).rows[0], '记录编码'));
   }
 });
 
@@ -287,12 +287,12 @@ test('任一数据集迁移校验失败时不创建数据库记录或文件', as
   const filesBefore = new Set(await readdir(targetDir));
   const invalidRequest = {
     datasetIds: sources.map((dataset) => dataset.id),
-    targetSchema: { columns: ['客户编码', '新增必填'], required: ['客户编码', '新增必填'] },
-    mappings: [{ from: '客户编号', to: '客户编码' }],
+    targetSchema: { columns: ['档案编码', '新增必填'], required: ['档案编码', '新增必填'] },
+    mappings: [{ from: '记录编码', to: '档案编码' }],
     defaults: {}
   };
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/datasets/migrate', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify(invalidRequest)
@@ -300,7 +300,7 @@ test('任一数据集迁移校验失败时不创建数据库记录或文件', as
 
   assert.equal(response.status, 422);
   assert.ok((await response.json()).datasets.every((dataset) => dataset.errors.length > 0));
-  const all = await ctx.fetch('/api/scenarios/wms-customer-create/datasets', { headers: { cookie } });
+  const all = await ctx.fetch('/api/scenarios/sample-form-submit/datasets', { headers: { cookie } });
   assert.equal((await all.json()).length, 2);
   assert.deepEqual(new Set(await readdir(targetDir)), filesBefore);
 });
@@ -310,7 +310,7 @@ test('迁移拒绝不属于当前场景的数据集', async (t) => {
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const source = await uploadCustomerDataset(ctx, cookie, '401');
 
-  const response = await ctx.fetch('/api/scenarios/wms-part-create/datasets/migration-preview', {
+  const response = await ctx.fetch('/api/scenarios/sample-search/datasets/migration-preview', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ ...migrationRequest, datasetIds: [source.id] })
@@ -338,14 +338,14 @@ test('迁移写入中断时回滚数据库并清理已创建文件', async (t) =
     return originalCreateDataset.call(this, dataset);
   };
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/datasets/migrate', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ ...migrationRequest, datasetIds: sources.map((dataset) => dataset.id) })
   });
 
   assert.equal(response.status, 500);
-  const all = await ctx.fetch('/api/scenarios/wms-customer-create/datasets', { headers: { cookie } });
+  const all = await ctx.fetch('/api/scenarios/sample-form-submit/datasets', { headers: { cookie } });
   assert.equal((await all.json()).length, 2);
   assert.deepEqual(new Set(await readdir(targetDir)), filesBefore);
 });
@@ -400,7 +400,7 @@ test('迁移文件 ID 首次碰撞时重试且不覆盖旧数据库和旧文件'
     return calls === 1 ? source.id : originalNextId.call(this, prefix);
   };
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/datasets/migrate', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ ...migrationRequest, datasetIds: [source.id] })
@@ -427,7 +427,7 @@ test('仅数据库存在全局 ID 碰撞时迁移会重试且不创建碰撞文�
     return calls === 1 ? source.id : originalNextId.call(this, prefix);
   };
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/datasets/migrate', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ ...migrationRequest, datasetIds: [source.id] })
@@ -461,7 +461,7 @@ test('第二个迁移文件真实写入失败时仅清理本请求已创建文�
   const existingPath = path.join(targetDir, 'existing.json');
   await writeFile(existingPath, '既有文件', { encoding: 'utf8', flag: 'wx' });
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/datasets/migrate', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ ...migrationRequest, datasetIds: sources.map((dataset) => dataset.id) })
@@ -487,7 +487,7 @@ test('排他写入创建部分文件后抛错时 helper 立即清理 candidate',
   const source = await uploadCustomerDataset(ctx, cookie, '851');
   const targetDir = migrationTargetDir(ctx, source.scenarioId);
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/datasets/migrate', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ ...migrationRequest, datasetIds: [source.id] })
@@ -531,7 +531,7 @@ test('文件写入后发生事务期全局 ID 竞争时返回 409 并保留竞�
   source = await uploadCustomerDataset(ctx, cookie, '852');
   ctx.app.locals.database.nextId = () => competingId;
 
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/datasets/migrate', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ ...migrationRequest, datasetIds: [source.id] })
@@ -555,7 +555,7 @@ test('两个并发迁移和一个常规数据集写入互不回滚', async (t) =
     uploadCustomerDataset(ctx, cookie, '901'),
     uploadCustomerDataset(ctx, cookie, '902')
   ]);
-  const migration = (datasetId) => ctx.fetch('/api/scenarios/wms-customer-create/datasets/migrate', {
+  const migration = (datasetId) => ctx.fetch('/api/scenarios/sample-form-submit/datasets/migrate', {
     method: 'POST',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ ...migrationRequest, datasetIds: [datasetId] })
@@ -569,6 +569,6 @@ test('两个并发迁移和一个常规数据集写入互不回滚', async (t) =
 
   assert.equal(first.status, 201);
   assert.equal(second.status, 201);
-  assert.equal(regular.name, '客户回归样本903');
+  assert.equal(regular.name, '表单回归样本903');
   assert.equal(ctx.app.locals.database.listDatasets(sources[0].scenarioId).length, 5);
 });

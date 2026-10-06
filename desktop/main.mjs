@@ -5,6 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { startServer } from '../server/index.mjs';
 import { ProjectRegistry, projectLayout, readProjectManifest } from './project-registry.mjs';
+import {
+  archiveFileName,
+  rewriteProjectIdentity,
+  unpackProjectArchiveFile,
+  writeProjectArchive
+} from './project-archive.mjs';
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 
@@ -17,6 +23,8 @@ export const DESKTOP_CHANNELS = Object.freeze({
   removeProject: 'autotest:projects:remove',
   revealProject: 'autotest:projects:reveal',
   chooseProjectDirectory: 'autotest:dialog:choose-project-directory',
+  exportProject: 'autotest:projects:export',
+  importProject: 'autotest:projects:import',
   openExternal: 'autotest:shell:open-external',
   getTheme: 'autotest:preferences:get-theme',
   setTheme: 'autotest:preferences:set-theme'
@@ -308,6 +316,8 @@ export class DesktopHost {
       return publicProject(this.activeProject, true);
     });
     this.handle(DESKTOP_CHANNELS.removeProject, (projectId) => this.removeProject(projectId));
+    this.handle(DESKTOP_CHANNELS.exportProject, async () => this.exportActiveProject());
+    this.handle(DESKTOP_CHANNELS.importProject, async (input = {}) => this.importProjectArchive(input));
     this.handle(DESKTOP_CHANNELS.revealProject, async (projectId) => {
       const project = await this.registry.getProject(projectId);
       if (!project) throw new Error(`项目未注册：${projectId}`);
@@ -345,6 +355,55 @@ export class DesktopHost {
       properties: ['openDirectory', 'createDirectory', 'dontAddToRecent']
     });
     return result.canceled ? null : result.filePaths[0] || null;
+  }
+
+  async chooseProjectArchive(options = {}) {
+    const result = await dialog.showOpenDialog(this.window, {
+      title: String(options.title || '选择项目包'),
+      buttonLabel: String(options.buttonLabel || '导入'),
+      defaultPath: options.defaultPath ? path.resolve(String(options.defaultPath)) : undefined,
+      properties: ['openFile', 'dontAddToRecent'],
+      filters: [{ name: 'AutoTest Studio 项目包', extensions: ['zip'] }]
+    });
+    return result.canceled ? null : result.filePaths[0] || null;
+  }
+
+  async exportActiveProject() {
+    if (!this.activeProject) throw new Error('当前没有可导出的项目');
+    const result = await dialog.showSaveDialog(this.window, {
+      title: '导出项目',
+      buttonLabel: '导出',
+      defaultPath: archiveFileName(this.activeProject.name),
+      filters: [{ name: 'AutoTest Studio 项目包', extensions: ['zip'] }]
+    });
+    if (result.canceled || !result.filePath) return null;
+    const saved = await writeProjectArchive(this.activeProject.rootPath, result.filePath);
+    return { ...saved, projectId: this.activeProject.id, name: this.activeProject.name };
+  }
+
+  async importProjectArchive(input = {}) {
+    const archivePath = input.archivePath || await this.chooseProjectArchive();
+    if (!archivePath) return null;
+    const rootPath = input.rootPath || await this.chooseProjectDirectory({
+      title: '选择导入后的项目目录',
+      buttonLabel: '解压到此目录'
+    });
+    if (!rootPath) return null;
+    await unpackProjectArchiveFile(archivePath, rootPath);
+    let project;
+    try {
+      project = await this.registry.registerProject(rootPath);
+    } catch (error) {
+      if (error?.code === 'DUPLICATE_PROJECT' && String(error.message).includes('项目 ID')) {
+        await rewriteProjectIdentity(rootPath);
+        project = await this.registry.registerProject(rootPath);
+      } else {
+        throw error;
+      }
+    }
+    if (input.activate !== false) await this.selectProject(project.id);
+    const saved = await this.registry.getProject(project.id);
+    return publicProject(saved, this.activeProject?.id === saved?.id);
   }
 
   selectProject(projectId) {

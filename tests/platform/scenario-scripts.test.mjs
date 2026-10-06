@@ -292,7 +292,7 @@ test('在线编辑拒绝空脚本和非法扩展名', async (t) => {
   const ctx = await createTestContext(t);
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
 
-  const empty = await ctx.fetch('/api/scenarios/wms-customer-create/script', {
+  const empty = await ctx.fetch('/api/scenarios/sample-form-submit/script', {
     method: 'PUT',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ fileName: 'empty.spec.js', content: '   ' })
@@ -300,7 +300,7 @@ test('在线编辑拒绝空脚本和非法扩展名', async (t) => {
   assert.equal(empty.status, 400);
   assert.equal((await empty.json()).message, '脚本内容不能为空');
 
-  const invalid = await ctx.fetch('/api/scenarios/wms-customer-create/script', {
+  const invalid = await ctx.fetch('/api/scenarios/sample-form-submit/script', {
     method: 'PUT',
     headers: { cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ fileName: 'notes.txt', content: 'not a script' })
@@ -397,7 +397,7 @@ test('上传非法脚本扩展名会被拒绝', async (t) => {
   const cookie = await ctx.loginCookie('tester', 'Tester123!');
   const form = new FormData();
   form.append('file', new Blob(['not-a-script'], { type: 'text/plain' }), 'notes.txt');
-  const response = await ctx.fetch('/api/scenarios/wms-customer-create/script', {
+  const response = await ctx.fetch('/api/scenarios/sample-form-submit/script', {
     method: 'POST',
     headers: { cookie },
     body: form

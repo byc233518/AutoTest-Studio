@@ -124,7 +124,7 @@ test('run dialog treats dependency checks as opt-in', async () => {
   assert.match(script, /state\.runDialog = \{[\s\S]*enforceDependencies:\s*false/);
   assert.match(script, /const enforceDependencies = options\.enforceDependencies \?\? false/);
   assert.doesNotMatch(script, /enforceDependencies:\s*\(scenario\.dependsOn \|\| \[\]\)\.length > 0/);
-  assert.match(vueDialog, /!\['dataset','dependencies'\]\.includes\(item\.type\)/);
+  assert.match(vueDialog, /!\['dataset',\s*'dependencies'\]\.includes\(item\.type\)/);
 });
 
 test('执行与报告主界面仅保留列表，详情通过弹窗查看', async () => {

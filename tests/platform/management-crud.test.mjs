@@ -56,7 +56,7 @@ test('删除有关联关系的应用和模块时返回清晰的 409', async (t) 
   const ctx = await createTestContext(t);
   const maintainer = await ctx.loginCookie('maintainer', 'Maintainer123!');
 
-  const seededAppConflict = await ctx.fetch('/api/apps/APP-WMS', {
+  const seededAppConflict = await ctx.fetch('/api/apps/APP-SAMPLE', {
     method: 'DELETE',
     headers: { cookie: maintainer }
   });
@@ -66,7 +66,7 @@ test('删除有关联关系的应用和模块时返回清晰的 409', async (t) 
   assert.equal(appConflictBody.references.modules > 0, true);
   assert.equal(appConflictBody.references.scenarios > 0, true);
 
-  const moduleConflict = await ctx.fetch('/api/modules/MOD-WMS-CUSTOMER', {
+  const moduleConflict = await ctx.fetch('/api/modules/MOD-SAMPLE-FORM', {
     method: 'DELETE',
     headers: { cookie: maintainer }
   });

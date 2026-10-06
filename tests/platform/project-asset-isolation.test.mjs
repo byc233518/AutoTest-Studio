@@ -66,13 +66,13 @@ test('不同桌面项目的用例、脚本和环境配置物理隔离并可独�
       isDefault: true
     })
   });
-  await requestJson(handle, '/api/scenarios/wms-customer-create', {
+  await requestJson(handle, '/api/scenarios/sample-form-submit', {
     method: 'PUT',
     headers: jsonHeaders,
     body: JSON.stringify({ name: '项目 A 客户用例', module: '项目 A/客户目录' })
   });
   const projectAScript = "const { test } = require('@playwright/test');\ntest('project a only', async () => {});\n";
-  await requestJson(handle, '/api/scenarios/wms-customer-create/script', {
+  await requestJson(handle, '/api/scenarios/sample-form-submit/script', {
     method: 'PUT',
     headers: jsonHeaders,
     body: JSON.stringify({ fileName: 'project-a.spec.js', content: projectAScript })
@@ -83,14 +83,14 @@ test('不同桌面项目的用例、脚本和环境配置物理隔离并可独�
   handle = await openProject(projectB);
   const projectBEnvironments = (await requestJson(handle, '/api/environments')).environments;
   const projectBEnvironment = projectBEnvironments.find((item) => item.id === 'ENV-TEST');
-  const projectBScenario = await requestJson(handle, '/api/scenarios/wms-customer-create');
+  const projectBScenario = await requestJson(handle, '/api/scenarios/sample-form-submit');
   assert.notEqual(projectBEnvironment.baseUrl, 'http://project-a.example.test');
   assert.notEqual(projectBEnvironment.username, 'project-a-user');
   assert.deepEqual(projectBEnvironment.variables, []);
   assert.notEqual(projectBScenario.name, '项目 A 客户用例');
   assert.notEqual(projectBScenario.module, '项目 A/客户目录');
   await assert.rejects(
-    stat(path.resolve(projectBRoot, 'cases', 'wms-customer-create', 'project-a.spec.js')),
+    stat(path.resolve(projectBRoot, 'cases', 'sample-form-submit', 'project-a.spec.js')),
     (error) => error.code === 'ENOENT'
   );
 
@@ -105,13 +105,13 @@ test('不同桌面项目的用例、脚本和环境配置物理隔离并可独�
       isDefault: true
     })
   });
-  await requestJson(handle, '/api/scenarios/wms-customer-create', {
+  await requestJson(handle, '/api/scenarios/sample-form-submit', {
     method: 'PUT',
     headers: jsonHeaders,
     body: JSON.stringify({ name: '项目 B 客户用例', module: '项目 B/客户目录' })
   });
   const projectBScript = "const { test } = require('@playwright/test');\ntest('project b only', async () => {});\n";
-  await requestJson(handle, '/api/scenarios/wms-customer-create/script', {
+  await requestJson(handle, '/api/scenarios/sample-form-submit/script', {
     method: 'PUT',
     headers: jsonHeaders,
     body: JSON.stringify({ fileName: 'project-b.spec.js', content: projectBScript })
@@ -122,18 +122,18 @@ test('不同桌面项目的用例、脚本和环境配置物理隔离并可独�
   handle = await openProject(projectA);
   const restoredEnvironments = (await requestJson(handle, '/api/environments')).environments;
   const restoredEnvironment = restoredEnvironments.find((item) => item.id === 'ENV-TEST');
-  const restoredScenario = await requestJson(handle, '/api/scenarios/wms-customer-create');
-  const restoredScript = await requestJson(handle, '/api/scenarios/wms-customer-create/script');
+  const restoredScenario = await requestJson(handle, '/api/scenarios/sample-form-submit');
+  const restoredScript = await requestJson(handle, '/api/scenarios/sample-form-submit/script');
   assert.equal(restoredEnvironment.baseUrl, 'http://project-a.example.test');
   assert.equal(restoredEnvironment.username, 'project-a-user');
   assert.deepEqual(restoredEnvironment.variables, [{ key: 'tenantCode', value: 'TENANT-A' }]);
   assert.equal(restoredScenario.name, '项目 A 客户用例');
   assert.equal(restoredScenario.module, '项目 A/客户目录');
   assert.equal(restoredScript.content, projectAScript);
-  assert.equal(await readFile(path.resolve(projectARoot, 'cases', 'wms-customer-create', 'project-a.spec.js'), 'utf8'), projectAScript);
-  assert.equal(await readFile(path.resolve(projectBRoot, 'cases', 'wms-customer-create', 'project-b.spec.js'), 'utf8'), projectBScript);
+  assert.equal(await readFile(path.resolve(projectARoot, 'cases', 'sample-form-submit', 'project-a.spec.js'), 'utf8'), projectAScript);
+  assert.equal(await readFile(path.resolve(projectBRoot, 'cases', 'sample-form-submit', 'project-b.spec.js'), 'utf8'), projectBScript);
   await assert.rejects(
-    stat(path.resolve(projectARoot, 'cases', 'wms-customer-create', 'project-b.spec.js')),
+    stat(path.resolve(projectARoot, 'cases', 'sample-form-submit', 'project-b.spec.js')),
     (error) => error.code === 'ENOENT'
   );
   assert.equal((await stat(projectA.databasePath)).isFile(), true);

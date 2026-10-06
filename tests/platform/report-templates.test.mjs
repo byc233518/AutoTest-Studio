@@ -90,12 +90,12 @@ test('计划执行使用当前启用的 HTML 模板生成报告', async (t) => {
   const cookie = await ctx.loginCookie('admin', 'Admin123!');
   const headers = { cookie, 'content-type': 'application/json' };
   const catalog = await (await ctx.fetch('/api/scenarios', { headers: { cookie } })).json();
-  const customer = catalog.scenarios.find((item) => item.key === 'wms-customer-create');
+  const customer = catalog.scenarios.find((item) => item.key === 'sample-form-submit');
 
   const form = new FormData();
   form.append('name', '模板执行数据');
   form.append('file', new Blob([
-    '客户编号,客户名称,联系人,客户类别,客户地址\nTPL-CUST-001,模板客户,测试员,自动化,上海'
+    '记录编码,记录名称,经办人,分类,说明\nTPL-001,模板记录,测试员,示例,说明'
   ], { type: 'text/csv' }), 'tpl-customers.csv');
   const dataset = await (await ctx.fetch(`/api/scenarios/${customer.key}/datasets`, {
     method: 'POST',

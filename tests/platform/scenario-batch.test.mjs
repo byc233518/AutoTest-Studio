@@ -59,23 +59,23 @@ async function waitForBatch(ctx, batchId) {
 test('批量移动目录会去重并在任一用例不存在时整体回滚', async (t) => {
   const ctx = await createTestContext(t, { desktopMode: true });
   const scenarios = await catalog(ctx);
-  const customer = scenarios.find((item) => item.key === 'wms-customer-create');
-  const vendor = scenarios.find((item) => item.key === 'wms-vendor-create');
+  const customer = scenarios.find((item) => item.key === 'sample-form-submit');
+  const vendor = scenarios.find((item) => item.key === 'sample-search');
 
   const movedResponse = await ctx.fetch('/api/scenarios/batch/move', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       scenarioIds: [customer.id, vendor.id, customer.id],
-      directory: 'WMS / 核心回归'
+      directory: '示例 / 核心回归'
     })
   });
   assert.equal(movedResponse.status, 200);
   const moved = await movedResponse.json();
   assert.equal(moved.moved, 2);
-  assert.equal(moved.directory, 'WMS / 核心回归');
+  assert.equal(moved.directory, '示例 / 核心回归');
   assert.deepEqual(moved.scenarios.map((item) => item.id), [customer.id, vendor.id]);
-  assert.equal(moved.scenarios.every((item) => item.module === 'WMS / 核心回归'), true);
+  assert.equal(moved.scenarios.every((item) => item.module === '示例 / 核心回归'), true);
   assert.equal(moved.scenarios[0].status, customer.status);
 
   const rejected = await ctx.fetch('/api/scenarios/batch/move', {
@@ -85,7 +85,7 @@ test('批量移动目录会去重并在任一用例不存在时整体回滚', as
   });
   assert.equal(rejected.status, 404);
   assert.deepEqual((await rejected.json()).missingScenarioIds, ['SCN-NOT-FOUND']);
-  assert.equal((await (await ctx.fetch(`/api/scenarios/${customer.key}`)).json()).module, 'WMS / 核心回归');
+  assert.equal((await (await ctx.fetch(`/api/scenarios/${customer.key}`)).json()).module, '示例 / 核心回归');
 });
 
 test('批量删除原子清理数据、计划和依赖，活动执行中的用例禁止删除', async (t) => {
@@ -101,7 +101,7 @@ test('批量删除原子清理数据、计划和依赖，活动执行中的用�
     name: '依赖用例',
     dependsOn: [first.key, second.key]
   });
-  const customer = (await catalog(ctx)).find((item) => item.key === 'wms-customer-create');
+  const customer = (await catalog(ctx)).find((item) => item.key === 'sample-form-submit');
   const dataset = await uploadDataset(ctx, first.key);
   const storedDataset = ctx.app.locals.database.getDatasetById(dataset.id);
   assert.equal(existsSync(storedDataset.file_path), true);
@@ -173,12 +173,12 @@ test('批量删除原子清理数据、计划和依赖，活动执行中的用�
 test('批量执行复用测试计划批次并自动选择最新有效数据', async (t) => {
   const ctx = await createTestContext(t, { desktopMode: true, mockRunStepDelayMs: 20 });
   const scenarios = await catalog(ctx);
-  const customer = scenarios.find((item) => item.key === 'wms-customer-create');
-  const vendor = scenarios.find((item) => item.key === 'wms-vendor-create');
+  const customer = scenarios.find((item) => item.key === 'sample-form-submit');
+  const vendor = scenarios.find((item) => item.key === 'sample-search');
   const form = new FormData();
   form.append('name', '客户批量执行数据');
   form.append('file', new Blob([
-    '客户编号,客户名称,联系人,客户类别,客户地址\nBATCH-CUST-001,批量客户,测试员,自动化,上海'
+    '记录编码,记录名称,经办人,分类,说明\nBATCH-001,批量记录,测试员,示例,说明'
   ], { type: 'text/csv' }), 'customers.csv');
   assert.equal((await ctx.fetch(`/api/scenarios/${customer.key}/datasets`, { method: 'POST', body: form })).status, 201);
 
@@ -361,7 +361,7 @@ test('用例和环境删除墓碑按项目隔离，显式重建同 key 后解除
   };
 
   let appA = await openProject(projectA);
-  const originalScenario = appA.locals.database.getScenarioByKey('wms-customer-create');
+  const originalScenario = appA.locals.database.getScenarioByKey('sample-form-submit');
   const originalEnvironment = appA.locals.database.getEnvironmentByKey('staging');
   appA.locals.database.deleteScenarios([originalScenario.id]);
   assert.equal(appA.locals.database.deleteEnvironment(originalEnvironment.id), true);

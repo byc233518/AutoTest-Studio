@@ -54,10 +54,10 @@ test('字段合并环返回明确错误而不是遗漏候选', () => {
 test('未编辑的 role 和 placeholder locator 保持原结构', () => {
   assert.equal(typeof reviewHelpers.buildAssertionPayload, 'function');
   const role = { kind: 'getByRole', value: '保存', role: 'button', options: { name: '保存', exact: true } };
-  const placeholder = { kind: 'getByPlaceholder', value: '请输入客户编号' };
+  const placeholder = { kind: 'getByPlaceholder', value: '请输入记录编码' };
 
   assert.deepEqual(reviewHelpers.buildAssertionPayload({ type: 'visible', target: '保存', originalTarget: '保存', locator: role }).locator, role);
-  assert.deepEqual(reviewHelpers.buildAssertionPayload({ type: 'value', target: '请输入客户编号', originalTarget: '请输入客户编号', expected: 'C001', locator: placeholder }).locator, placeholder);
+  assert.deepEqual(reviewHelpers.buildAssertionPayload({ type: 'value', target: '请输入记录编码', originalTarget: '请输入记录编码', expected: 'C001', locator: placeholder }).locator, placeholder);
 });
 
 test('编辑断言目标和切换 URL 类型会生成兼容 locator', () => {
@@ -73,19 +73,19 @@ test('编辑断言目标和切换 URL 类型会生成兼容 locator', () => {
   const asUrl = reviewHelpers.buildAssertionPayload({ type: 'url', target: '', expected: '/success', locator: editedRole.locator });
   assert.deepEqual(asUrl.locator, { kind: 'page' });
 
-  const fromUrl = reviewHelpers.buildAssertionPayload({ type: 'value', target: '客户编号', expected: 'C001', locator: { kind: 'page' } });
-  assert.deepEqual(fromUrl.locator, { kind: 'getByLabel', value: '客户编号' });
+  const fromUrl = reviewHelpers.buildAssertionPayload({ type: 'value', target: '记录编码', expected: 'C001', locator: { kind: 'page' } });
+  assert.deepEqual(fromUrl.locator, { kind: 'getByLabel', value: '记录编码' });
 });
 
 test('切换为 value 断言时即使目标未变也重建输入型 locator', () => {
   assert.equal(typeof reviewHelpers.buildAssertionPayload, 'function');
   const payload = reviewHelpers.buildAssertionPayload({
     type: 'value',
-    target: '客户编号',
-    originalTarget: '客户编号',
+    target: '记录编码',
+    originalTarget: '记录编码',
     expected: 'C001',
-    locator: { kind: 'getByText', value: '客户编号' }
+    locator: { kind: 'getByText', value: '记录编码' }
   });
 
-  assert.deepEqual(payload.locator, { kind: 'getByLabel', value: '客户编号' });
+  assert.deepEqual(payload.locator, { kind: 'getByLabel', value: '记录编码' });
 });

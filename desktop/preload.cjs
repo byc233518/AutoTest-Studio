@@ -9,6 +9,8 @@ const channels = Object.freeze({
   removeProject: 'autotest:projects:remove',
   revealProject: 'autotest:projects:reveal',
   chooseProjectDirectory: 'autotest:dialog:choose-project-directory',
+  exportProject: 'autotest:projects:export',
+  importProject: 'autotest:projects:import',
   openExternal: 'autotest:shell:open-external',
   getTheme: 'autotest:preferences:get-theme',
   setTheme: 'autotest:preferences:set-theme'
@@ -24,6 +26,8 @@ const desktopApi = Object.freeze({
   removeProject: (projectId) => ipcRenderer.invoke(channels.removeProject, projectId),
   revealProject: (projectId) => ipcRenderer.invoke(channels.revealProject, projectId),
   chooseProjectDirectory: (options) => ipcRenderer.invoke(channels.chooseProjectDirectory, options),
+  exportProject: () => ipcRenderer.invoke(channels.exportProject),
+  importProject: (input) => ipcRenderer.invoke(channels.importProject, input),
   openExternal: (url) => ipcRenderer.invoke(channels.openExternal, url),
   getTheme: () => ipcRenderer.invoke(channels.getTheme),
   setTheme: (theme) => ipcRenderer.invoke(channels.setTheme, theme)

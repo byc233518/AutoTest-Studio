@@ -38,7 +38,7 @@
           <el-input v-model="form.name" maxlength="80" show-word-limit />
         </el-form-item>
         <el-form-item label="用例 key" prop="key">
-          <el-input v-model="form.key" :disabled="editing" placeholder="如 wms-customer-create" />
+          <el-input v-model="form.key" :disabled="editing" placeholder="如 sample-form-submit" />
         </el-form-item>
         <el-form-item label="优先级" prop="priority">
           <el-select v-model="form.priority" class="wide">

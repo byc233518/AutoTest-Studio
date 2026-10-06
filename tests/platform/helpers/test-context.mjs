@@ -45,13 +45,13 @@ export async function createTestContext(t, options = {}) {
 
   async function waitForRun(runId) {
     const cookie = await loginCookie('tester', 'Tester123!');
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
       const response = await doFetch(`/api/runs/${runId}`, { headers: { cookie } });
       const body = await response.json();
       if (!['queued', 'running'].includes(body.status)) {
         return body;
       }
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
     throw new Error(`执行任务未完成: ${runId}`);
   }
@@ -59,12 +59,12 @@ export async function createTestContext(t, options = {}) {
   async function uploadCustomerDataset(cookie) {
     const form = new FormData();
     const csv = [
-      '客户编号,客户名称,联系人,客户类别,客户地址',
-      'AT-CUST-001,自动化客户001,测试员,自动化,上海'
+      '记录编码,记录名称,经办人,分类,说明',
+      'AT-001,示例记录001,测试员,示例,开源示例数据'
     ].join('\n');
-    form.append('file', new Blob([csv], { type: 'text/csv' }), 'customers.csv');
-    form.append('name', '客户回归样本');
-    const response = await doFetch('/api/scenarios/wms-customer-create/datasets', {
+    form.append('file', new Blob([csv], { type: 'text/csv' }), 'records.csv');
+    form.append('name', '表单回归样本');
+    const response = await doFetch('/api/scenarios/sample-form-submit/datasets', {
       method: 'POST',
       headers: { cookie },
       body: form

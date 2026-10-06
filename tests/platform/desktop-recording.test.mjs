@@ -11,7 +11,7 @@ test('桌面内置录制进程结束后自动绑定脚本并进入完成态', as
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      scenarioKey: 'wms-customer-create',
+      scenarioKey: 'sample-form-submit',
       environmentKey: 'test',
       location: 'server'
     })
@@ -30,8 +30,8 @@ test('桌面内置录制进程结束后自动绑定脚本并进入完成态', as
   }
   assert.equal(completed.status, 'finished');
   assert.match(completed.scriptEntry, /REC-.*\.spec\.js$/);
-  assert.equal(completed.scenarioKey, 'wms-customer-create');
-  const scenario = await ctx.fetch('/api/scenarios/wms-customer-create').then((response) => response.json());
+  assert.equal(completed.scenarioKey, 'sample-form-submit');
+  const scenario = await ctx.fetch('/api/scenarios/sample-form-submit').then((response) => response.json());
   assert.equal(scenario.scriptEntry, completed.scriptEntry);
 });
 
@@ -49,7 +49,7 @@ test('桌面录制在未检测到系统浏览器时返回明确错误', async (t
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      scenarioKey: 'wms-customer-create',
+      scenarioKey: 'sample-form-submit',
       environmentKey: 'test',
       location: 'server'
     })

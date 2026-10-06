@@ -66,7 +66,7 @@ test('桌面模式自动使用本地用户并应用项目元数据', async (t) =
     description: '项目本地离线工作区'
   });
   assert.equal(JSON.stringify(body.project).includes(projectRoot), false);
-  assert.equal(body.scenarios.length, 15);
+  assert.equal(body.scenarios.length, 4);
   assert.equal(body.scenarios.some((scenario) => scenario.id.startsWith('SCN-AUTO-')), false);
 
   const environments = await fetch(`${handle.origin}/api/environments`);
@@ -149,20 +149,20 @@ test('桌面项目重启后保留环境、目录和项目脚本修改', async (t
     })
   });
   assert.equal(environment.status, 200);
-  const scenario = await fetch(`${handle.origin}/api/scenarios/wms-customer-create`, {
+  const scenario = await fetch(`${handle.origin}/api/scenarios/sample-form-submit`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ module: 'WMS/主数据/客户定制', name: '客户回归定制用例' })
+    body: JSON.stringify({ module: '示例/表单/定制', name: '表单回归定制用例' })
   });
   assert.equal(scenario.status, 200);
   const scriptContent = "const { test } = require('@playwright/test');\ntest('desktop project script', async () => {});\n";
-  const script = await fetch(`${handle.origin}/api/scenarios/wms-customer-create/script`, {
+  const script = await fetch(`${handle.origin}/api/scenarios/sample-form-submit/script`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ fileName: 'customer.spec.js', content: scriptContent })
   });
   assert.equal(script.status, 200);
-  assert.match((await script.json()).scriptEntry, /^platform-data\/cases\/wms-customer-create\/customer\.spec\.js$/);
+  assert.match((await script.json()).scriptEntry, /^platform-data\/cases\/sample-form-submit\/customer\.spec\.js$/);
 
   await handle.close();
   handle = null;
@@ -174,10 +174,10 @@ test('桌面项目重启后保留环境、目录和项目脚本修改', async (t
   assert.equal(restoredEnvironment.username, 'desktop-user');
   assert.deepEqual(restoredEnvironment.variables, [{ key: 'warehouseCode', value: 'WH-DESKTOP' }]);
   assert.equal(handle.app.locals.database.getEnvironmentById('ENV-TEST').password, 'desktop-secret');
-  const restoredScenario = await fetch(`${handle.origin}/api/scenarios/wms-customer-create`).then((response) => response.json());
-  assert.equal(restoredScenario.name, '客户回归定制用例');
-  assert.equal(restoredScenario.module, 'WMS/主数据/客户定制');
-  const restoredScript = await fetch(`${handle.origin}/api/scenarios/wms-customer-create/script`).then((response) => response.json());
+  const restoredScenario = await fetch(`${handle.origin}/api/scenarios/sample-form-submit`).then((response) => response.json());
+  assert.equal(restoredScenario.name, '表单回归定制用例');
+  assert.equal(restoredScenario.module, '示例/表单/定制');
+  const restoredScript = await fetch(`${handle.origin}/api/scenarios/sample-form-submit/script`).then((response) => response.json());
   assert.equal(restoredScript.content, scriptContent);
 });
 
@@ -212,7 +212,7 @@ test('桌面模式启动时恢复异常退出遗留任务并作废本地凭证',
   try {
     crashedApp = await createApp(appOptions);
     const database = crashedApp.locals.database;
-    const scenario = database.getScenarioByKey('wms-customer-create');
+    const scenario = database.getScenarioByKey('sample-form-submit');
     const environment = database.getDefaultEnvironment();
     const localRunId = 'RUN-RECOVERY-LOCAL';
 
