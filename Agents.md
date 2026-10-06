@@ -5,7 +5,7 @@
 AutoTest Studio 是通用的浏览器 UI 自动化测试工作台。  
 不绑定特定业务领域：任意可在 Chrome / Edge 中访问的 Web 系统，都可通过「项目 + 环境 + 用例 + 数据 + 执行 + 报告」完成回归。
 
-默认以 Windows 桌面客户端离线运行；同时保留 Express Web API，便于本地调试与后续服务端接入。每个项目有独立目录与 SQLite 数据库，适合同时服务多套被测系统。
+默认以 Windows 桌面客户端离线运行。每个项目有独立目录与 SQLite 数据库，适合同时服务多套被测系统。
 
 ## 产品定位
 
@@ -25,10 +25,9 @@ AutoTest Studio 是通用的浏览器 UI 自动化测试工作台。
 | 桌面壳 | Electron 40 + electron-builder |
 | 前端 | Vue 3 + Vue Router + Pinia + Element Plus + Vite 7 |
 | 编辑器 | CodeMirror 6 |
-| 后端 / API | Node.js 22+、Express 5、SQLite |
+| 后端 / API | Node.js 22+、Express 5、SQLite（桌面内嵌） |
 | 自动化引擎 | Playwright |
-| 本地录制器 | .NET 10 WinForms（绿色免安装包） |
-| 可选部署 | Docker Compose |
+| 本地录制器 | 桌面客户端内录制（Playwright codegen） |
 
 ## 如何接入任意被测系统
 
@@ -50,12 +49,12 @@ AutoTest Studio 是通用的浏览器 UI 自动化测试工作台。
 
 - [x] 多项目桌面工作台与 Vue 3 + Element Plus 前端
 - [x] 用例树、数据集、脚本录制/编辑、多环境执行
-- [x] 测试计划与 Markdown / HTML 报告、截图与录像
-- [x] AI 测试数据生成（LLM + 规则回退）
+- [x] 测试计划与 Markdown / HTML / Word 报告模板、截图与录像
+- [x] AI 测试数据生成与计划总结（LLM + 规则回退）
 - [x] 自愈定位器基础版（候选链）
 - [x] 示例被测系统：制造业 MES/WMS 核心场景沉淀
 
-完善路线图见：`docs/superpowers/specs/2026-07-09-完善路线图-design.md`
+测试人员操作见：`docs/测试人员使用手册.md`。
 
 ---
 

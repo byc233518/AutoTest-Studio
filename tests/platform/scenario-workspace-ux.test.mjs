@@ -73,10 +73,9 @@ test('用例工作区保留五个页签并接入统一工作流组件', async ()
   assert.match(source, /DatasetMigrationDialog/);
   assert.match(source, /@migration-required="schemaMigrationRequired"/);
   assert.match(source, /ScenarioReleases/);
-  assert.match(source, /desktopLaunchUrl/);
-  assert.match(source, /window\.location\.href/);
-  assert.match(source, /复制录制码/);
-  assert.match(source, /下载免安装录制器/);
+  assert.doesNotMatch(source, /desktopLaunchUrl/);
+  assert.doesNotMatch(source, /下载免安装录制器/);
+  assert.doesNotMatch(source, /复制录制码/);
   assert.match(source, /刷新状态/);
   assert.match(source, /analysis/);
 });

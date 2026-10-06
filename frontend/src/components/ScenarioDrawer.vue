@@ -142,17 +142,8 @@
         <el-button type="primary" :icon="VideoCamera" :loading="recordLoading" @click="startRecord">开始录制</el-button>
         <div v-if="recording" class="record-command">
           <strong>录制状态：{{ recordStatus }}</strong>
-          <div v-if="!isDesktop" class="record-fallback">
-            <el-text tag="code" size="large">{{ recording.recordCode || '等待录制码' }}</el-text>
-            <p>录制码有效期：{{ formatDate(recording.recordCodeExpires) }}</p>
-            <div class="drawer-actions">
-              <el-button type="primary" :disabled="!recording.recordCode" @click="copyRecordCode">复制录制码</el-button>
-              <el-button :disabled="!recording.recorderDownloadUrl" @click="downloadRecorder">下载免安装录制器</el-button>
-            </div>
-          </div>
           <p v-if="recording.status === 'failed'" class="error-text">{{ recording.error || '录制失败，请重新开始录制' }}</p>
-          <p v-else-if="isDesktop && recording.status !== 'finished' && recording.status !== 'draft'">录制窗口已打开；完成操作并关闭录制窗口后，脚本会自动绑定到当前用例。</p>
-          <p v-else-if="recording.status !== 'finished' && recording.status !== 'draft'">在免安装录制器中输入录制码；关闭 Inspector 后脚本会自动上传并绑定。</p>
+          <p v-else-if="recording.status !== 'finished' && recording.status !== 'draft'">录制窗口已打开；完成操作并关闭录制窗口后，脚本会自动绑定到当前用例。</p>
           <p v-else>脚本已上传：{{ recording.scriptEntry || '等待复核' }}</p>
           <el-button :loading="recordLoading" @click="refresh">刷新状态</el-button>
         </div>
@@ -641,27 +632,17 @@ async function startRecord() {
       body: JSON.stringify({
         scenarioKey: request.scenarioKey,
         environmentKey: environment.value,
-        location: window.autotestDesktop ? 'server' : 'local'
+        location: 'server'
       })
     });
     if (!isCurrentRecordingRequest(request)) return;
     recording.value = result;
     startRecordPolling();
-    if (recording.value.desktopLaunchUrl) window.location.href = recording.value.desktopLaunchUrl;
   } catch (error) {
     if (isCurrentRecordingRequest(request)) ElMessage.error(error.message);
   } finally {
     if (isCurrentRecordingRequest(request)) recordLoading.value = false;
   }
-}
-
-async function copyRecordCode() {
-  await navigator.clipboard.writeText(recording.value.recordCode);
-  ElMessage.success('录制码已复制');
-}
-
-function downloadRecorder() {
-  window.open(recording.value.recorderDownloadUrl, '_blank', 'noopener');
 }
 
 function formatDate(value) {
