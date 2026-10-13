@@ -44,7 +44,9 @@ jobs:
         run: npm run build:web
 
       - name: Package desktop installer
-        run: npx electron-builder --config electron-builder.config.cjs --win nsis --x64
+        # --publish never: tag pushes would otherwise make electron-builder try GitHub publish and require GH_TOKEN.
+        # Softprops uploads the installer in a later step with GITHUB_TOKEN.
+        run: npx electron-builder --config electron-builder.config.cjs --win nsis --x64 --publish never
         env:
           # Skip code signing on CI unless secrets are provided
           CSC_IDENTITY_AUTO_DISCOVERY: false
