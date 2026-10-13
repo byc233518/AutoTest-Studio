@@ -11,16 +11,24 @@
 
       <div class="login-capabilities">
         <article>
+          <span class="capability-tag">用例</span>
           <h3>场景管理</h3>
-          <small>脚本、数据、环境与依赖统一沉淀</small>
+          <small>脚本、数据集、环境与依赖统一沉淀，支持录制与版本归档</small>
         </article>
         <article>
-          <h3>执行闭环</h3>
-          <small>预检、执行、过程与结果全程追踪</small>
+          <span class="capability-tag">执行</span>
+          <h3>测试执行</h3>
+          <small>无头 / 有头 / UI 模式，多环境切换，按 scriptEntry 精确跑 Playwright</small>
         </article>
         <article>
-          <h3>证据回放</h3>
-          <small>步骤、截图、录像与报告集中查看</small>
+          <span class="capability-tag">过程</span>
+          <h3>过程记录</h3>
+          <small>步骤轨迹、过程截图、录像回放与失败上下文一站留存</small>
+        </article>
+        <article>
+          <span class="capability-tag">报告</span>
+          <h3>测试报告</h3>
+          <small>计划汇总与单次结果，Markdown / HTML / Word，模板可配置</small>
         </article>
       </div>
     </section>
