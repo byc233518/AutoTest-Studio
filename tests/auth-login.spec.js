@@ -5,8 +5,8 @@ const { rowsFor, shouldRun, testRowTitle } = require('./support/dataset');
 test.skip(!shouldRun('auth-login'), '平台本次未选择登录场景');
 
 const rows = rowsFor('auth-login', () => ({
-  用户名: process.env.AUTOTEST_USERNAME || 'byc',
-  密码: process.env.AUTOTEST_PASSWORD || 'Abcd1234'
+  用户名: process.env.AUTOTEST_USERNAME || 'demo',
+  密码: process.env.AUTOTEST_PASSWORD || ''
 }));
 
 for (const row of rows) {

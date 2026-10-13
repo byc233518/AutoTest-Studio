@@ -11,43 +11,43 @@ const repositories = [
     key: 'base',
     label: '基座系统',
     appId: 'APP-BASE',
-    frontend: process.env.AUTOTEST_BASE_FRONTEND || 'F:\\workspace\\jmom\\jmom.vue',
-    backend: process.env.AUTOTEST_BASE_BACKEND || 'F:\\workspace\\jmom\\ims-jmom'
+    frontend: process.env.AUTOTEST_BASE_FRONTEND || '',
+    backend: process.env.AUTOTEST_BASE_BACKEND || ''
   },
   {
     key: 'mes',
     label: '制造执行',
     appId: 'APP-MES',
-    frontend: process.env.AUTOTEST_MES_FRONTEND || 'F:\\workspace\\jmom\\imes.vue',
-    backend: process.env.AUTOTEST_MES_BACKEND || 'F:\\workspace\\jmom\\imes.api'
+    frontend: process.env.AUTOTEST_MES_FRONTEND || '',
+    backend: process.env.AUTOTEST_MES_BACKEND || ''
   },
   {
     key: 'wms',
     label: '仓储管理',
     appId: 'APP-WMS',
-    frontend: process.env.AUTOTEST_WMS_FRONTEND || 'F:\\workspace\\jmom\\iWMS5.Vue',
-    backend: process.env.AUTOTEST_WMS_BACKEND || 'F:\\workspace\\jmom\\iWMS5'
+    frontend: process.env.AUTOTEST_WMS_FRONTEND || '',
+    backend: process.env.AUTOTEST_WMS_BACKEND || ''
   },
   {
     key: 'qms',
     label: '质量管理',
     appId: 'APP-QMS',
-    frontend: process.env.AUTOTEST_QMS_FRONTEND || 'F:\\workspace\\jmom\\IQMS.VUE',
-    backend: process.env.AUTOTEST_QMS_BACKEND || 'F:\\workspace\\IQMS'
+    frontend: process.env.AUTOTEST_QMS_FRONTEND || '',
+    backend: process.env.AUTOTEST_QMS_BACKEND || ''
   },
   {
     key: 'tpm',
     label: '设备管理',
     appId: 'APP-TPM',
-    frontend: process.env.AUTOTEST_TPM_FRONTEND || 'F:\\workspace\\jmom\\itpm.vue',
-    backend: process.env.AUTOTEST_TPM_BACKEND || 'F:\\workspace\\jmom\\ITPM.API'
+    frontend: process.env.AUTOTEST_TPM_FRONTEND || '',
+    backend: process.env.AUTOTEST_TPM_BACKEND || ''
   },
   {
     key: 'legacyMes',
     label: '旧版制造执行',
     appId: 'APP-LEGACY-MES',
-    frontend: process.env.AUTOTEST_LEGACY_MES_FRONTEND || 'F:\\workspace\\ims.vue.d2',
-    backend: process.env.AUTOTEST_LEGACY_MES_BACKEND || 'F:\\workspace\\jz.ims'
+    frontend: process.env.AUTOTEST_LEGACY_MES_FRONTEND || '',
+    backend: process.env.AUTOTEST_LEGACY_MES_BACKEND || ''
   }
 ];
 

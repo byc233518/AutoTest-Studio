@@ -1,9 +1,27 @@
 # AutoTest Studio
 
-这是通用的 Windows 桌面自动化测试客户端，面向任意浏览器 Web 系统。  
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-22%2B-green.svg)](https://nodejs.org/)
+[![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](https://github.com/byc233518/AutoTest-Studio)
+
+通用的 Windows 桌面自动化测试客户端，面向任意浏览器 Web 系统。  
 默认本机离线运行：Playwright 脚本、测试数据、执行环境、测试计划和报告保存在项目目录中；不同项目使用独立数据库和物理目录。新建项目默认放到安装目录下的 `projects` 文件夹（不可写时回退到用户数据目录）。
 
 被测对象不绑定行业：通过项目内的「环境配置」指定 Base URL、账号与变量即可切换客户或产品。新项目默认带 Bing 公开站点上的几条通用操作示例。
+
+## 界面预览
+
+| 登录 | 用例库 |
+|:---:|:---:|
+| ![登录页](docs/images/01-login.png) | ![用例库](docs/images/02-cases.png) |
+
+| 测试计划 | 执行报告 |
+|:---:|:---:|
+| ![测试计划](docs/images/03-plans.png) | ![执行报告](docs/images/04-reports.png) |
+
+| 环境配置 |
+|:---:|
+| ![环境配置](docs/images/05-environments.png) |
 
 ## 技术栈
 
@@ -15,7 +33,7 @@
 | 自动化 | Playwright（优先本机 Chrome，其次 Edge） |
 | 本地录制器 | 桌面客户端内录制（Playwright codegen） |
 
-示例被测系统的仓库路径见 `AGENTS.md` 附录、`docs/项目索引.md`。
+示例被测系统索引（可忽略）：`AGENTS.md` 附录、`docs/项目索引.md`。仓库路径请用 `.env` / 环境变量配置，见 `.env.example`。
 
 ## 核心能力
 
@@ -236,3 +254,9 @@ npm start
 - 部署与安全：`docs/部署与安全说明.md`
 - 前端开发：`docs/Vue前端开发说明.md`
 - 示例被测系统索引：`docs/项目索引.md`
+- 贡献指南：`CONTRIBUTING.md`
+- 安全披露：`SECURITY.md`
+
+## License
+
+[MIT](./LICENSE)

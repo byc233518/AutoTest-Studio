@@ -1,9 +1,18 @@
 {
     "name": "autotest-studio",
     "version": "0.1.0",
-    "private": true,
+    "private": false,
+    "license": "MIT",
     "main": "desktop/main.mjs",
-    "description": "AutoTest Studio",
+    "description": "AutoTest Studio — desktop UI test automation workbench for any web system",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/byc233518/AutoTest-Studio.git"
+    },
+    "bugs": {
+        "url": "https://github.com/byc233518/AutoTest-Studio/issues"
+    },
+    "homepage": "https://github.com/byc233518/AutoTest-Studio#readme",
     "scripts": {
         "start": "node server/index.mjs",
         "dev": "node --watch server/index.mjs",

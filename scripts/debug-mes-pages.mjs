@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { login } = require('../tests/support/autotest-ui.js');
-const baseURL = process.env.AUTOTEST_BASE_URL || 'http://172.16.100.11:46069';
+const baseURL = process.env.AUTOTEST_BASE_URL || 'https://www.bing.com';
 
 async function probe(page, hashPath, buttonText) {
   await page.goto(`${baseURL}/#${hashPath}`, { waitUntil: 'domcontentloaded' });

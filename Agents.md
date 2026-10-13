@@ -69,10 +69,11 @@ AutoTest Studio 是通用的浏览器 UI 自动化测试工作台。
 
 ### 历史样例环境（可选）
 
-- 地址: http://172.16.100.11:46069/
-- 账号: byc
-- 密码: Abcd1234
-- 数据库: Oracle `172.16.100.11:1521`（用户 `JMOM` / `JZMES123`）
+在「环境配置」或 `.env` 中自行填写，**不要**把真实账号密码提交进仓库：
+
+- 地址: `https://your-app.example.com/`（或内网 Base URL）
+- 账号 / 密码: 使用项目环境变量 `AUTOTEST_USERNAME` / `AUTOTEST_PASSWORD`
+- 数据库（如需）：通过私有配置或本地 `.env` 维护，勿写入公开文档
 
 ### 示例技术栈（按仓库现状）
 
@@ -86,14 +87,16 @@ AutoTest Studio 是通用的浏览器 UI 自动化测试工作台。
 
 ### 示例代码仓库
 
-| 系统 | 前端 | 后端 |
-|------|------|------|
-| 基座 | `F:\workspace\jmom\jmom.vue` | `F:\workspace\jmom\ims-jmom` |
-| MES | `F:\workspace\jmom\imes.vue` | `F:\workspace\jmom\imes.api` |
-| WMS | `F:\workspace\jmom\iWMS5.Vue` | `F:\workspace\jmom\iWMS5` |
-| QMS | `F:\workspace\jmom\IQMS.VUE` | `F:\workspace\IQMS` |
-| TPM | `F:\workspace\jmom\itpm.vue` | `F:\workspace\jmom\ITPM.API` |
-| 旧 MES | `F:\workspace\ims.vue.d2` | `F:\workspace\jz.ims` |
+扫描路径通过环境变量配置（见 `.env.example`），例如：
+
+| 系统 | 前端变量 | 后端变量 |
+|------|----------|----------|
+| 基座 | `AUTOTEST_BASE_FRONTEND` | `AUTOTEST_BASE_BACKEND` |
+| MES | `AUTOTEST_MES_FRONTEND` | `AUTOTEST_MES_BACKEND` |
+| WMS | `AUTOTEST_WMS_FRONTEND` | `AUTOTEST_WMS_BACKEND` |
+| QMS | `AUTOTEST_QMS_FRONTEND` | `AUTOTEST_QMS_BACKEND` |
+| TPM | `AUTOTEST_TPM_FRONTEND` | `AUTOTEST_TPM_BACKEND` |
+| 旧 MES | `AUTOTEST_LEGACY_MES_FRONTEND` | `AUTOTEST_LEGACY_MES_BACKEND` |
 
 SRM 为独立系统，当前示例扫描不包含它。
 

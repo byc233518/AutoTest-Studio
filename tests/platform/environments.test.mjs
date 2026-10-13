@@ -41,8 +41,8 @@ test('任意登录用户都可以创建新环境', async (t) => {
       key: 'dev',
       name: '开发环境',
       baseUrl: 'http://127.0.0.1:3000',
-      username: 'byc',
-      password: 'Abcd1234',
+      username: 'demo',
+      password: 'DevPass123!',
       variables: [
         { key: 'warehouseCode', value: 'WH-DEV-01' },
         { key: 'approvalRequired', value: false }

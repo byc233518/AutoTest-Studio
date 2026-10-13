@@ -16,8 +16,8 @@
     {
       "key": "base",
       "label": "基座系统",
-      "frontend": "F:\\workspace\\jmom\\jmom.vue",
-      "backend": "F:\\workspace\\jmom\\ims-jmom",
+      "frontend": "$AUTOTEST_BASE_FRONTEND",
+      "backend": "$AUTOTEST_BASE_BACKEND",
       "scenarios": 217,
       "testCases": 1000,
       "controllers": 48
@@ -25,8 +25,8 @@
     {
       "key": "mes",
       "label": "制造执行",
-      "frontend": "F:\\workspace\\jmom\\imes.vue",
-      "backend": "F:\\workspace\\jmom\\imes.api",
+      "frontend": "$AUTOTEST_MES_FRONTEND",
+      "backend": "$AUTOTEST_MES_BACKEND",
       "scenarios": 71,
       "testCases": 324,
       "controllers": 156
@@ -34,8 +34,8 @@
     {
       "key": "wms",
       "label": "仓储管理",
-      "frontend": "F:\\workspace\\jmom\\iWMS5.Vue",
-      "backend": "F:\\workspace\\jmom\\iWMS5",
+      "frontend": "$AUTOTEST_WMS_FRONTEND",
+      "backend": "$AUTOTEST_WMS_BACKEND",
       "scenarios": 140,
       "testCases": 571,
       "controllers": 145
@@ -43,8 +43,8 @@
     {
       "key": "qms",
       "label": "质量管理",
-      "frontend": "F:\\workspace\\jmom\\IQMS.VUE",
-      "backend": "F:\\workspace\\IQMS",
+      "frontend": "$AUTOTEST_QMS_FRONTEND",
+      "backend": "$AUTOTEST_QMS_BACKEND",
       "scenarios": 13,
       "testCases": 83,
       "controllers": 10
@@ -52,8 +52,8 @@
     {
       "key": "tpm",
       "label": "设备管理",
-      "frontend": "F:\\workspace\\jmom\\itpm.vue",
-      "backend": "F:\\workspace\\jmom\\ITPM.API",
+      "frontend": "$AUTOTEST_TPM_FRONTEND",
+      "backend": "$AUTOTEST_TPM_BACKEND",
       "scenarios": 36,
       "testCases": 206,
       "controllers": 72
@@ -61,8 +61,8 @@
     {
       "key": "legacyMes",
       "label": "旧版制造执行",
-      "frontend": "F:\\workspace\\ims.vue.d2",
-      "backend": "F:\\workspace\\jz.ims",
+      "frontend": "$AUTOTEST_LEGACY_MES_FRONTEND",
+      "backend": "$AUTOTEST_LEGACY_MES_BACKEND",
       "scenarios": 322,
       "testCases": 1251,
       "controllers": 351
