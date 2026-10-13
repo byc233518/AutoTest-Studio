@@ -4,14 +4,14 @@
       <template #header>
         <div class="card-header">
           <div>
-            <h2>AI 设置</h2>
-            <span class="muted">选择常用供应商，自动填充接口地址和推荐模型</span>
+            <h2>{{ t('ai.title') }}</h2>
+            <span class="muted">{{ t('ai.subtitle') }}</span>
           </div>
         </div>
       </template>
 
       <el-form :model="form" label-position="top" class="settings-form">
-        <el-form-item label="供应商预设">
+        <el-form-item :label="t('ai.preset')">
           <el-select v-model="selectedPreset" class="wide" @change="applyPreset">
             <el-option
               v-for="preset in presets"
@@ -23,10 +23,10 @@
         </el-form-item>
 
         <div class="config-grid">
-          <el-form-item label="供应商">
+          <el-form-item :label="t('ai.provider')">
             <el-input v-model="form.provider" :disabled="selectedPreset !== 'custom'" />
           </el-form-item>
-          <el-form-item label="模型">
+          <el-form-item :label="t('ai.model')">
             <div class="model-field">
               <el-select
                 v-model="form.model"
@@ -35,7 +35,7 @@
                 allow-create
                 default-first-option
                 clearable
-                placeholder="选择或输入模型名称"
+                :placeholder="t('ai.modelPlaceholder')"
               >
                 <el-option
                   v-for="item in modelOptions"
@@ -44,12 +44,12 @@
                   :value="item"
                 />
               </el-select>
-              <el-tooltip content="从供应商刷新模型列表">
+              <el-tooltip :content="t('ai.refreshModels')">
                 <el-button
                   :icon="Refresh"
                   circle
                   :loading="loadingModels"
-                  aria-label="从供应商刷新模型列表"
+                  :aria-label="t('ai.refreshModels')"
                   @click="refreshModels"
                 />
               </el-tooltip>
@@ -58,22 +58,22 @@
         </div>
 
         <el-form-item label="Base URL">
-          <el-input v-model="form.baseUrl" placeholder="兼容 OpenAI 的接口地址" />
+          <el-input v-model="form.baseUrl" :placeholder="t('ai.baseUrlPlaceholder')" />
         </el-form-item>
         <el-form-item label="API Key">
           <el-input
             v-model="form.apiKey"
             type="password"
             show-password
-            :placeholder="current.apiKeyMasked || '输入 API Key'"
+            :placeholder="current.apiKeyMasked || t('ai.apiKeyPlaceholder')"
           />
         </el-form-item>
 
-        <el-switch v-model="form.enabled" active-text="启用 AI 数据生成" />
+        <el-switch v-model="form.enabled" :active-text="t('ai.enable')" />
 
         <div class="form-actions">
-          <el-button type="primary" :loading="saving" @click="save">保存设置</el-button>
-          <el-button :loading="testing" @click="testConnection">测试连接</el-button>
+          <el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
+          <el-button :loading="testing" @click="testConnection">{{ t('ai.test') }}</el-button>
         </div>
       </el-form>
     </el-card>
@@ -81,12 +81,15 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { api } from '../api';
+import { useI18n } from '../i18n';
 
-const presets = [
+const { t } = useI18n();
+
+const presetDefs = [
   {
     value: 'deepseek',
     label: 'DeepSeek',
@@ -103,21 +106,21 @@ const presets = [
   },
   {
     value: 'qwen',
-    label: '通义千问',
+    labelKey: 'ai.qwen',
     provider: 'qwen',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     model: 'qwen-plus'
   },
   {
     value: 'zhipu',
-    label: '智谱 GLM',
+    labelKey: 'ai.zhipu',
     provider: 'zhipu',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     model: 'glm-4-flash'
   },
   {
     value: 'kimi',
-    label: '月之暗面 Kimi',
+    labelKey: 'ai.kimi',
     provider: 'kimi',
     baseUrl: 'https://api.moonshot.cn/v1',
     model: 'moonshot-v1-8k'
@@ -131,19 +134,24 @@ const presets = [
   },
   {
     value: 'siliconflow',
-    label: '硅基流动',
+    labelKey: 'ai.siliconflow',
     provider: 'siliconflow',
     baseUrl: 'https://api.siliconflow.cn/v1',
     model: 'deepseek-ai/DeepSeek-V3'
   },
   {
     value: 'custom',
-    label: '自定义',
+    labelKey: 'ai.custom',
     provider: '',
     baseUrl: '',
     model: ''
   }
 ];
+
+const presets = computed(() => presetDefs.map((item) => ({
+  ...item,
+  label: item.labelKey ? t(item.labelKey) : item.label
+})));
 
 const current = ref({});
 const selectedPreset = ref('deepseek');
@@ -165,7 +173,7 @@ onMounted(async () => {
     if (current.value.provider) {
       Object.assign(form, { ...current.value, apiKey: '' });
     }
-    selectedPreset.value = presets.find((item) =>
+    selectedPreset.value = presetDefs.find((item) =>
       item.provider === form.provider && item.baseUrl === form.baseUrl
     )?.value || 'custom';
     seedModelOptions(form.model);
@@ -177,13 +185,13 @@ onMounted(async () => {
 function seedModelOptions(model) {
   const next = new Set(modelOptions.value);
   if (model) next.add(model);
-  const preset = presets.find((item) => item.value === selectedPreset.value);
+  const preset = presetDefs.find((item) => item.value === selectedPreset.value);
   if (preset?.model) next.add(preset.model);
   modelOptions.value = [...next].filter(Boolean);
 }
 
 function applyPreset(value) {
-  const preset = presets.find((item) => item.value === value);
+  const preset = presetDefs.find((item) => item.value === value);
   if (value === 'custom') {
     Object.assign(form, { provider: '', baseUrl: '', model: '' });
     modelOptions.value = [];
@@ -199,11 +207,11 @@ function applyPreset(value) {
 
 async function refreshModels() {
   if (!form.baseUrl.trim()) {
-    ElMessage.warning('请先填写 Base URL');
+    ElMessage.warning(t('ai.needBaseUrl'));
     return;
   }
   if (!form.apiKey.trim() && !current.value.apiKeyMasked) {
-    ElMessage.warning('请先填写 API Key');
+    ElMessage.warning(t('ai.needApiKey'));
     return;
   }
   loadingModels.value = true;
@@ -223,7 +231,7 @@ async function refreshModels() {
     if (!form.model && models.length) {
       form.model = models[0];
     }
-    ElMessage.success(`已获取 ${models.length} 个模型`);
+    ElMessage.success(t('ai.modelsFetched', { count: models.length }));
   } catch (error) {
     ElMessage.error(error.message);
   } finally {
@@ -240,7 +248,7 @@ async function save() {
     });
     form.apiKey = '';
     seedModelOptions(form.model);
-    ElMessage.success('AI 设置已保存');
+    ElMessage.success(t('ai.saved'));
   } catch (error) {
     ElMessage.error(error.message);
   } finally {
@@ -250,11 +258,11 @@ async function save() {
 
 async function testConnection() {
   if (!form.baseUrl.trim() || !form.model.trim()) {
-    ElMessage.warning('请先填写 Base URL 和模型');
+    ElMessage.warning(t('ai.needBaseUrlAndModel'));
     return;
   }
   if (!form.apiKey.trim() && !current.value.apiKeyMasked) {
-    ElMessage.warning('请先填写 API Key');
+    ElMessage.warning(t('ai.needApiKey'));
     return;
   }
   testing.value = true;

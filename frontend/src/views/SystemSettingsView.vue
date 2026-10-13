@@ -4,21 +4,25 @@
       <template #header>
         <div class="card-header">
           <div>
-            <h2>系统设置</h2>
-            <span class="muted">配置界面主题、测试浏览器和报告落款</span>
+            <h2>{{ t('settings.title') }}</h2>
+            <span class="muted">{{ t('settings.subtitle') }}</span>
           </div>
-          <el-button type="primary" :loading="saving" @click="save">保存设置</el-button>
+          <el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
         </div>
       </template>
 
       <el-form v-loading="loading" :model="form" label-position="top" class="settings-form">
         <section class="settings-section">
           <div class="section-heading">
-            <strong>外观</strong>
-            <span>主题设置保存在当前电脑。</span>
+            <strong>{{ t('settings.appearance') }}</strong>
+            <span>{{ t('settings.appearanceHint') }}</span>
           </div>
-          <el-form-item label="主题模式">
-            <el-segmented v-model="themeMode" :options="themeOptions" @change="setTheme" />
+          <el-form-item :label="t('settings.themeMode')">
+            <el-segmented :model-value="themeMode" :options="themeOptions" @change="setTheme" />
+          </el-form-item>
+          <el-form-item :label="t('settings.language')">
+            <el-segmented :model-value="locale" :options="languageOptions" @change="setLocale" />
+            <p class="field-hint">{{ t('settings.languageHint') }}</p>
           </el-form-item>
         </section>
 
@@ -27,20 +31,20 @@
         <section class="settings-section browser-section">
           <div class="section-heading section-heading-with-action">
             <div>
-              <strong>测试浏览器</strong>
-              <span>执行与录制使用当前电脑安装的 Chrome 或 Edge。</span>
+              <strong>{{ t('settings.browser') }}</strong>
+              <span>{{ t('settings.browserHint') }}</span>
             </div>
-            <el-tooltip content="重新检测浏览器" placement="top">
+            <el-tooltip :content="t('settings.detectBrowsers')" placement="top">
               <el-button
                 circle
                 :icon="Refresh"
                 :loading="detectingBrowsers"
-                aria-label="重新检测浏览器"
+                :aria-label="t('settings.detectBrowsers')"
                 @click="loadBrowserStatus"
               />
             </el-tooltip>
           </div>
-          <el-form-item label="浏览器选择">
+          <el-form-item :label="t('settings.browserSelect')">
             <el-segmented v-model="form.browserChannel" :options="browserOptions" />
           </el-form-item>
           <div class="browser-list" role="status" aria-live="polite" aria-atomic="true">
@@ -49,17 +53,23 @@
                 <strong>{{ browser.name }}</strong>
                 <el-tag
                   size="small"
-                  :type="browser.channel === browserStatus.resolvedChannel ? 'success' : browser.installed ? 'info' : 'info'"
+                  :type="browser.channel === browserStatus.resolvedChannel ? 'success' : 'info'"
                   :effect="browser.installed ? 'light' : 'plain'"
                 >
-                  {{ browser.channel === browserStatus.resolvedChannel ? '当前使用' : browser.installed ? '已检测' : '未安装' }}
+                  {{
+                    browser.channel === browserStatus.resolvedChannel
+                      ? t('settings.browserInUse')
+                      : browser.installed
+                        ? t('settings.browserDetected')
+                        : t('settings.browserMissing')
+                  }}
                 </el-tag>
                 <span v-if="browser.version" class="browser-version">{{ browser.version }}</span>
               </div>
               <span v-if="browser.executablePath" class="browser-path" :title="browser.executablePath">
                 {{ browser.executablePath }}
               </span>
-              <span v-else class="browser-path muted">未检测到安装路径</span>
+              <span v-else class="browser-path muted">{{ t('settings.browserPathMissing') }}</span>
             </div>
           </div>
           <el-alert
@@ -75,25 +85,25 @@
 
         <section class="settings-section">
           <div class="section-heading">
-            <strong>报告信息</strong>
-            <span>用于 测试报告封面和末页落款。</span>
+            <strong>{{ t('settings.reportInfo') }}</strong>
+            <span>{{ t('settings.reportInfoHint') }}</span>
           </div>
           <div class="form-grid">
-            <el-form-item label="测试单位">
-              <el-input v-model="form.testingUnit" maxlength="80" placeholder="例如：质量保障部" />
+            <el-form-item :label="t('settings.testingUnit')">
+              <el-input v-model="form.testingUnit" maxlength="80" :placeholder="t('settings.testingUnitPlaceholder')" />
             </el-form-item>
-            <el-form-item label="测试人员">
-              <el-input v-model="form.testerName" maxlength="40" placeholder="例如：张三" />
+            <el-form-item :label="t('settings.testerName')">
+              <el-input v-model="form.testerName" maxlength="40" :placeholder="t('settings.testerNamePlaceholder')" />
             </el-form-item>
           </div>
-          <el-form-item label="报告落款">
+          <el-form-item :label="t('settings.reportSignature')">
             <el-input
               v-model="form.reportSignature"
               type="textarea"
               :rows="3"
               maxlength="240"
               show-word-limit
-              placeholder="显示在测试报告结尾的说明"
+              :placeholder="t('settings.reportSignaturePlaceholder')"
             />
           </el-form-item>
         </section>
@@ -102,15 +112,15 @@
 
         <section class="settings-section">
           <div class="section-heading">
-            <strong>本地数据</strong>
-            <span>用例、数据、执行结果和报告均保存在当前项目目录。</span>
+            <strong>{{ t('settings.localData') }}</strong>
+            <span>{{ t('settings.localDataHint') }}</span>
           </div>
           <el-descriptions :column="1" border size="small">
-            <el-descriptions-item label="当前项目">{{ store.project?.name || '-' }}</el-descriptions-item>
-            <el-descriptions-item v-if="desktopProject?.rootPath" label="项目目录">
+            <el-descriptions-item :label="t('settings.currentProject')">{{ store.project?.name || '-' }}</el-descriptions-item>
+            <el-descriptions-item v-if="desktopProject?.rootPath" :label="t('settings.projectDirectory')">
               <div class="path-value">
                 <span :title="desktopProject.rootPath">{{ desktopProject.rootPath }}</span>
-                <el-button link type="primary" @click="revealProject">打开目录</el-button>
+                <el-button link type="primary" @click="revealProject">{{ t('settings.openDirectory') }}</el-button>
               </div>
             </el-descriptions-item>
           </el-descriptions>
@@ -121,31 +131,40 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Refresh } from '@element-plus/icons-vue';
 import { api } from '../api';
 import { usePlatformStore } from '../stores/platform';
 import { useTheme } from '../theme';
+import { useI18n } from '../i18n';
 
 const store = usePlatformStore();
 const { themeMode, setTheme } = useTheme();
+const { locale, setLocale, t } = useI18n();
 const loading = ref(false);
 const saving = ref(false);
 const detectingBrowsers = ref(false);
 const desktopProject = ref(null);
 const form = reactive({ testingUnit: '', testerName: '', reportSignature: '', browserChannel: 'auto' });
 const browserStatus = reactive({ browsers: [], resolvedChannel: '', ready: false, message: '' });
-const themeOptions = [
-  { label: '浅色', value: 'light' },
-  { label: '深色', value: 'dark' },
-  { label: '跟随系统', value: 'system' }
-];
-const browserOptions = [
-  { label: '自动选择', value: 'auto' },
+
+const themeOptions = computed(() => [
+  { label: t('theme.light'), value: 'light' },
+  { label: t('theme.dark'), value: 'dark' },
+  { label: t('theme.system'), value: 'system' }
+]);
+
+const languageOptions = computed(() => [
+  { label: t('locale.zhCN'), value: 'zh-CN' },
+  { label: t('locale.enUS'), value: 'en-US' }
+]);
+
+const browserOptions = computed(() => [
+  { label: t('settings.browserAuto'), value: 'auto' },
   { label: 'Chrome', value: 'chrome' },
   { label: 'Edge', value: 'msedge' }
-];
+]);
 
 onMounted(async () => {
   loading.value = true;
@@ -157,7 +176,7 @@ onMounted(async () => {
     Object.assign(browserStatus, status || {});
     desktopProject.value = project || null;
   } catch (error) {
-    ElMessage.error(error.message || '系统设置加载失败');
+    ElMessage.error(error.message || t('settings.loadFailed'));
   } finally {
     loading.value = false;
   }
@@ -172,9 +191,9 @@ async function save() {
     });
     Object.assign(form, result || {});
     await loadBrowserStatus();
-    ElMessage.success('系统设置已保存');
+    ElMessage.success(t('settings.saveSuccess'));
   } catch (error) {
-    ElMessage.error(error.message || '系统设置保存失败');
+    ElMessage.error(error.message || t('settings.saveFailed'));
   } finally {
     saving.value = false;
   }
@@ -186,7 +205,7 @@ async function loadBrowserStatus() {
     const result = await api('/api/settings/browser-status');
     Object.assign(browserStatus, result || {});
   } catch (error) {
-    ElMessage.error(error.message || '浏览器检测失败');
+    ElMessage.error(error.message || t('settings.detectFailed'));
   } finally {
     detectingBrowsers.value = false;
   }
@@ -196,7 +215,7 @@ async function revealProject() {
   try {
     await window.autotestDesktop.revealProject(desktopProject.value.id);
   } catch (error) {
-    ElMessage.error(error.message || '无法打开项目目录');
+    ElMessage.error(error.message || t('settings.openDirFailed'));
   }
 }
 </script>
@@ -212,6 +231,7 @@ async function revealProject() {
 .section-heading span { color: var(--el-text-color-secondary); font-size: 12px; }
 .section-heading-with-action { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .section-heading-with-action > div { display: grid; gap: 3px; }
+.field-hint { margin: 8px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .browser-list { display: grid; overflow: hidden; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; }
 .browser-row { display: grid; min-width: 0; grid-template-columns: 260px minmax(0, 1fr); align-items: center; gap: 16px; padding: 9px 12px; }

@@ -2,17 +2,17 @@
   <div
     v-loading="initialLoading"
     class="test-plans-page"
-    element-loading-text="测试计划加载中..."
+    :element-loading-text="t('plans.loading')"
     :aria-busy="initialLoading"
   >
-    <aside class="plan-browser" aria-label="测试计划列表">
+    <aside class="plan-browser" :aria-label="t('plans.listAria')">
       <div class="plan-browser-header">
         <div>
-          <strong>测试计划</strong>
+          <strong>{{ t('plans.title') }}</strong>
           <span>{{ plans.length }}</span>
         </div>
         <el-button type="primary" :icon="Plus" size="small" @click="openCreatePlan">
-          新建
+          {{ t('common.create') }}
         </el-button>
       </div>
 
@@ -20,14 +20,14 @@
         <el-input
           v-model="planKeyword"
           :prefix-icon="Search"
-          placeholder="搜索计划"
+          :placeholder="t('plans.searchPlaceholder')"
           clearable
-          aria-label="搜索测试计划"
+          :aria-label="t('plans.searchAria')"
         />
         <el-button
           :icon="Refresh"
           circle
-          aria-label="刷新测试计划"
+          :aria-label="t('plans.refreshAria')"
           :loading="refreshing"
           @click="refreshAll"
         />
@@ -35,10 +35,10 @@
 
       <div v-if="loadError" class="load-error" role="alert">
         <span>{{ loadError }}</span>
-        <el-button link type="primary" @click="refreshAll">重试</el-button>
+        <el-button link type="primary" @click="refreshAll">{{ t('common.retry') }}</el-button>
       </div>
 
-      <nav v-if="filteredPlans.length" class="plan-list" aria-label="计划">
+      <nav v-if="filteredPlans.length" class="plan-list" :aria-label="t('plans.planListAria')">
         <button
           v-for="plan in filteredPlans"
           :key="plan.id"
@@ -50,7 +50,7 @@
         >
           <span class="plan-list-main">
             <strong :title="plan.name">{{ plan.name }}</strong>
-            <small>{{ plan.items.length }} 个用例 · {{ executionModeLabel(plan.executionMode) }}</small>
+            <small>{{ t('plans.planSummary', { count: plan.items.length }) }} · {{ executionModeLabel(plan.executionMode) }}</small>
           </span>
           <el-tag
             v-if="latestRunByPlan[plan.id]"
@@ -62,9 +62,9 @@
           </el-tag>
         </button>
       </nav>
-      <el-empty v-else :description="plans.length ? '没有匹配的计划' : '暂无测试计划'" :image-size="72">
+      <el-empty v-else :description="plans.length ? t('plans.emptyNoMatch') : t('plans.emptyNone')" :image-size="72">
         <el-button v-if="!plans.length" type="primary" :icon="Plus" @click="openCreatePlan">
-          新建计划
+          {{ t('plans.createPlan') }}
         </el-button>
       </el-empty>
     </aside>
@@ -75,27 +75,27 @@
           <div class="plan-title">
             <div class="plan-title-line">
               <h2>{{ selectedPlan.name }}</h2>
-              <el-tag size="small" effect="plain">{{ selectedPlan.items.length }} 个用例</el-tag>
+              <el-tag size="small" effect="plain">{{ t('plans.planSummary', { count: selectedPlan.items.length }) }}</el-tag>
             </div>
-            <p>{{ selectedPlan.description || '暂无说明' }}</p>
+            <p>{{ selectedPlan.description || t('common.noDescription') }}</p>
           </div>
           <div class="plan-actions">
-            <el-button :icon="Edit" @click="openEditPlan(selectedPlan)">编辑</el-button>
-            <el-button :icon="Delete" type="danger" plain @click="deleteSelectedPlan">删除</el-button>
+            <el-button :icon="Edit" @click="openEditPlan(selectedPlan)">{{ t('common.edit') }}</el-button>
+            <el-button :icon="Delete" type="danger" plain @click="deleteSelectedPlan">{{ t('common.delete') }}</el-button>
           </div>
         </header>
 
         <div class="plan-detail-body">
           <section class="run-config" aria-labelledby="run-config-title">
             <div class="section-label">
-              <strong id="run-config-title">批次执行</strong>
-              <span>按当前顺序执行计划内全部用例</span>
+              <strong id="run-config-title">{{ t('plans.batchRun') }}</strong>
+              <span>{{ t('plans.batchRunHint') }}</span>
             </div>
             <el-select
               v-model="runConfig.environment"
               class="environment-select"
-              aria-label="执行环境"
-              placeholder="选择环境"
+              :aria-label="t('plans.executionEnvironmentAria')"
+              :placeholder="t('common.selectEnvironment')"
               filterable
             >
               <el-option
@@ -108,7 +108,7 @@
             <el-segmented
               v-model="runConfig.executionMode"
               :options="executionModeOptions"
-              aria-label="执行模式"
+              :aria-label="t('plans.executionModeAria')"
             />
             <el-button
               type="primary"
@@ -117,29 +117,29 @@
               :disabled="!selectedPlan.items.length || !runConfig.environment || isActiveStatus(currentRun?.status)"
               @click="startBatch"
             >
-              启动批次
+              {{ t('plans.startBatch') }}
             </el-button>
           </section>
 
           <section class="case-order-section" aria-labelledby="case-order-title">
             <div class="section-heading">
               <div>
-                <strong id="case-order-title">用例执行顺序</strong>
-                <span>批次按表格顺序串行执行</span>
+                <strong id="case-order-title">{{ t('plans.caseOrder') }}</strong>
+                <span>{{ t('plans.caseOrderHint') }}</span>
               </div>
               <el-button link type="primary" :icon="Edit" @click="openEditPlan(selectedPlan)">
-                调整计划
+                {{ t('plans.adjustPlan') }}
               </el-button>
             </div>
             <el-table
               :data="selectedPlan.items"
               size="small"
               height="100%"
-              empty-text="计划中尚未添加测试用例"
+              :empty-text="t('plans.emptyNoCases')"
               row-key="scenarioId"
             >
               <el-table-column type="index" label="#" width="48" align="center" />
-              <el-table-column label="测试用例" min-width="230">
+              <el-table-column :label="t('plans.colScenario')" min-width="230">
                 <template #default="{ row }">
                   <div class="case-cell">
                     <strong>{{ scenarioName(row.scenarioId) }}</strong>
@@ -147,18 +147,18 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="目录" min-width="220" show-overflow-tooltip>
+              <el-table-column :label="t('scenarios.colDirectory')" min-width="220" show-overflow-tooltip>
                 <template #default="{ row }">{{ scenarioDirectory(row.scenarioId) }}</template>
               </el-table-column>
-              <el-table-column label="数据集" min-width="160" show-overflow-tooltip>
+              <el-table-column :label="t('plans.colDataset')" min-width="160" show-overflow-tooltip>
                 <template #default="{ row }">{{ datasetLabel(row) }}</template>
               </el-table-column>
-              <el-table-column label="状态" width="92" align="center">
+              <el-table-column :label="t('common.status')" width="92" align="center">
                 <template #default="{ row }">
                   <el-tag v-if="batchItem(row.scenarioId)" size="small" :type="statusType(batchItem(row.scenarioId).status)">
                     {{ statusLabel(batchItem(row.scenarioId).status) }}
                   </el-tag>
-                  <span v-else class="muted-status">等待执行</span>
+                  <span v-else class="muted-status">{{ t('status.pending') }}</span>
                 </template>
               </el-table-column>
             </el-table>
@@ -168,15 +168,15 @@
             <section class="recent-batch" aria-labelledby="recent-batch-title">
               <div class="section-heading">
                 <div>
-                  <strong id="recent-batch-title">最近批次</strong>
-                  <span>{{ currentRun ? formatTime(currentRun.startedAt || currentRun.createdAt) : '暂无执行记录' }}</span>
+                  <strong id="recent-batch-title">{{ t('scenarios.latestBatch') }}</strong>
+                  <span>{{ currentRun ? formatTime(currentRun.startedAt || currentRun.createdAt) : t('plans.noRunYet') }}</span>
                 </div>
                 <el-button
                   v-if="currentRun"
                   :icon="Refresh"
                   circle
                   size="small"
-                  aria-label="刷新批次状态"
+                  :aria-label="t('plans.refreshBatchAria')"
                   :loading="runRefreshing"
                   @click="refreshCurrentRun"
                 />
@@ -185,7 +185,7 @@
               <template v-if="currentRun">
                 <div class="batch-identity">
                   <div>
-                    <span>批次编号</span>
+                    <span>{{ t('plans.batchId') }}</span>
                     <strong :title="batchId(currentRun)">{{ batchId(currentRun) }}</strong>
                   </div>
                   <el-tag :type="statusType(currentRun.status)" effect="light">
@@ -193,9 +193,9 @@
                   </el-tag>
                 </div>
                 <div class="batch-metrics">
-                  <div><span>总数</span><strong>{{ runSummary.total }}</strong></div>
-                  <div><span>通过</span><strong class="success-text">{{ runSummary.passed }}</strong></div>
-                  <div><span>失败</span><strong class="danger-text">{{ runSummary.failed }}</strong></div>
+                  <div><span>{{ t('common.total') }}</span><strong>{{ runSummary.total }}</strong></div>
+                  <div><span>{{ t('common.passed') }}</span><strong class="success-text">{{ runSummary.passed }}</strong></div>
+                  <div><span>{{ t('common.failed') }}</span><strong class="danger-text">{{ runSummary.failed }}</strong></div>
                 </div>
                 <el-progress
                   :percentage="runProgress"
@@ -203,18 +203,18 @@
                   :stroke-width="8"
                 />
                 <dl class="batch-meta">
-                  <div><dt>环境</dt><dd>{{ environmentName(currentRun.environment) }}</dd></div>
-                  <div><dt>模式</dt><dd>{{ executionModeLabel(currentRun.executionMode) }}</dd></div>
-                  <div><dt>耗时</dt><dd>{{ durationLabel(currentRun) }}</dd></div>
+                  <div><dt>{{ t('common.environment') }}</dt><dd>{{ environmentName(currentRun.environment) }}</dd></div>
+                  <div><dt>{{ t('common.mode') }}</dt><dd>{{ executionModeLabel(currentRun.executionMode) }}</dd></div>
+                  <div><dt>{{ t('common.duration') }}</dt><dd>{{ durationLabel(currentRun) }}</dd></div>
                 </dl>
               </template>
-              <el-empty v-else description="执行计划后在此查看批次状态" :image-size="64" />
+              <el-empty v-else :description="t('plans.batchEmptyHint')" :image-size="64" />
             </section>
 
             <section class="ai-report" aria-labelledby="ai-report-title">
               <div class="section-heading">
                 <div>
-                  <strong id="ai-report-title">测试报告</strong>
+                  <strong id="ai-report-title">{{ t('common.testReport') }}</strong>
                   <span>{{ reportFormatLabel }}</span>
                 </div>
                 <div class="report-heading-actions">
@@ -228,19 +228,19 @@
                     type="primary"
                     @click="downloadReport"
                   >
-                    下载
+                    {{ t('common.download') }}
                   </el-button>
                 </div>
               </div>
               <el-scrollbar class="report-scroll">
                 <div v-if="reportLoading" class="report-loading" aria-live="polite">
                   <el-icon class="is-loading"><Loading /></el-icon>
-                  <span>报告加载中...</span>
+                  <span>{{ t('common.reportLoading') }}</span>
                 </div>
                 <iframe
                   v-else-if="reportHtml"
                   class="report-iframe"
-                  title="测试报告预览"
+                  :title="t('common.reportPreview')"
                   sandbox=""
                   :srcdoc="reportHtml"
                 />
@@ -280,14 +280,14 @@
         </div>
       </template>
 
-      <el-empty v-else description="选择或新建测试计划">
-        <el-button type="primary" :icon="Plus" @click="openCreatePlan">新建计划</el-button>
+      <el-empty v-else :description="t('plans.selectOrCreate')">
+        <el-button type="primary" :icon="Plus" @click="openCreatePlan">{{ t('plans.createPlan') }}</el-button>
       </el-empty>
     </main>
 
     <el-dialog
       v-model="editorVisible"
-      :title="editingPlanId ? '编辑测试计划' : '新建测试计划'"
+      :title="editingPlanId ? t('plans.editTitle') : t('plans.createTitle')"
       width="880px"
       top="5vh"
       destroy-on-close
@@ -301,11 +301,11 @@
         class="plan-editor-form"
       >
         <div class="editor-fields">
-          <el-form-item label="计划名称" prop="name">
-            <el-input v-model="editorForm.name" maxlength="80" show-word-limit placeholder="例如：冒烟回归" />
+          <el-form-item :label="t('plans.name')" prop="name">
+            <el-input v-model="editorForm.name" maxlength="80" show-word-limit :placeholder="t('plans.namePlaceholder')" />
           </el-form-item>
-          <el-form-item label="默认环境" prop="environment">
-            <el-select v-model="editorForm.environment" class="wide" placeholder="选择环境" filterable>
+          <el-form-item :label="t('plans.defaultEnvironment')" prop="environment">
+            <el-select v-model="editorForm.environment" class="wide" :placeholder="t('common.selectEnvironment')" filterable>
               <el-option
                 v-for="environment in environments"
                 :key="environmentValue(environment)"
@@ -314,34 +314,34 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="默认执行模式" prop="executionMode">
+          <el-form-item :label="t('plans.defaultExecutionMode')" prop="executionMode">
             <el-segmented v-model="editorForm.executionMode" :options="executionModeOptions" />
           </el-form-item>
         </div>
-        <el-form-item label="计划说明">
+        <el-form-item :label="t('plans.description')">
           <el-input
             v-model="editorForm.description"
             type="textarea"
             :rows="2"
             maxlength="300"
             show-word-limit
-            placeholder="说明本计划覆盖的业务范围"
+            :placeholder="t('plans.descriptionPlaceholder')"
           />
         </el-form-item>
       </el-form>
 
       <div class="editor-case-heading">
         <div>
-          <strong>测试用例</strong>
-          <span>仅可添加「可执行」用例；共 {{ editorItems.length }} 个，按下列顺序执行</span>
+          <strong>{{ t('plans.editorCasesTitle') }}</strong>
+          <span>{{ t('plans.editorCasesHint', { count: editorItems.length }) }}</span>
         </div>
         <el-button type="primary" plain :icon="Plus" @click="openCasePicker">
-          添加可执行用例
+          {{ t('plans.addExecutableCases') }}
         </el-button>
       </div>
-      <el-table :data="editorItems" size="small" max-height="330" empty-text="请添加可执行测试用例" row-key="scenarioId">
+      <el-table :data="editorItems" size="small" max-height="330" :empty-text="t('plans.editorEmptyCases')" row-key="scenarioId">
         <el-table-column type="index" label="#" width="46" align="center" />
-        <el-table-column label="测试用例" min-width="210">
+        <el-table-column :label="t('plans.colScenario')" min-width="210">
           <template #default="{ row }">
             <div class="case-cell compact">
               <strong>{{ scenarioName(row.scenarioId) }}</strong>
@@ -349,65 +349,65 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="就绪" width="88" align="center">
+        <el-table-column :label="t('plans.colReady')" width="88" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="scenarioReady(row.scenarioId) ? 'success' : 'warning'">
-              {{ scenarioReady(row.scenarioId) ? '可执行' : '未就绪' }}
+              {{ scenarioReady(row.scenarioId) ? t('status.ready') : t('plans.notReady') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="测试数据" min-width="220">
+        <el-table-column :label="t('plans.colTestData')" min-width="220">
           <template #default="{ row }">
-            <el-text v-if="!scenarioNeedsDataset(row.scenarioId)" type="success" size="small">本用例不需要测试数据</el-text>
+            <el-text v-if="!scenarioNeedsDataset(row.scenarioId)" type="success" size="small">{{ t('plans.noDatasetRequired') }}</el-text>
             <template v-else>
               <el-select
                 v-model="row.datasetId"
                 class="wide"
                 clearable
                 filterable
-                placeholder="自动使用最近有效数据"
+                :placeholder="t('plans.autoRecentDataset')"
                 :loading="datasetsLoading"
               >
                 <el-option
                   v-for="item in datasetsForScenario(row.scenarioId)"
                   :key="item.id"
-                  :label="`${item.name}（${item.rowCount || 0} 行）`"
+                  :label="formatDatasetOptionLabel(item)"
                   :value="item.id"
                 />
               </el-select>
               <el-text v-if="!datasetsForScenario(row.scenarioId).length" type="warning" size="small">
-                暂无可用数据集
+                {{ t('plans.noDatasets') }}
               </el-text>
             </template>
           </template>
         </el-table-column>
-        <el-table-column label="顺序" width="92" align="center">
+        <el-table-column :label="t('plans.colOrder')" width="92" align="center">
           <template #default="{ $index }">
             <div class="order-actions">
               <el-button
                 :icon="ArrowUp"
                 link
                 :disabled="$index === 0"
-                :aria-label="`上移第 ${$index + 1} 个用例`"
+                :aria-label="t('plans.moveUpAria', { index: $index + 1 })"
                 @click="moveEditorItem($index, -1)"
               />
               <el-button
                 :icon="ArrowDown"
                 link
                 :disabled="$index === editorItems.length - 1"
-                :aria-label="`下移第 ${$index + 1} 个用例`"
+                :aria-label="t('plans.moveDownAria', { index: $index + 1 })"
                 @click="moveEditorItem($index, 1)"
               />
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="68" align="center">
+        <el-table-column :label="t('common.actions')" width="68" align="center">
           <template #default="{ $index }">
             <el-button
               :icon="Delete"
               link
               type="danger"
-              :aria-label="`移除第 ${$index + 1} 个用例`"
+              :aria-label="t('plans.removeCaseAria', { index: $index + 1 })"
               @click="editorItems.splice($index, 1)"
             />
           </template>
@@ -422,14 +422,14 @@
         :closable="false"
       />
       <template #footer>
-        <el-button @click="editorVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingPlan" @click="savePlan">保存计划</el-button>
+        <el-button @click="editorVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="savingPlan" @click="savePlan">{{ t('plans.savePlan') }}</el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="casePickerVisible"
-      title="添加可执行测试用例"
+      :title="t('plans.pickerTitle')"
       width="680px"
       top="7vh"
       append-to-body
@@ -438,7 +438,7 @@
     >
       <el-alert
         class="case-picker-alert"
-        title="仅列出状态为「可执行」的用例（已发布且脚本、数据、环境等就绪）。"
+        :title="t('plans.pickerAlert')"
         type="info"
         show-icon
         :closable="false"
@@ -447,9 +447,9 @@
         <el-input
           v-model="caseKeyword"
           :prefix-icon="Search"
-          placeholder="搜索目录、用例名称或 key"
+          :placeholder="t('plans.pickerSearchPlaceholder')"
           clearable
-          aria-label="搜索可添加的测试用例"
+          :aria-label="t('plans.pickerSearchAria')"
         />
       </div>
       <div class="case-tree-frame">
@@ -462,7 +462,7 @@
           :default-expanded-keys="caseTree.map((node) => node.id)"
           :indent="16"
           :filter-node-method="filterCaseNode"
-          empty-text="暂无可执行测试用例"
+          :empty-text="t('plans.pickerEmpty')"
           @check="updateCheckedCaseCount"
         >
           <template #default="{ data }">
@@ -476,9 +476,9 @@
         </el-tree>
       </div>
       <template #footer>
-        <el-button @click="casePickerVisible = false">取消</el-button>
+        <el-button @click="casePickerVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :disabled="!checkedCaseCount" @click="confirmCaseSelection">
-          添加 {{ checkedCaseCount }} 个用例
+          {{ t('plans.addScenarios', { count: checkedCaseCount }) }}
         </el-button>
       </template>
     </el-dialog>
@@ -502,7 +502,9 @@ import {
   VideoPlay
 } from '@element-plus/icons-vue';
 import { api } from '../api';
+import { useI18n } from '../i18n';
 
+const { t, locale } = useI18n();
 const plans = ref([]);
 const scenarios = ref([]);
 const environments = ref([]);
@@ -529,11 +531,11 @@ const savingPlan = ref(false);
 const editorError = ref('');
 const editorForm = reactive({ name: '', description: '', environment: '', executionMode: 'headless' });
 const editorItems = ref([]);
-const editorRules = {
-  name: [{ required: true, message: '请填写计划名称', trigger: 'blur' }],
-  environment: [{ required: true, message: '请选择默认环境', trigger: 'change' }],
-  executionMode: [{ required: true, message: '请选择默认执行模式', trigger: 'change' }]
-};
+const editorRules = computed(() => ({
+  name: [{ required: true, message: t('plans.validationName'), trigger: 'blur' }],
+  environment: [{ required: true, message: t('plans.validationEnvironment'), trigger: 'change' }],
+  executionMode: [{ required: true, message: t('plans.validationMode'), trigger: 'change' }]
+}));
 
 const casePickerVisible = ref(false);
 const caseTreeRef = ref();
@@ -543,10 +545,10 @@ const datasetsLoading = ref(false);
 const datasetsByScenarioId = reactive({});
 let runPollTimer;
 
-const executionModeOptions = [
-  { label: '无头', value: 'headless' },
-  { label: '有头', value: 'headed' }
-];
+const executionModeOptions = computed(() => [
+  { label: t('executionMode.headless'), value: 'headless' },
+  { label: t('executionMode.headed'), value: 'headed' }
+]);
 
 const selectedPlan = computed(() => plans.value.find((plan) => plan.id === selectedPlanId.value) || null);
 const filteredPlans = computed(() => {
@@ -575,9 +577,9 @@ const runProgress = computed(() => {
 });
 const reportBlocks = computed(() => (reportHtml.value ? [] : parseMarkdown(reportMarkdown.value)));
 const reportEmptyText = computed(() => {
-  if (!currentRun.value) return '执行批次后生成测试报告';
-  if (['queued', 'running'].includes(currentRun.value.status)) return '批次完成后生成测试报告';
-  return '当前批次暂无测试报告';
+  if (!currentRun.value) return t('plans.reportAfterBatch');
+  if (['queued', 'running'].includes(currentRun.value.status)) return t('plans.reportAfterComplete');
+  return t('plans.reportNone');
 });
 const reportFormatLabel = computed(() => {
   if (reportFormat.value === 'html') return 'HTML';
@@ -602,7 +604,7 @@ function normalizePlan(raw) {
   return {
     ...raw,
     id: raw.id || raw.testPlanId,
-    name: raw.name || '未命名计划',
+    name: raw.name || t('plans.unnamedPlan'),
     description: raw.description || '',
     environment: raw.environment || raw.environmentKey || '',
     executionMode: raw.executionMode === 'headed' ? 'headed' : 'headless',
@@ -636,7 +638,7 @@ async function loadInitialData() {
     await selectPlan(retainedId);
     return true;
   } catch (error) {
-    loadError.value = error.message || '测试计划加载失败';
+    loadError.value = error.message || t('plans.loadFailed');
     return false;
   } finally {
     initialLoading.value = false;
@@ -646,7 +648,7 @@ async function loadInitialData() {
 async function refreshAll() {
   refreshing.value = true;
   try {
-    if (await loadInitialData()) ElMessage.success('测试计划已刷新');
+    if (await loadInitialData()) ElMessage.success(t('plans.refreshed'));
   } finally {
     refreshing.value = false;
   }
@@ -666,7 +668,7 @@ async function selectPlan(planId) {
   runConfig.executionMode = plan.executionMode || 'headless';
   await ensureDatasetsLoaded(plan.items.map((item) => item.scenarioId));
   await loadLatestPlanRun(plan).catch((error) => {
-    if (error?.status !== 404) ElMessage.error(error.message || '最近批次加载失败');
+    if (error?.status !== 404) ElMessage.error(error.message || t('plans.latestBatchLoadFailed'));
   });
 }
 
@@ -696,11 +698,13 @@ function environmentName(value) {
 }
 
 function executionModeLabel(mode) {
-  return mode === 'headed' ? '有头' : '无头';
+  return mode === 'headed' ? t('executionMode.headed') : t('executionMode.headless');
 }
 
 function statusLabel(status) {
-  return ({ queued: '排队中', running: '执行中', passed: '通过', failed: '失败', skipped: '已跳过' })[status] || status || '未知';
+  const key = `status.${status}`;
+  const label = t(key);
+  return label !== key ? label : (status || '-');
 }
 
 function statusType(status) {
@@ -731,7 +735,7 @@ function scenarioReady(scenarioId) {
 }
 
 function scenarioName(id) {
-  return scenarioFor(id)?.name || `已移除用例（${id}）`;
+  return scenarioFor(id)?.name || t('plans.removedScenario', { id });
 }
 
 function scenarioKey(id) {
@@ -740,7 +744,7 @@ function scenarioKey(id) {
 
 function scenarioDirectory(id) {
   const scenario = scenarioFor(id);
-  return scenario?.directory || scenario?.module || '未分类';
+  return scenario?.directory || scenario?.module || t('scenarios.uncategorized');
 }
 
 function preferredDatasetId(datasets = []) {
@@ -753,10 +757,13 @@ function datasetsForScenario(scenarioId) {
   return datasetsByScenarioId[scenarioId] || [];
 }
 
+function formatDatasetOptionLabel(item) {
+  return t('common.datasetRowLabel', { name: item.name, count: item.rowCount || 0 });
+}
 function datasetLabel(row) {
-  if (!row?.datasetId) return '执行时使用默认数据';
+  if (!row?.datasetId) return t('plans.defaultDatasetOnRun');
   const matched = datasetsForScenario(row.scenarioId).find((item) => item.id === row.datasetId);
-  return matched ? `${matched.name}（${matched.rowCount || 0} 行）` : row.datasetId;
+  return matched ? t('common.datasetRowLabel', { name: matched.name, count: matched.rowCount || 0 }) : row.datasetId;
 }
 
 async function ensureDatasetsLoaded(scenarioIds = []) {
@@ -810,19 +817,19 @@ function batchId(run) {
 function formatTime(value) {
   if (!value) return '-';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat('zh-CN', {
+  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat(locale.value === 'en-US' ? 'en-US' : 'zh-CN', {
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
   }).format(date);
 }
 
 function durationLabel(run) {
   const duration = Number(run?.summary?.durationMs || 0);
-  if (duration > 0) return duration < 1000 ? `${duration} ms` : `${(duration / 1000).toFixed(1)} 秒`;
+  if (duration > 0) return duration < 1000 ? `${duration} ms` : t('plans.durationSeconds', { value: (duration / 1000).toFixed(1) });
   if (!run?.startedAt) return '-';
   const end = run.finishedAt ? new Date(run.finishedAt).getTime() : Date.now();
   const start = new Date(run.startedAt).getTime();
   if (!Number.isFinite(start) || !Number.isFinite(end)) return '-';
-  return `${Math.max(0, Math.round((end - start) / 1000))} 秒`;
+  return t('plans.durationSeconds', { value: Math.max(0, Math.round((end - start) / 1000)) });
 }
 
 async function openCreatePlan() {
@@ -856,10 +863,10 @@ async function savePlan() {
   editorError.value = '';
   try {
     await editorFormRef.value?.validate();
-    if (!editorItems.value.length) throw new Error('请至少添加一个可执行测试用例');
+    if (!editorItems.value.length) throw new Error(t('plans.saveNeedCase'));
     const notReady = editorItems.value.filter((item) => !scenarioReady(item.scenarioId));
     if (notReady.length) {
-      throw new Error(`有 ${notReady.length} 个用例尚未可执行，请移除后再保存`);
+      throw new Error(t('plans.saveNotReady', { count: notReady.length }));
     }
     savingPlan.value = true;
     const body = {
@@ -881,7 +888,7 @@ async function savePlan() {
     }));
     editorVisible.value = false;
     await reloadPlans(saved.id);
-    ElMessage.success(editingPlanId.value ? '测试计划已更新' : '测试计划已创建');
+    ElMessage.success(editingPlanId.value ? t('plans.savedUpdated') : t('plans.savedCreated'));
   } catch (error) {
     if (error instanceof Error) editorError.value = error.message;
   } finally {
@@ -900,16 +907,16 @@ async function deleteSelectedPlan() {
   if (!selectedPlan.value) return;
   try {
     await ElMessageBox.confirm(
-      `确定删除“${selectedPlan.value.name}”吗？历史批次不会随计划一起删除。`,
-      '删除测试计划',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+      t('plans.deleteConfirm', { name: selectedPlan.value.name }),
+      t('plans.deleteTitle'),
+      { type: 'warning', confirmButtonText: t('plans.deleteConfirmButton'), cancelButtonText: t('common.cancel') }
     );
     await api(`/api/test-plans/${encodeURIComponent(selectedPlan.value.id)}`, { method: 'DELETE' });
     delete latestRunByPlan[selectedPlan.value.id];
     await reloadPlans('');
-    ElMessage.success('测试计划已删除');
+    ElMessage.success(t('plans.deleted'));
   } catch (error) {
-    if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message || '删除测试计划失败');
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message || t('plans.deleteFailed'));
   }
 }
 
@@ -964,19 +971,19 @@ function filterCaseNode(keyword, node) {
 function buildCaseTree(source) {
   const roots = [];
   const ordered = [...source].sort((left, right) => {
-    const leftPath = left.directory || left.module || '未分类';
-    const rightPath = right.directory || right.module || '未分类';
+    const leftPath = left.directory || left.module || t('scenarios.uncategorized');
+    const rightPath = right.directory || right.module || t('scenarios.uncategorized');
     return leftPath.localeCompare(rightPath, 'zh-CN') || String(left.name).localeCompare(String(right.name), 'zh-CN');
   });
   for (const scenario of ordered) {
     const scenarioId = scenario.id || scenario.key;
-    const parts = String(scenario.directory || scenario.module || '未分类')
+    const parts = String(scenario.directory || scenario.module || t('scenarios.uncategorized'))
       .split(/\s*\/\s*/)
       .map((item) => item.trim())
       .filter(Boolean);
     let children = roots;
     const pathParts = [];
-    for (const label of parts.length ? parts : ['未分类']) {
+    for (const label of parts.length ? parts : [t('scenarios.uncategorized')]) {
       pathParts.push(label);
       const id = `directory:${pathParts.map(encodeURIComponent).join('/')}`;
       let directory = children.find((item) => item.id === id);
@@ -990,7 +997,7 @@ function buildCaseTree(source) {
       id: `case:${scenarioId}`,
       label: scenario.name,
       key: scenario.key || scenarioId,
-      directory: scenario.directory || scenario.module || '未分类',
+      directory: scenario.directory || scenario.module || t('scenarios.uncategorized'),
       type: 'scenario',
       scenarioId,
       children: []
@@ -1013,7 +1020,7 @@ async function startBatch() {
   if (!selectedPlan.value) return;
   const notReady = selectedPlan.value.items.filter((item) => !scenarioReady(item.scenarioId));
   if (notReady.length) {
-    ElMessage.warning(`计划中有 ${notReady.length} 个用例尚未可执行，请先调整计划`);
+    ElMessage.warning(t('plans.batchNotReady', { count: notReady.length }));
     return;
   }
   startingRun.value = true;
@@ -1032,9 +1039,9 @@ async function startBatch() {
     reportFormat.value = 'markdown';
     reportSource.value = '';
     startRunPolling();
-    ElMessage.success('测试批次已启动');
+    ElMessage.success(t('plans.batchStarted'));
   } catch (error) {
-    ElMessage.error(error.message || '测试批次启动失败');
+    ElMessage.error(error.message || t('plans.batchStartFailed'));
   } finally {
     startingRun.value = false;
   }
@@ -1067,7 +1074,7 @@ async function refreshCurrentRun() {
     }
   } catch (error) {
     stopRunPolling();
-    ElMessage.error(error.message || '批次状态刷新失败');
+    ElMessage.error(error.message || t('plans.batchRefreshFailed'));
   } finally {
     runRefreshing.value = false;
   }
@@ -1094,12 +1101,12 @@ async function loadRunReport(run) {
         reportMarkdown.value = result;
         reportHtml.value = '';
       }
-      reportSource.value = ['ai', 'llm'].includes(run?.summary?.source) ? 'AI 生成' : '';
+      reportSource.value = ['ai', 'llm'].includes(run?.summary?.source) ? t('common.aiGenerated') : '';
       return;
     }
   } catch (error) {
     if (error?.status !== 404 && !isActiveStatus(run.status)) {
-      ElMessage.error(error.message || '测试报告加载失败');
+      ElMessage.error(error.message || t('plans.reportLoadFailed'));
     }
   } finally {
     reportLoading.value = false;
@@ -1109,7 +1116,7 @@ async function loadRunReport(run) {
     reportMarkdown.value = narrative;
     reportHtml.value = '';
     reportFormat.value = 'markdown';
-    reportSource.value = ['ai', 'llm'].includes(run.summary?.source) ? 'AI 生成' : '';
+    reportSource.value = ['ai', 'llm'].includes(run.summary?.source) ? t('common.aiGenerated') : '';
   }
 }
 

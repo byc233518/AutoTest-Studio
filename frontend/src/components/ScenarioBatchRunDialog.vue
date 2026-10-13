@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="currentRun ? '批量执行进度' : '批量执行测试用例'"
+    :title="currentRun ? t('batchRun.progressTitle') : t('batchRun.title')"
     class="scenario-batch-run-dialog"
     width="820px"
     top="20px"
@@ -12,13 +12,13 @@
   >
     <div v-loading="starting || loadingDatasets" class="batch-run-body">
       <div v-if="!currentRun" class="selection-summary">
-        <strong>已选择 {{ scenarioIds.length }} 个用例</strong>
+        <strong>{{ t('batchRun.selectedCount', { count: scenarioIds.length }) }}</strong>
         <span>{{ scenarioNames }}</span>
       </div>
 
       <el-form v-if="!currentRun" label-position="top" class="run-config-grid">
-        <el-form-item label="执行环境" required>
-          <el-select v-model="environment" class="wide" filterable placeholder="选择当前项目环境">
+        <el-form-item :label="t('batchRun.executionEnvironment')" required>
+          <el-select v-model="environment" class="wide" filterable :placeholder="t('batchRun.selectProjectEnvironment')">
             <el-option
               v-for="item in store.environments"
               :key="item.key || item.id"
@@ -27,19 +27,19 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="执行模式" required>
+        <el-form-item :label="t('batchRun.executionMode')" required>
           <el-segmented v-model="executionMode" :options="executionModeOptions" />
         </el-form-item>
       </el-form>
 
       <section v-if="!currentRun" class="dataset-picker">
         <div class="dataset-picker-header">
-          <strong>为每个用例选择测试数据</strong>
-          <el-text type="info">未选择时，有数据字段的用例使用最近有效数据集；无字段的用例可直接执行。</el-text>
+          <strong>{{ t('batchRun.datasetSectionTitle') }}</strong>
+          <el-text type="info">{{ t('batchRun.datasetSectionHint') }}</el-text>
         </div>
-        <el-table :data="datasetRows" size="small" max-height="280" empty-text="请先勾选要执行的用例">
+        <el-table :data="datasetRows" size="small" max-height="280" :empty-text="t('batchRun.selectCasesFirst')">
           <el-table-column type="index" label="#" width="46" align="center" />
-          <el-table-column label="测试用例" min-width="220" show-overflow-tooltip>
+          <el-table-column :label="t('batchRun.colScenario')" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="case-cell">
                 <strong>{{ row.name }}</strong>
@@ -47,25 +47,25 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="测试数据" min-width="260">
+          <el-table-column :label="t('batchRun.colTestData')" min-width="260">
             <template #default="{ row }">
-              <el-text v-if="!row.requiresDataset" type="success" size="small">本用例不需要测试数据</el-text>
+              <el-text v-if="!row.requiresDataset" type="success" size="small">{{ t('plans.noDatasetRequired') }}</el-text>
               <template v-else>
                 <el-select
                   v-model="datasetIds[row.id]"
                   class="wide"
                   clearable
                   filterable
-                  placeholder="自动使用最近有效数据"
+                  :placeholder="t('plans.autoRecentDataset')"
                 >
                   <el-option
                     v-for="item in row.datasets"
                     :key="item.id"
-                    :label="`${item.name}（${item.rowCount ?? item.row_count ?? 0} 行）`"
+                    :label="formatDatasetLabel(item)"
                     :value="item.id"
                   />
                 </el-select>
-                <el-text v-if="!row.datasets.length" type="warning" size="small">暂无可用数据集</el-text>
+                <el-text v-if="!row.datasets.length" type="warning" size="small">{{ t('plans.noDatasets') }}</el-text>
               </template>
             </template>
           </el-table-column>
@@ -74,7 +74,7 @@
 
       <el-alert
         v-if="!currentRun"
-        title="有数据字段的用例请先准备数据集。没有数据字段的用例可以直接批量执行。"
+        :title="t('batchRun.infoAlert')"
         type="info"
         show-icon
         :closable="false"
@@ -84,15 +84,15 @@
         <section class="run-overview" aria-live="polite">
           <div class="run-identity">
             <div>
-              <span>批次编号</span>
+              <span>{{ t('batchRun.batchId') }}</span>
               <strong :title="currentRun.id">{{ currentRun.id }}</strong>
             </div>
             <el-tag :type="statusType(currentRun.status)" effect="light">{{ statusLabel(currentRun.status) }}</el-tag>
           </div>
           <div class="run-metrics">
-            <div><span>总数</span><strong>{{ runSummary.total }}</strong></div>
-            <div><span>通过</span><strong class="success-text">{{ runSummary.passed }}</strong></div>
-            <div><span>失败</span><strong class="danger-text">{{ runSummary.failed }}</strong></div>
+            <div><span>{{ t('common.total') }}</span><strong>{{ runSummary.total }}</strong></div>
+            <div><span>{{ t('common.passed') }}</span><strong class="success-text">{{ runSummary.passed }}</strong></div>
+            <div><span>{{ t('common.failed') }}</span><strong class="danger-text">{{ runSummary.failed }}</strong></div>
           </div>
           <el-progress
             :percentage="runProgress"
@@ -100,42 +100,42 @@
             :stroke-width="8"
           />
           <div class="run-meta">
-            <span>环境：{{ environmentName(currentRun.environment) }}</span>
-            <span>模式：{{ executionModeLabel(currentRun.executionMode) }}</span>
-            <span>耗时：{{ durationLabel(currentRun) }}</span>
+            <span>{{ t('batchRun.envLabel', { name: environmentName(currentRun.environment) }) }}</span>
+            <span>{{ t('batchRun.modeLabel', { mode: executionModeLabel(currentRun.executionMode) }) }}</span>
+            <span>{{ t('batchRun.durationLabel', { duration: durationLabel(currentRun) }) }}</span>
           </div>
         </section>
 
         <el-tabs v-model="monitorTab" class="monitor-tabs">
-          <el-tab-pane label="执行明细" name="items">
-            <el-table :data="currentRun.items || []" size="small" max-height="260" empty-text="暂无执行明细">
+          <el-tab-pane :label="t('batchRun.tabItems')" name="items">
+            <el-table :data="currentRun.items || []" size="small" max-height="260" :empty-text="t('batchRun.itemsEmpty')">
               <el-table-column type="index" label="#" width="46" align="center" />
-              <el-table-column label="测试用例" min-width="230" show-overflow-tooltip>
+              <el-table-column :label="t('batchRun.colScenario')" min-width="230" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.scenarioName || row.scenarioId }}</template>
               </el-table-column>
-              <el-table-column label="测试数据" min-width="170" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.datasetName || row.datasetId || '未配置' }}</template>
+              <el-table-column :label="t('batchRun.colTestData')" min-width="170" show-overflow-tooltip>
+                <template #default="{ row }">{{ row.datasetName || row.datasetId || t('common.notConfigured') }}</template>
               </el-table-column>
-              <el-table-column label="状态" width="92" align="center">
+              <el-table-column :label="t('common.status')" width="92" align="center">
                 <template #default="{ row }"><el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
               </el-table-column>
-              <el-table-column label="说明" min-width="180" show-overflow-tooltip>
+              <el-table-column :label="t('batchRun.colNote')" min-width="180" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.error || '-' }}</template>
               </el-table-column>
             </el-table>
           </el-tab-pane>
           <el-tab-pane name="report">
             <template #label>
-              <span>测试报告 <el-tag v-if="reportSource" size="small" type="info" effect="plain">{{ reportSource }}</el-tag></span>
+              <span>{{ t('common.testReport') }} <el-tag v-if="reportSource" size="small" type="info" effect="plain">{{ reportSource }}</el-tag></span>
             </template>
             <div v-loading="reportLoading" class="report-panel">
               <div v-if="currentRun?.reportUrl" class="report-toolbar">
-                <el-button size="small" link type="primary" @click="downloadReport">下载报告</el-button>
+                <el-button size="small" link type="primary" @click="downloadReport">{{ t('batchRun.downloadReport') }}</el-button>
               </div>
               <iframe
                 v-if="reportHtml"
                 class="report-iframe"
-                title="测试报告预览"
+                :title="t('common.reportPreview')"
                 sandbox=""
                 :srcdoc="reportHtml"
               />
@@ -149,15 +149,15 @@
 
     <template #footer>
       <template v-if="!currentRun">
-        <el-button :disabled="starting" @click="visible = false">取消</el-button>
+        <el-button :disabled="starting" @click="visible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="starting" :disabled="!environment || !scenarioIds.length" @click="startBatch">
-          开始执行
+          {{ t('batchRun.startBatch') }}
         </el-button>
       </template>
       <template v-else>
-        <el-button :icon="Refresh" :loading="refreshing" @click="refreshCurrentRun">刷新状态</el-button>
-        <el-button v-if="!isActiveStatus(currentRun.status)" type="primary" @click="monitorTab = 'report'">查看报告</el-button>
-        <el-button @click="visible = false">关闭</el-button>
+        <el-button :icon="Refresh" :loading="refreshing" @click="refreshCurrentRun">{{ t('batchRun.refreshStatus') }}</el-button>
+        <el-button v-if="!isActiveStatus(currentRun.status)" type="primary" @click="monitorTab = 'report'">{{ t('batchRun.viewReport') }}</el-button>
+        <el-button @click="visible = false">{{ t('common.close') }}</el-button>
       </template>
     </template>
   </el-dialog>
@@ -169,9 +169,11 @@ import { Refresh } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { api } from '../api';
 import { usePlatformStore } from '../stores/platform';
+import { useI18n } from '../i18n';
 
 const emit = defineEmits(['started', 'updated']);
 const store = usePlatformStore();
+const { t } = useI18n();
 const visible = ref(false);
 const starting = ref(false);
 const loadingDatasets = ref(false);
@@ -188,15 +190,15 @@ const reportHtml = ref('');
 const reportSource = ref('');
 const monitorTab = ref('items');
 let pollTimer;
-const executionModeOptions = [
-  { label: '无头', value: 'headless' },
-  { label: '有头', value: 'headed' }
-];
+const executionModeOptions = computed(() => [
+  { label: t('executionMode.headless'), value: 'headless' },
+  { label: t('executionMode.headed'), value: 'headed' }
+]);
 
 const scenarioIds = computed(() => selectedScenarios.value.map((item) => item.id || item.key).filter(Boolean));
 const scenarioNames = computed(() => {
   const names = selectedScenarios.value.slice(0, 3).map((item) => item.name).filter(Boolean);
-  return `${names.join('、')}${selectedScenarios.value.length > names.length ? ` 等 ${selectedScenarios.value.length} 个` : ''}`;
+  return `${names.join(t('common.listSeparator'))}${selectedScenarios.value.length > names.length ? t('batchMove.scenarioCountMore', { count: selectedScenarios.value.length }) : ''}`;
 });
 const runSummary = computed(() => {
   const items = currentRun.value?.items || [];
@@ -218,8 +220,8 @@ const runProgress = computed(() => {
   return Math.min(100, Math.round(runSummary.value.completed / runSummary.value.total * 100));
 });
 const reportEmptyText = computed(() => isActiveStatus(currentRun.value?.status)
-  ? '批次完成后生成测试报告'
-  : '当前批次暂无测试报告');
+  ? t('batchRun.reportAfterComplete')
+  : t('batchRun.reportNone'));
 
 onBeforeUnmount(stopPolling);
 
@@ -236,11 +238,20 @@ function environmentName(value) {
 }
 
 function executionModeLabel(value) {
-  return value === 'headed' ? '有头' : '无头';
+  return value === 'headed' ? t('executionMode.headed') : t('executionMode.headless');
 }
 
 function statusLabel(status) {
-  return ({ queued: '排队中', running: '执行中', passed: '通过', failed: '失败', skipped: '已跳过' })[status] || status || '未知';
+  const key = `status.${status}`;
+  const label = t(key);
+  return label !== key ? label : (status || '-');
+}
+
+function formatDatasetLabel(item) {
+  return t('common.datasetRowLabel', {
+    name: item.name,
+    count: item.rowCount ?? item.row_count ?? 0
+  });
 }
 
 function statusType(status) {
@@ -253,10 +264,13 @@ function isActiveStatus(status) {
 
 function durationLabel(run) {
   const duration = Number(run?.durationMs || 0);
-  if (!duration) return isActiveStatus(run?.status) ? '执行中' : '-';
+  if (!duration) return isActiveStatus(run?.status) ? t('batchRun.runningDuration') : '-';
   if (duration < 1000) return `${duration} ms`;
-  if (duration < 60000) return `${(duration / 1000).toFixed(1)} 秒`;
-  return `${Math.floor(duration / 60000)} 分 ${Math.round(duration % 60000 / 1000)} 秒`;
+  if (duration < 60000) return t('plans.durationSeconds', { value: (duration / 1000).toFixed(1) });
+  return t('batchRun.durationMinutes', {
+    minutes: Math.floor(duration / 60000),
+    seconds: Math.round(duration % 60000 / 1000)
+  });
 }
 
 function scenarioNeedsDataset(scenario) {
@@ -380,7 +394,7 @@ async function startBatch() {
     emit('started', result);
     startPolling();
   } catch (error) {
-    ElMessage.error(error.message || '批量执行启动失败');
+    ElMessage.error(error.message || t('batchRun.startFailed'));
   } finally {
     starting.value = false;
   }
@@ -415,7 +429,7 @@ async function refreshCurrentRun() {
     }
   } catch (error) {
     stopPolling();
-    ElMessage.error(error.message || '批次状态刷新失败');
+    ElMessage.error(error.message || t('batchRun.refreshFailed'));
   } finally {
     refreshing.value = false;
   }
@@ -439,16 +453,16 @@ async function loadReport(run) {
         reportMarkdown.value = result;
         reportHtml.value = '';
       }
-      reportSource.value = ['ai', 'llm'].includes(run?.summary?.source) ? 'AI 生成' : '';
+      reportSource.value = ['ai', 'llm'].includes(run?.summary?.source) ? t('common.aiGenerated') : '';
     }
   } catch (error) {
-    if (error?.status !== 404 && error?.status !== 409) ElMessage.error(error.message || '测试报告加载失败');
+    if (error?.status !== 404 && error?.status !== 409) ElMessage.error(error.message || t('batchRun.reportLoadFailed'));
   } finally {
     reportLoading.value = false;
   }
   if (!reportMarkdown.value && !reportHtml.value && typeof run?.summary?.narrative === 'string') {
     reportMarkdown.value = run.summary.narrative;
-    reportSource.value = ['ai', 'llm'].includes(run.summary?.source) ? 'AI 生成' : '';
+    reportSource.value = ['ai', 'llm'].includes(run.summary?.source) ? t('common.aiGenerated') : '';
   }
 }
 

@@ -1,58 +1,58 @@
 <template>
-  <el-dialog v-model="visible" title="复核录制脚本" width="min(1080px, 96vw)" destroy-on-close>
+  <el-dialog v-model="visible" :title="t('recording.title')" width="min(1080px, 96vw)" destroy-on-close>
     <el-steps :active="step" simple finish-status="success">
-      <el-step title="字段" />
-      <el-step title="成功条件" />
-      <el-step title="脚本预览" />
+      <el-step :title="t('recording.stepFields')" />
+      <el-step :title="t('recording.stepAssertions')" />
+      <el-step :title="t('recording.stepPreview')" />
     </el-steps>
 
     <div v-loading="loading || previewLoading" class="review-body">
-      <el-alert v-if="analysis && !analysis.supported" title="录制分析无法完整识别，请检查脚本后再应用" type="warning" show-icon :closable="false" />
-      <el-alert v-if="analysis?.warnings?.length" :title="analysis.warnings.join('；')" type="warning" show-icon :closable="false" />
+      <el-alert v-if="analysis && !analysis.supported" :title="t('recording.analysisUnsupported')" type="warning" show-icon :closable="false" />
+      <el-alert v-if="analysis?.warnings?.length" :title="analysis.warnings.join(t('common.listSeparator'))" type="warning" show-icon :closable="false" />
 
       <template v-if="step === 0">
-        <el-form label-position="top"><el-form-item label="脚本标题"><el-input v-model="title" maxlength="120" /></el-form-item></el-form>
-        <el-table :data="fields" border max-height="400" empty-text="未识别到可替换字段">
-          <el-table-column label="显示名称" min-width="150"><template #default="{ row }"><el-input v-model="row.label" :disabled="row.ignored" /></template></el-table-column>
-          <el-table-column label="数据 key" min-width="170"><template #default="{ row }"><el-input v-model="row.key" :disabled="row.ignored || Boolean(row.mergeTo)" placeholder="例如 customerCode" /></template></el-table-column>
-          <el-table-column label="类型" width="130"><template #default="{ row }"><el-select v-model="row.type" :disabled="row.ignored"><el-option v-for="item in fieldTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></template></el-table-column>
-          <el-table-column label="示例值" min-width="150"><template #default="{ row }"><el-input v-model="row.example" :disabled="row.ignored" /></template></el-table-column>
-          <el-table-column label="必填" width="72"><template #default="{ row }"><el-checkbox v-model="row.required" :disabled="row.ignored" /></template></el-table-column>
-          <el-table-column label="合并到" min-width="150"><template #default="{ row }"><el-select v-model="row.mergeTo" clearable :disabled="row.ignored" placeholder="不合并" @change="mergeField(row, $event)"><el-option v-for="item in mergeOptions(row)" :key="item.candidateId" :label="item.label || item.key" :value="item.candidateId" /></el-select></template></el-table-column>
-          <el-table-column label="操作" width="118" fixed="right"><template #default="scope"><el-button link :type="scope.row.ignored ? 'primary' : 'warning'" @click="scope.row.ignored = !scope.row.ignored">{{ scope.row.ignored ? '恢复' : '忽略' }}</el-button><el-button link type="danger" @click="removeField(scope.$index)">删除</el-button></template></el-table-column>
+        <el-form label-position="top"><el-form-item :label="t('recording.scriptTitle')"><el-input v-model="title" maxlength="120" /></el-form-item></el-form>
+        <el-table :data="fields" border max-height="400" :empty-text="t('recording.fieldsEmpty')">
+          <el-table-column :label="t('recording.displayName')" min-width="150"><template #default="{ row }"><el-input v-model="row.label" :disabled="row.ignored" /></template></el-table-column>
+          <el-table-column :label="t('recording.dataKey')" min-width="170"><template #default="{ row }"><el-input v-model="row.key" :disabled="row.ignored || Boolean(row.mergeTo)" :placeholder="t('recording.dataKeyPlaceholder')" /></template></el-table-column>
+          <el-table-column :label="t('recording.type')" width="130"><template #default="{ row }"><el-select v-model="row.type" :disabled="row.ignored"><el-option v-for="item in fieldTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></template></el-table-column>
+          <el-table-column :label="t('recording.exampleValue')" min-width="150"><template #default="{ row }"><el-input v-model="row.example" :disabled="row.ignored" /></template></el-table-column>
+          <el-table-column :label="t('recording.required')" width="72"><template #default="{ row }"><el-checkbox v-model="row.required" :disabled="row.ignored" /></template></el-table-column>
+          <el-table-column :label="t('recording.mergeTo')" min-width="150"><template #default="{ row }"><el-select v-model="row.mergeTo" clearable :disabled="row.ignored" :placeholder="t('recording.noMerge')" @change="mergeField(row, $event)"><el-option v-for="item in mergeOptions(row)" :key="item.candidateId" :label="item.label || item.key" :value="item.candidateId" /></el-select></template></el-table-column>
+          <el-table-column :label="t('common.actions')" width="118" fixed="right"><template #default="scope"><el-button link :type="scope.row.ignored ? 'primary' : 'warning'" @click="scope.row.ignored = !scope.row.ignored">{{ scope.row.ignored ? t('common.restore') : t('common.ignore') }}</el-button><el-button link type="danger" @click="removeField(scope.$index)">{{ t('common.remove') }}</el-button></template></el-table-column>
         </el-table>
-        <el-alert v-if="fieldErrors.length" class="validation-alert" :title="fieldErrors.join('；')" type="error" show-icon :closable="false" />
+        <el-alert v-if="fieldErrors.length" class="validation-alert" :title="fieldErrors.join(t('common.listSeparator'))" type="error" show-icon :closable="false" />
       </template>
 
       <template v-else-if="step === 1">
-        <div class="assertion-toolbar"><el-text type="info">把常用成功条件转换为标准 Playwright expect 断言</el-text><el-button type="primary" plain @click="addAssertion">新增成功条件</el-button></div>
-        <el-table :data="assertions" border max-height="380" empty-text="暂无成功条件，请点击新增成功条件">
-          <el-table-column label="条件类型" width="150"><template #default="{ row }"><el-select v-model="row.type"><el-option v-for="item in assertionTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></template></el-table-column>
-          <el-table-column label="目标" min-width="190"><template #default="{ row }"><el-input v-model="row.target" :placeholder="row.type === 'url' ? '页面 URL' : '元素文字或标签'" /></template></el-table-column>
-          <el-table-column label="期望值" min-width="210"><template #default="{ row }"><el-input v-model="row.expected" :disabled="row.type === 'visible'" :placeholder="row.type === 'visible' ? '无需填写' : '输入期望内容'" /></template></el-table-column>
-          <el-table-column label="保留" width="72"><template #default="{ row }"><el-checkbox v-model="row.enabled" /></template></el-table-column>
-          <el-table-column label="操作" width="72" fixed="right"><template #default="scope"><el-button link type="danger" @click="assertions.splice(scope.$index, 1)">删除</el-button></template></el-table-column>
+        <div class="assertion-toolbar"><el-text type="info">{{ t('recording.assertionHint') }}</el-text><el-button type="primary" plain @click="addAssertion">{{ t('recording.addAssertion') }}</el-button></div>
+        <el-table :data="assertions" border max-height="380" :empty-text="t('recording.assertionsEmpty')">
+          <el-table-column :label="t('recording.conditionType')" width="150"><template #default="{ row }"><el-select v-model="row.type"><el-option v-for="item in assertionTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></template></el-table-column>
+          <el-table-column :label="t('recording.target')" min-width="190"><template #default="{ row }"><el-input v-model="row.target" :placeholder="row.type === 'url' ? t('recording.targetUrl') : t('recording.targetElement')" /></template></el-table-column>
+          <el-table-column :label="t('recording.expected')" min-width="210"><template #default="{ row }"><el-input v-model="row.expected" :disabled="row.type === 'visible'" :placeholder="row.type === 'visible' ? t('recording.expectedVisible') : t('recording.expectedInput')" /></template></el-table-column>
+          <el-table-column :label="t('recording.keep')" width="72"><template #default="{ row }"><el-checkbox v-model="row.enabled" /></template></el-table-column>
+          <el-table-column :label="t('common.actions')" width="72" fixed="right"><template #default="scope"><el-button link type="danger" @click="assertions.splice(scope.$index, 1)">{{ t('common.remove') }}</el-button></template></el-table-column>
         </el-table>
-        <el-alert v-if="assertionErrors.length" class="validation-alert" :title="assertionErrors.join('；')" type="error" show-icon :closable="false" />
+        <el-alert v-if="assertionErrors.length" class="validation-alert" :title="assertionErrors.join(t('common.listSeparator'))" type="error" show-icon :closable="false" />
       </template>
 
       <template v-else>
         <div class="preview-grid">
           <section>
-            <div class="preview-title"><strong>参数化 Playwright 脚本</strong><el-tag :type="previewStale ? 'warning' : 'info'" effect="plain">{{ previewStale ? '预览已过期' : '只读预览' }}</el-tag></div>
-            <el-alert v-if="previewError" class="preview-alert" :title="previewError" type="error" show-icon :closable="false"><el-button link type="primary" @click="refreshPreview">重新生成</el-button></el-alert>
+            <div class="preview-title"><strong>{{ t('recording.previewTitle') }}</strong><el-tag :type="previewStale ? 'warning' : 'info'" effect="plain">{{ previewStale ? t('recording.previewStale') : t('recording.previewReadonly') }}</el-tag></div>
+            <el-alert v-if="previewError" class="preview-alert" :title="previewError" type="error" show-icon :closable="false"><el-button link type="primary" @click="refreshPreview">{{ t('recording.regenerate') }}</el-button></el-alert>
             <ScriptEditor :model-value="previewResult?.source || ''" readonly :errors="previewResult?.warnings || []" />
           </section>
           <section class="preview-meta">
-            <strong>字段定义</strong><pre>{{ JSON.stringify(testDataSchema, null, 2) }}</pre>
-            <strong>示例数据</strong><pre>{{ JSON.stringify(testDataSchema.example, null, 2) }}</pre>
-            <strong>警告</strong><el-alert v-for="(warning, index) in previewWarnings" :key="`${index}-${warning}`" :title="warning" type="warning" show-icon :closable="false" /><el-text v-if="!previewWarnings.length" type="success">没有未处理警告</el-text>
+            <strong>{{ t('recording.fieldDefinitions') }}</strong><pre>{{ JSON.stringify(testDataSchema, null, 2) }}</pre>
+            <strong>{{ t('recording.sampleData') }}</strong><pre>{{ JSON.stringify(testDataSchema.example, null, 2) }}</pre>
+            <strong>{{ t('recording.warnings') }}</strong><el-alert v-for="(warning, index) in previewWarnings" :key="`${index}-${warning}`" :title="warning" type="warning" show-icon :closable="false" /><el-text v-if="!previewWarnings.length" type="success">{{ t('recording.noWarnings') }}</el-text>
           </section>
         </div>
       </template>
     </div>
 
-    <template #footer><el-button @click="visible = false">取消</el-button><el-button v-if="step > 0" @click="step -= 1">上一步</el-button><el-button v-if="step < 2" type="primary" @click="next">下一步</el-button><el-button v-else type="primary" :loading="loading" :disabled="!canApply" @click="apply">确认应用</el-button></template>
+    <template #footer><el-button @click="visible = false">{{ t('common.cancel') }}</el-button><el-button v-if="step > 0" @click="step -= 1">{{ t('common.back') }}</el-button><el-button v-if="step < 2" type="primary" @click="next">{{ t('common.next') }}</el-button><el-button v-else type="primary" :loading="loading" :disabled="!canApply" @click="apply">{{ t('recording.apply') }}</el-button></template>
   </el-dialog>
 </template>
 
@@ -62,21 +62,29 @@ import { ElMessage } from 'element-plus';
 import { api } from '../api';
 import { analyzeFieldMerges, buildAssertionPayload, redirectMergeDependents } from '../recording-review.mjs';
 import ScriptEditor from './ScriptEditor.vue';
+import { useI18n } from '../i18n';
 
 const props = defineProps({ modelValue: { type: Boolean, default: false }, recording: { type: Object, default: null } });
 const emit = defineEmits(['update:modelValue', 'applied']);
+const { t } = useI18n();
 const visible = ref(props.modelValue), step = ref(0), loading = ref(false), title = ref(''), analysis = ref(null), fields = ref([]), assertions = ref([]);
 const previewLoading = ref(false), previewResult = ref(null), previewError = ref(''), previewStale = ref(true);
 let previewTimer = null;
 let previewRequestId = 0;
-const fieldTypes = [
-  { value: 'text', label: '文本' }, { value: 'number', label: '数字' }, { value: 'date', label: '日期' },
-  { value: 'checkbox', label: '布尔' }, { value: 'select', label: '选项' }, { value: 'file', label: '文件' }
-];
-const assertionTypes = [
-  { value: 'visible', label: '元素可见' }, { value: 'text', label: '文本可见' },
-  { value: 'url', label: 'URL 包含' }, { value: 'value', label: '输入值等于' }
-];
+const fieldTypes = computed(() => [
+  { value: 'text', label: t('recording.fieldType.text') },
+  { value: 'number', label: t('recording.fieldType.number') },
+  { value: 'date', label: t('recording.fieldType.date') },
+  { value: 'checkbox', label: t('recording.fieldType.checkbox') },
+  { value: 'select', label: t('recording.fieldType.select') },
+  { value: 'file', label: t('recording.fieldType.file') }
+]);
+const assertionTypes = computed(() => [
+  { value: 'visible', label: t('recording.assertionType.visible') },
+  { value: 'text', label: t('recording.assertionType.text') },
+  { value: 'url', label: t('recording.assertionType.url') },
+  { value: 'value', label: t('recording.assertionType.value') }
+]);
 
 const activeFields = computed(() => fields.value.filter((field) => !field.ignored && !field.mergeTo));
 const enabledAssertions = computed(() => assertions.value.filter((item) => item.enabled !== false));
@@ -85,16 +93,16 @@ const fieldErrors = computed(() => {
   const errors = [...mergeAnalysis.value.errors], seen = new Set();
   for (const [index, field] of activeFields.value.entries()) {
     const key = String(field.key || '').trim();
-    if (!key) errors.push(`第 ${index + 1} 个字段 key 不能为空`);
-    else if (seen.has(key)) errors.push(`字段 key 不能重复：${key}`);
+    if (!key) errors.push(t('recording.fieldKeyEmpty', { index: index + 1 }));
+    else if (seen.has(key)) errors.push(t('recording.fieldKeyDuplicate', { key }));
     else seen.add(key);
   }
   return errors;
 });
 const assertionErrors = computed(() => enabledAssertions.value.map((item, index) => {
-  if (item.type === 'url') return String(item.expected || '').trim() ? '' : `第 ${index + 1} 个 URL 成功条件需要期望值`;
-  if (!String(item.target || '').trim()) return `第 ${index + 1} 个成功条件需要目标`;
-  if (item.type !== 'visible' && !String(item.expected ?? '').trim()) return `第 ${index + 1} 个成功条件需要期望值`;
+  if (item.type === 'url') return String(item.expected || '').trim() ? '' : t('recording.urlNeedExpected', { index: index + 1 });
+  if (!String(item.target || '').trim()) return t('recording.assertionNeedTarget', { index: index + 1 });
+  if (item.type !== 'visible' && !String(item.expected ?? '').trim()) return t('recording.assertionNeedExpected', { index: index + 1 });
   return '';
 }).filter(Boolean));
 const fieldsForApply = computed(() => activeFields.value.map(({ ignored, mergeTo, candidateIds, ...field }) => ({
@@ -108,9 +116,9 @@ const testDataSchema = computed(() => previewResult.value?.schema || { columns: 
 const previewWarnings = computed(() => [
   ...(previewResult.value?.warnings || []),
   ...(analysis.value?.warnings || []),
-  ...fields.value.filter((field) => field.ignored).map((field) => `固定值“${field.label}”将保持原样，不进入测试数据。`),
-  ...fields.value.filter((field) => field.mergeTo).map((field) => `候选“${field.label}”已合并到其他字段。`),
-  ...(enabledAssertions.value.length ? [] : ['当前脚本没有成功条件，建议返回上一步新增断言。'])
+  ...fields.value.filter((field) => field.ignored).map((field) => t('recording.fixedValueWarning', { label: field.label })),
+  ...fields.value.filter((field) => field.mergeTo).map((field) => t('recording.mergedWarning', { label: field.label })),
+  ...(enabledAssertions.value.length ? [] : [t('recording.noAssertionWarning')])
 ]);
 const canApply = computed(() => Boolean(previewResult.value) && !previewLoading.value && !previewStale.value
   && !previewError.value && !(previewResult.value?.warnings || []).length);
@@ -141,7 +149,7 @@ function cancelPreview() {
 function open(value = props.recording) {
   cancelPreview();
   step.value = 0;
-  title.value = value?.scenarioKey || '录制场景';
+  title.value = value?.scenarioKey || t('recording.defaultTitle');
   previewResult.value = null;
   previewError.value = '';
   previewStale.value = true;
@@ -149,10 +157,9 @@ function open(value = props.recording) {
   visible.value = true;
 }
 
-// The server response is authoritative for generated testDataSchema and expect(...) statements.
 async function loadPreview(requestId) {
   if (!props.recording?.id) {
-    previewError.value = '录制记录不存在';
+    previewError.value = t('recording.notFound');
     previewStale.value = true;
     return;
   }
@@ -193,19 +200,19 @@ function invalidatePreview() {
   }, 200);
 }
 async function next() {
-  if (step.value === 0 && fieldErrors.value.length) return ElMessage.warning(fieldErrors.value.join('；'));
-  if (step.value === 1 && assertionErrors.value.length) return ElMessage.warning(assertionErrors.value.join('；'));
+  if (step.value === 0 && fieldErrors.value.length) return ElMessage.warning(fieldErrors.value.join(t('common.listSeparator')));
+  if (step.value === 1 && assertionErrors.value.length) return ElMessage.warning(assertionErrors.value.join(t('common.listSeparator')));
   step.value += 1;
   if (step.value === 2) await refreshPreview();
 }
 async function apply() {
-  if (fieldErrors.value.length || assertionErrors.value.length) return ElMessage.warning([...fieldErrors.value, ...assertionErrors.value].join('；'));
-  if (!props.recording?.id) return ElMessage.error('录制记录不存在');
-  if (!canApply.value) return ElMessage.warning('请等待脚本预览生成完成');
+  if (fieldErrors.value.length || assertionErrors.value.length) return ElMessage.warning([...fieldErrors.value, ...assertionErrors.value].join(t('common.listSeparator')));
+  if (!props.recording?.id) return ElMessage.error(t('recording.notFound'));
+  if (!canApply.value) return ElMessage.warning(t('recording.waitPreview'));
   loading.value = true;
   try {
     const result = await api(`/api/recordings/${props.recording.id}/apply`, { method: 'POST', body: JSON.stringify(previewPayload.value) });
-    emit('applied', result); visible.value = false; ElMessage.success('录制脚本已应用');
+    emit('applied', result); visible.value = false; ElMessage.success(t('recording.applied'));
   } catch (error) { ElMessage.error(error.message); }
   finally { loading.value = false; }
 }

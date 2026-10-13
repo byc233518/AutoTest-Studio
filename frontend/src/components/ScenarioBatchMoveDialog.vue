@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="批量移动目录"
+    :title="t('batchMove.title')"
     width="620px"
     top="7vh"
     append-to-body
@@ -10,26 +10,26 @@
   >
     <div v-loading="moving" class="batch-move-body">
       <div class="selection-summary">
-        <strong>已选择 {{ scenarioIds.length }} 个用例</strong>
+        <strong>{{ t('batchMove.selectedCount', { count: scenarioIds.length }) }}</strong>
         <span>{{ scenarioNames }}</span>
       </div>
 
       <el-form label-position="top">
-        <el-form-item label="目标目录" required>
+        <el-form-item :label="t('batchMove.targetDirectory')" required>
           <el-input
             v-model="targetDirectory"
             maxlength="160"
             clearable
-            placeholder="选择已有目录，或输入新目录"
+            :placeholder="t('batchMove.targetPlaceholder')"
             @blur="normalizeTarget"
           />
         </el-form-item>
       </el-form>
 
-      <div class="directory-picker" aria-label="目标目录树">
+      <div class="directory-picker" :aria-label="t('batchMove.treeAria')">
         <div class="directory-picker-heading">
-          <strong>已有目录</strong>
-          <span>{{ directoryCount }} 个</span>
+          <strong>{{ t('batchMove.existingDirectories') }}</strong>
+          <span>{{ t('batchMove.directoryCount', { count: directoryCount }) }}</span>
         </div>
         <el-scrollbar max-height="360px">
           <el-tree
@@ -40,7 +40,7 @@
             :default-expanded-keys="directoryTree.map((node) => node.id)"
             :indent="16"
             highlight-current
-            empty-text="当前项目暂无目录"
+            :empty-text="t('batchMove.treeEmpty')"
             @node-click="selectDirectory"
           >
             <template #default="{ data }">
@@ -56,9 +56,9 @@
     </div>
 
     <template #footer>
-      <el-button :disabled="moving" @click="visible = false">取消</el-button>
+      <el-button :disabled="moving" @click="visible = false">{{ t('common.cancel') }}</el-button>
       <el-button type="primary" :loading="moving" :disabled="!targetDirectory.trim()" @click="moveScenarios">
-        移动 {{ scenarioIds.length }} 个用例
+        {{ t('batchMove.moveScenarios', { count: scenarioIds.length }) }}
       </el-button>
     </template>
   </el-dialog>
@@ -71,9 +71,11 @@ import { ElMessage } from 'element-plus';
 import { api } from '../api';
 import { buildScenarioDirectoryTree } from '../scenario-menu-tree';
 import { usePlatformStore } from '../stores/platform';
+import { useI18n } from '../i18n';
 
 const emit = defineEmits(['moved']);
 const store = usePlatformStore();
+const { t } = useI18n();
 const visible = ref(false);
 const moving = ref(false);
 const selectedScenarios = ref([]);
@@ -83,7 +85,7 @@ const treeRef = ref();
 const scenarioIds = computed(() => selectedScenarios.value.map((item) => item.id || item.key).filter(Boolean));
 const scenarioNames = computed(() => {
   const names = selectedScenarios.value.slice(0, 3).map((item) => item.name).filter(Boolean);
-  return `${names.join('、')}${selectedScenarios.value.length > names.length ? ` 等 ${selectedScenarios.value.length} 个` : ''}`;
+  return `${names.join(t('common.listSeparator'))}${selectedScenarios.value.length > names.length ? t('batchMove.scenarioCountMore', { count: selectedScenarios.value.length }) : ''}`;
 });
 const directoryTree = computed(() => buildScenarioDirectoryTree(store.scenarios));
 const flatDirectories = computed(() => {
@@ -106,8 +108,8 @@ function normalizeDirectory(value) {
     .split('/')
     .map((item) => item.trim())
     .filter(Boolean);
-  if (!parts.length) throw new Error('请选择或输入目标目录');
-  if (parts.some((item) => item === '.' || item === '..')) throw new Error('目录不能使用 . 或 ..');
+  if (!parts.length) throw new Error(t('batchMove.needTarget'));
+  if (parts.some((item) => item === '.' || item === '..')) throw new Error(t('batchMove.invalidDirectory'));
   return parts.join(' / ');
 }
 
@@ -127,7 +129,8 @@ function selectDirectory(node) {
 
 async function open(rows) {
   selectedScenarios.value = [...rows];
-  const directories = new Set(rows.map((item) => item.directory || item.module || '未分类'));
+  const uncategorized = t('scenarios.uncategorized');
+  const directories = new Set(rows.map((item) => item.directory || item.module || uncategorized));
   targetDirectory.value = directories.size === 1 ? [...directories][0] : '';
   visible.value = true;
   await nextTick();
@@ -151,7 +154,7 @@ async function moveScenarios() {
     visible.value = false;
     emit('moved', result);
   } catch (error) {
-    ElMessage.error(error.message || '批量移动失败');
+    ElMessage.error(error.message || t('batchMove.moveFailed'));
   } finally {
     moving.value = false;
   }

@@ -3,13 +3,13 @@
     <div
       v-loading="store.loading"
       class="scenario-layout directory-layout"
-      element-loading-text="用例加载中..."
+      :element-loading-text="t('scenarios.loading')"
       :aria-busy="store.loading"
     >
       <el-card class="tree-card directory-card" shadow="never">
         <template #header>
           <div class="tree-heading">
-            <strong>用例目录</strong>
+            <strong>{{ t('scenarios.directory') }}</strong>
             <span>{{ store.scenarios.length }}</span>
           </div>
         </template>
@@ -37,11 +37,11 @@
           <div class="card-header compact-header">
             <div class="heading-copy">
               <div class="heading-line">
-                <h2>测试用例</h2>
-                <el-tag size="small" type="info" effect="plain">可执行 {{ store.readyScenarios.length }}</el-tag>
-                <el-tag size="small" type="success" effect="plain">成功率 {{ passRate }}%</el-tag>
+                <h2>{{ t('scenarios.title') }}</h2>
+                <el-tag size="small" type="info" effect="plain">{{ t('scenarios.readyCount', { count: store.readyScenarios.length }) }}</el-tag>
+                <el-tag size="small" type="success" effect="plain">{{ t('scenarios.passRate', { rate: passRate }) }}</el-tag>
               </div>
-              <span class="muted">按目录管理脚本、测试数据和执行记录</span>
+              <span class="muted">{{ t('scenarios.subtitle') }}</span>
             </div>
             <div class="header-actions">
               <el-upload
@@ -50,10 +50,10 @@
                 accept=".json"
                 :on-change="importCases"
               >
-                <el-button :icon="Upload">导入</el-button>
+                <el-button :icon="Upload">{{ t('common.import') }}</el-button>
               </el-upload>
-              <el-button :icon="Download" @click="exportCases">导出</el-button>
-              <el-button type="primary" :icon="Plus" @click="formRef.open()">新建用例</el-button>
+              <el-button :icon="Download" @click="exportCases">{{ t('common.export') }}</el-button>
+              <el-button type="primary" :icon="Plus" @click="formRef.open()">{{ t('scenarios.create') }}</el-button>
             </div>
           </div>
         </template>
@@ -62,33 +62,33 @@
           <el-input
             v-model="keyword"
             :prefix-icon="Search"
-            placeholder="搜索用例名称、目录、key"
+            :placeholder="t('scenarios.searchPlaceholder')"
             clearable
           />
-          <el-segmented v-model="statusFilter" :options="['全部', '可执行', '需准备', '草稿']" />
-          <el-button :icon="Refresh" circle aria-label="刷新用例" @click="refreshCatalog" />
+          <el-segmented v-model="statusFilter" :options="statusOptions" />
+          <el-button :icon="Refresh" circle :aria-label="t('scenarios.refreshAria')" @click="refreshCatalog" />
         </div>
 
-        <div class="batch-toolbar" role="toolbar" aria-label="用例批量操作">
+        <div class="batch-toolbar" role="toolbar" :aria-label="t('scenarios.batchToolbarAria')">
           <el-tag size="small" :type="selectedCount ? 'primary' : 'info'" effect="plain">
-            已选 {{ selectedCount }} 项
+            {{ t('scenarios.selectedCount', { count: selectedCount }) }}
           </el-tag>
           <el-button size="small" :disabled="!filtered.length || allFilteredSelected" @click="selectAllFiltered">
-            全选筛选结果
+            {{ t('scenarios.selectAllFiltered') }}
           </el-button>
-          <el-button size="small" :disabled="!selectedCount" @click="clearSelection">清空</el-button>
-          <el-tooltip v-if="latestBatchRun" content="查看最近批次">
-            <el-button size="small" circle :icon="DataAnalysis" aria-label="查看最近批次" @click="openLatestBatch" />
+          <el-button size="small" :disabled="!selectedCount" @click="clearSelection">{{ t('common.clear') }}</el-button>
+          <el-tooltip v-if="latestBatchRun" :content="t('scenarios.latestBatch')">
+            <el-button size="small" circle :icon="DataAnalysis" :aria-label="t('scenarios.latestBatch')" @click="openLatestBatch" />
           </el-tooltip>
           <span class="batch-toolbar-spacer" />
           <el-button size="small" type="primary" :icon="VideoPlay" :disabled="!selectedCount" @click="openBatchRun">
-            批量执行
+            {{ t('scenarios.batchRun') }}
           </el-button>
           <el-button size="small" :icon="FolderOpened" :disabled="!selectedCount" @click="openBatchMove">
-            移动目录
+            {{ t('scenarios.batchMove') }}
           </el-button>
           <el-button size="small" type="danger" plain :icon="Delete" :loading="deleting" :disabled="!selectedCount" @click="deleteSelected">
-            批量删除
+            {{ t('scenarios.batchDelete') }}
           </el-button>
         </div>
 
@@ -98,12 +98,12 @@
           :row-key="scenarioIdentity"
           height="calc(100vh - 278px)"
           size="small"
-          empty-text="当前目录暂无测试用例"
+          :empty-text="t('scenarios.empty')"
           @selection-change="handleSelectionChange"
           @row-dblclick="edit"
         >
           <el-table-column type="selection" width="42" reserve-selection />
-          <el-table-column label="用例名称" min-width="270">
+          <el-table-column :label="t('scenarios.colName')" min-width="270">
             <template #default="{ row }">
               <div class="case-name">
                 <strong>{{ row.name }}</strong>
@@ -111,25 +111,25 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="目录" min-width="250" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.directory || row.module || '未分类' }}</template>
+          <el-table-column :label="t('scenarios.colDirectory')" min-width="250" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.directory || row.module || t('scenarios.uncategorized') }}</template>
           </el-table-column>
-          <el-table-column prop="priority" label="优先级" width="76" align="center" />
-          <el-table-column label="状态" width="92" align="center">
+          <el-table-column prop="priority" :label="t('scenarios.colPriority')" width="76" align="center" />
+          <el-table-column :label="t('scenarios.colStatus')" width="92" align="center">
             <template #default="{ row }">
               <el-tag size="small" :type="readinessType(row)">{{ readinessLabel(row) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="近期成功率" width="118">
+          <el-table-column :label="t('scenarios.colPassRate')" width="118">
             <template #default="{ row }">
               <el-progress :percentage="row.quality?.passRate || 0" :stroke-width="6" :show-text="true" />
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="172" fixed="right" align="right">
+          <el-table-column :label="t('scenarios.colActions')" width="172" fixed="right" align="right">
             <template #default="{ row }">
-              <el-button type="primary" link @click="runRef.open(row)">执行</el-button>
-              <el-button link @click="edit(row)">编辑</el-button>
-              <el-button link @click="$emit('history', row)">历史</el-button>
+              <el-button type="primary" link @click="runRef.open(row)">{{ t('common.execute') }}</el-button>
+              <el-button link @click="edit(row)">{{ t('common.edit') }}</el-button>
+              <el-button link @click="$emit('history', row)">{{ t('common.history') }}</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -150,6 +150,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { DataAnalysis, Delete, Download, Folder, FolderOpened, Plus, Refresh, Search, Upload, VideoPlay } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { api } from '../api';
+import { useI18n } from '../i18n';
 import { usePlatformStore } from '../stores/platform';
 import { buildScenarioDirectoryTree, filterScenariosByTree, findScenarioTreeNode } from '../scenario-menu-tree';
 import RunDialog from '../components/RunDialog.vue';
@@ -160,6 +161,7 @@ import ScenarioBatchMoveDialog from '../components/ScenarioBatchMoveDialog.vue';
 import ScenarioBatchRunDialog from '../components/ScenarioBatchRunDialog.vue';
 
 defineEmits(['history']);
+const { t } = useI18n();
 const store = usePlatformStore();
 const runRef = ref();
 const runDetailRef = ref();
@@ -169,7 +171,7 @@ const tableRef = ref();
 const batchMoveRef = ref();
 const batchRunRef = ref();
 const keyword = ref('');
-const statusFilter = ref('全部');
+const statusFilter = ref('all');
 const selectedId = ref('all');
 const selectedRows = ref([]);
 const deleting = ref(false);
@@ -182,7 +184,7 @@ const passRate = computed(() => completed.value.length
 const directoryTree = computed(() => buildScenarioDirectoryTree(store.scenarios));
 const tree = computed(() => [{
   id: 'all',
-  label: '全部用例',
+  label: t('scenarios.allCases'),
   type: 'root',
   scenarioCount: store.scenarios.length,
   scenarioIds: store.scenarios.map((scenario) => scenario.id || scenario.key),
@@ -191,10 +193,16 @@ const tree = computed(() => [{
 const selectedNode = computed(() => selectedId.value === 'all'
   ? null
   : findScenarioTreeNode(tree.value, selectedId.value));
+const statusOptions = computed(() => [
+  { label: t('common.all'), value: 'all' },
+  { label: t('status.ready'), value: 'ready' },
+  { label: t('status.needPrep'), value: 'needPrep' },
+  { label: t('status.draft'), value: 'draft' }
+]);
 const filtered = computed(() => filterScenariosByTree(store.scenarios, {
   scenarioIds: selectedNode.value?.scenarioIds,
   keyword: keyword.value
-}).filter((scenario) => statusFilter.value === '全部' || readinessLabel(scenario) === statusFilter.value));
+}).filter((scenario) => statusFilter.value === 'all' || readinessKey(scenario) === statusFilter.value));
 const selectedCount = computed(() => selectedRows.value.length);
 const selectedIdentitySet = computed(() => new Set(selectedRows.value.map(scenarioIdentity)));
 const allFilteredSelected = computed(() => filtered.value.length > 0
@@ -216,8 +224,12 @@ function selectNode(node) {
   selectedId.value = node.id;
 }
 
+function readinessKey(row) {
+  return row.status === 'draft' ? 'draft' : row.readiness?.ready ? 'ready' : 'needPrep';
+}
+
 function readinessLabel(row) {
-  return row.status === 'draft' ? '草稿' : row.readiness?.ready ? '可执行' : '需准备';
+  return t(`status.${readinessKey(row)}`);
 }
 
 function readinessType(row) {
@@ -256,11 +268,11 @@ function openBatchRun() {
     scenario.status !== 'draft' && scenario.readiness?.ready
   );
   if (!executable.length) {
-    ElMessage.warning('所选用例均不可执行，请先准备脚本、数据与环境');
+    ElMessage.warning(t('scenarios.noneExecutable'));
     return;
   }
   if (executable.length < selectedRows.value.length) {
-    ElMessage.info(`已忽略 ${selectedRows.value.length - executable.length} 个不可执行用例`);
+    ElMessage.info(t('scenarios.ignoredNotReady', { count: selectedRows.value.length - executable.length }));
   }
   batchRunRef.value?.open(executable);
 }
@@ -289,9 +301,9 @@ async function reloadCatalogAfterBatch() {
 async function handleBatchMoved(result) {
   try {
     await reloadCatalogAfterBatch();
-    ElMessage.success(`已移动 ${result.moved || 0} 个用例`);
+    ElMessage.success(t('scenarios.moved', { count: result.moved || 0 }));
   } catch (error) {
-    ElMessage.error(error.message || '用例已移动，但目录刷新失败');
+    ElMessage.error(error.message || t('scenarios.movedRefreshFailed'));
   }
 }
 
@@ -300,9 +312,9 @@ async function deleteSelected() {
   const count = selectedCount.value;
   try {
     await ElMessageBox.confirm(
-      `确定删除选中的 ${count} 个测试用例吗？删除后不可恢复。`,
-      '批量删除用例',
-      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+      t('scenarios.deleteConfirm', { count }),
+      t('scenarios.deleteTitle'),
+      { type: 'warning', confirmButtonText: t('common.delete'), cancelButtonText: t('common.cancel') }
     );
     deleting.value = true;
     const result = await api('/api/scenarios/batch/delete', {
@@ -312,12 +324,12 @@ async function deleteSelected() {
     await reloadCatalogAfterBatch();
     const cleanupWarningCount = Array.isArray(result.cleanupWarnings) ? result.cleanupWarnings.length : 0;
     if (cleanupWarningCount) {
-      ElMessage.warning(`数据库已删除 ${result.deleted || count} 个用例，但有 ${cleanupWarningCount} 个本地文件未清理，可查看项目目录或重试`);
+      ElMessage.warning(t('scenarios.deletedPartialCleanup', { deleted: result.deleted || count, warnings: cleanupWarningCount }));
     } else {
-      ElMessage.success(`已删除 ${result.deleted || count} 个用例`);
+      ElMessage.success(t('scenarios.deleted', { count: result.deleted || count }));
     }
   } catch (error) {
-    if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message || '批量删除失败');
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message || t('scenarios.deleteFailed'));
   } finally {
     deleting.value = false;
   }
@@ -327,7 +339,7 @@ async function handleBatchStarted(run) {
   latestBatchRun.value = run;
   clearSelection();
   const runId = run?.id || run?.runId || run?.testPlanRunId;
-  ElMessage.success(runId ? `批量执行已启动：${runId}` : '批量执行已启动');
+  ElMessage.success(runId ? t('scenarios.batchStartedWithId', { id: runId }) : t('scenarios.batchStarted'));
 }
 
 function handleBatchUpdated(run) {
@@ -337,9 +349,9 @@ function handleBatchUpdated(run) {
 async function refreshCatalog() {
   try {
     await store.loadCatalog();
-    ElMessage.success('用例目录已刷新');
+    ElMessage.success(t('scenarios.catalogRefreshed'));
   } catch (error) {
-    ElMessage.error(error.message || '用例目录刷新失败');
+    ElMessage.error(error.message || t('scenarios.catalogRefreshFailed'));
   }
 }
 
@@ -349,9 +361,9 @@ async function importCases(file) {
   try {
     const result = await fetch('/api/scenarios/import', { method: 'POST', credentials: 'include', body });
     const payload = await result.json().catch(() => ({}));
-    if (!result.ok) throw new Error(payload.message || '用例导入失败');
+    if (!result.ok) throw new Error(payload.message || t('scenarios.importFailed'));
     await store.loadCatalog();
-    ElMessage.success(`已导入 ${payload.imported || 0} 个用例`);
+    ElMessage.success(t('scenarios.imported', { count: payload.imported || 0 }));
   } catch (error) {
     ElMessage.error(error.message);
   }
@@ -362,7 +374,7 @@ async function exportCases() {
     const response = await fetch('/api/scenarios/export', { credentials: 'include' });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
-      throw new Error(payload.message || '用例导出失败');
+      throw new Error(payload.message || t('scenarios.exportFailed'));
     }
     const disposition = response.headers.get('content-disposition') || '';
     const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
@@ -376,9 +388,9 @@ async function exportCases() {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    ElMessage.success('用例包已导出');
+    ElMessage.success(t('scenarios.exported'));
   } catch (error) {
-    ElMessage.error(error.message || '用例导出失败');
+    ElMessage.error(error.message || t('scenarios.exportFailed'));
   }
 }
 
@@ -387,7 +399,7 @@ async function handleCatalogChanged(nextScenario) {
   try {
     await store.loadCatalog();
   } catch (error) {
-    ElMessage.error(error.message || '用例目录刷新失败');
+    ElMessage.error(error.message || t('scenarios.catalogRefreshFailed'));
   }
 }
 
@@ -404,7 +416,7 @@ watch(projectIdentity, (next, previous) => {
   if (!previous || next === previous) return;
   selectedId.value = 'all';
   keyword.value = '';
-  statusFilter.value = '全部';
+  statusFilter.value = 'all';
   latestBatchRun.value = null;
   clearSelection();
   batchMoveRef.value?.close();

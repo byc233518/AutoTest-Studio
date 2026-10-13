@@ -1,7 +1,7 @@
 <template>
   <div class="script-editor-shell">
     <div class="script-editor-toolbar">
-      <el-button :icon="MagicStick" size="small" :disabled="readonly" title="格式化脚本" @click="formatScript">格式化</el-button>
+      <el-button :icon="MagicStick" size="small" :disabled="readonly" :title="t('scriptEditor.formatTitle')" @click="formatScript">{{ t('scriptEditor.format') }}</el-button>
     </div>
     <div ref="host" class="script-editor-host" :class="{ 'is-readonly': readonly }" />
     <div v-if="displayErrors.length" class="script-editor-errors" role="alert">
@@ -21,6 +21,9 @@ import { searchKeymap } from '@codemirror/search';
 import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { parse } from 'acorn';
+import { useI18n } from '../i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -61,7 +64,7 @@ function syntaxDiagnostics(view) {
     return [];
   } catch (error) {
     const from = Math.max(0, Math.min(Number(error.pos || 0), view.state.doc.length));
-    const message = `语法错误：${error.message}`;
+    const message = t('scriptEditor.syntaxError', { message: error.message });
     syntaxErrors.value = [message];
     return [{ from, to: Math.min(from + 1, view.state.doc.length), severity: 'error', message }];
   }

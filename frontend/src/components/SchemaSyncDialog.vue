@@ -1,37 +1,63 @@
 <template>
-  <el-dialog v-model="visible" title="字段合约同步" width="min(980px, 96vw)" destroy-on-close>
+  <el-dialog v-model="visible" :title="t('schemaSync.title')" width="min(980px, 96vw)" destroy-on-close>
     <div v-loading="loading" class="sync-body">
       <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" />
       <el-form label-position="top" class="sync-form">
-        <el-form-item label="解决方式">
+        <el-form-item :label="t('schemaSync.resolution')">
           <el-radio-group v-model="resolution">
-            <el-radio-button value="platform">以平台字段为准</el-radio-button>
-            <el-radio-button value="script">以脚本字段为准</el-radio-button>
-            <el-radio-button value="merge">合并字段</el-radio-button>
+            <el-radio-button value="platform">{{ t('schemaSync.resolutionPlatform') }}</el-radio-button>
+            <el-radio-button value="script">{{ t('schemaSync.resolutionScript') }}</el-radio-button>
+            <el-radio-button value="merge">{{ t('schemaSync.resolutionMerge') }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
       </el-form>
 
       <div class="schema-columns">
-        <section><strong>平台字段</strong><el-tag v-for="field in platformFields" :key="field.key" effect="plain">{{ field.label || field.key }}</el-tag><el-empty v-if="!platformFields.length" description="暂无字段" /></section>
-        <section><strong>脚本字段</strong><el-tag v-for="field in scriptFields" :key="field.key" effect="plain" type="info">{{ field.label || field.key }}</el-tag><el-empty v-if="!scriptFields.length" description="暂无字段" /></section>
+        <section>
+          <strong>{{ t('schemaSync.platformFields') }}</strong>
+          <el-tag v-for="field in platformFields" :key="field.key" effect="plain">{{ field.label || field.key }}</el-tag>
+          <el-empty v-if="!platformFields.length" :description="t('schemaSync.noFields')" />
+        </section>
+        <section>
+          <strong>{{ t('schemaSync.scriptFields') }}</strong>
+          <el-tag v-for="field in scriptFields" :key="field.key" effect="plain" type="info">{{ field.label || field.key }}</el-tag>
+          <el-empty v-if="!scriptFields.length" :description="t('schemaSync.noFields')" />
+        </section>
       </div>
 
       <el-form v-if="resolution === 'merge'" label-position="top" class="merge-form">
-        <el-form-item label="合并字段 JSON"><el-input v-model="targetSchemaText" type="textarea" :rows="6" placeholder='{"columns":["code"],"required":[],"example":{}}' /></el-form-item>
+        <el-form-item :label="t('schemaSync.mergeJson')">
+          <el-input v-model="targetSchemaText" type="textarea" :rows="6" placeholder='{"columns":["code"],"required":[],"example":{}}' />
+        </el-form-item>
       </el-form>
 
-      <el-table :data="mappings" border max-height="280" empty-text="没有需要映射的字段">
-        <el-table-column prop="from" label="脚本字段" min-width="180" />
-        <el-table-column label="平台字段" min-width="220"><template #default="{ row }"><el-select v-model="row.to" clearable placeholder="选择目标字段"><el-option v-for="field in platformFields" :key="field.key" :label="field.label || field.key" :value="field.key" /></el-select></template></el-table-column>
+      <el-table :data="mappings" border max-height="280" :empty-text="t('schemaSync.emptyMappings')">
+        <el-table-column prop="from" :label="t('schemaSync.colScriptField')" min-width="180" />
+        <el-table-column :label="t('schemaSync.colPlatformField')" min-width="220">
+          <template #default="{ row }">
+            <el-select v-model="row.to" clearable :placeholder="t('schemaSync.selectTarget')">
+              <el-option v-for="field in platformFields" :key="field.key" :label="field.label || field.key" :value="field.key" />
+            </el-select>
+          </template>
+        </el-table-column>
       </el-table>
 
       <div v-if="conflicts.length" class="conflict-list">
-        <strong>冲突位置</strong>
-        <el-alert v-for="(conflict, index) in conflicts" :key="`${index}-${conflict.line}-${conflict.column}`" :title="formatConflict(conflict)" type="warning" show-icon :closable="false" />
+        <strong>{{ t('schemaSync.conflicts') }}</strong>
+        <el-alert
+          v-for="(conflict, index) in conflicts"
+          :key="`${index}-${conflict.line}-${conflict.column}`"
+          :title="formatConflict(conflict)"
+          type="warning"
+          show-icon
+          :closable="false"
+        />
       </div>
     </div>
-    <template #footer><el-button @click="visible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">同步字段</el-button></template>
+    <template #footer>
+      <el-button @click="visible = false">{{ t('common.cancel') }}</el-button>
+      <el-button type="primary" :loading="saving" @click="save">{{ t('schemaSync.sync') }}</el-button>
+    </template>
   </el-dialog>
 </template>
 
@@ -39,6 +65,9 @@
 import { computed, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { api } from '../api';
+import { useI18n } from '../i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -92,16 +121,21 @@ function open(key = props.scenarioKey) {
 
 function parseTargetSchema() {
   if (resolution.value !== 'merge') return contract.value.platformSchema;
-  try { return JSON.parse(targetSchemaText.value); } catch { throw new Error('合并字段 JSON 无效'); }
+  try { return JSON.parse(targetSchemaText.value); } catch { throw new Error(t('schemaSync.invalidMergeJson')); }
 }
 
 function formatConflict(conflict = {}) {
-  return `${conflict.kind || 'unknown'} | 第 ${conflict.line ?? '-'} 行 | 第 ${conflict.column ?? '-'} 列 | ${conflict.message || '脚本冲突'}`;
+  return t('schemaSync.conflictFormat', {
+    kind: conflict.kind || 'unknown',
+    line: conflict.line ?? '-',
+    column: conflict.column ?? '-',
+    message: conflict.message || t('schemaSync.conflictFallback')
+  });
 }
 
 async function save() {
   const key = props.scenarioKey;
-  if (!key) return ElMessage.error('场景 key 不存在');
+  if (!key) return ElMessage.error(t('schemaSync.missingKey'));
   saving.value = true;
   try {
     const result = await api(`/api/scenarios/${key}/contract`, {
@@ -110,7 +144,7 @@ async function save() {
     });
     emit('synced', result);
     visible.value = false;
-    ElMessage.success('字段合约已同步');
+    ElMessage.success(t('schemaSync.synced'));
   } catch (error) {
     if (error.status === 409 && error.data?.code === 'MIGRATION_REQUIRED') {
       emit('migrationRequired', error.data);

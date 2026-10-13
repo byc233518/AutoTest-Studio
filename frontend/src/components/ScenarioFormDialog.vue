@@ -1,14 +1,14 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="editing ? '编辑测试用例' : '新建测试用例'"
+    :title="editing ? t('scenarioForm.editTitle') : t('scenarioForm.createTitle')"
     class="scenario-form-dialog"
     width="760px"
     top="24px"
     destroy-on-close
   >
     <el-form ref="formRef" :model="form" :rules="rules" label-position="top" v-loading="saving">
-      <el-form-item label="所属目录" prop="directory">
+      <el-form-item :label="t('scenarioForm.directory')" prop="directory">
         <el-tree-select
           v-model="form.directory"
           class="wide"
@@ -19,8 +19,8 @@
           filterable
           allow-create
           default-first-option
-          placeholder="从目录树选择，或输入新目录"
-          no-data-text="暂无目录，可直接输入新目录"
+          :placeholder="t('scenarioForm.directoryPlaceholder')"
+          :no-data-text="t('scenarioForm.directoryEmpty')"
           clearable
         >
           <template #default="{ data }">
@@ -30,58 +30,58 @@
             </span>
           </template>
         </el-tree-select>
-        <div class="field-help">可从树中选择任意层级；新目录使用“/”分隔，输入后按 Enter 确认，保存后自动加入目录树。</div>
+        <div class="field-help">{{ t('scenarioForm.directoryHelp') }}</div>
       </el-form-item>
 
       <div class="config-grid compact-grid">
-        <el-form-item label="用例名称" prop="name">
+        <el-form-item :label="t('scenarioForm.name')" prop="name">
           <el-input v-model="form.name" maxlength="80" show-word-limit />
         </el-form-item>
-        <el-form-item label="用例 key" prop="key">
-          <el-input v-model="form.key" :disabled="editing" placeholder="如 sample-form-submit" />
+        <el-form-item :label="t('scenarioForm.key')" prop="key">
+          <el-input v-model="form.key" :disabled="editing" :placeholder="t('scenarioForm.keyPlaceholder')" />
         </el-form-item>
-        <el-form-item label="优先级" prop="priority">
+        <el-form-item :label="t('scenarioForm.priority')" prop="priority">
           <el-select v-model="form.priority" class="wide">
             <el-option v-for="item in ['P0', 'P1', 'P2', 'P3']" :key="item" :label="item" :value="item" />
           </el-select>
         </el-form-item>
-        <el-form-item label="负责人">
+        <el-form-item :label="t('scenarioForm.owner')">
           <el-input v-model="form.owner" />
         </el-form-item>
       </div>
 
-      <el-form-item label="描述">
+      <el-form-item :label="t('scenarioForm.description')">
         <el-input v-model="form.description" type="textarea" :rows="2" />
       </el-form-item>
 
-      <el-form-item label="数据字段">
+      <el-form-item :label="t('scenarioForm.dataFields')">
         <div class="wide schema-editor">
           <el-table :data="form.fields" border max-height="250" size="small">
-            <el-table-column label="字段名称" min-width="180">
-              <template #default="{ row }"><el-input v-model="row.name" placeholder="字段名" /></template>
+            <el-table-column :label="t('scenarioForm.fieldName')" min-width="180">
+              <template #default="{ row }"><el-input v-model="row.name" :placeholder="t('scenarioForm.fieldNamePlaceholder')" /></template>
             </el-table-column>
-            <el-table-column label="必填" width="72" align="center">
+            <el-table-column :label="t('scenarioForm.required')" width="72" align="center">
               <template #default="{ row }"><el-checkbox v-model="row.required" /></template>
             </el-table-column>
-            <el-table-column label="示例值" min-width="220">
-              <template #default="{ row }"><el-input v-model="row.example" placeholder="用于生成样例数据" /></template>
+            <el-table-column :label="t('scenarioForm.exampleValue')" min-width="220">
+              <template #default="{ row }"><el-input v-model="row.example" :placeholder="t('scenarioForm.examplePlaceholder')" /></template>
             </el-table-column>
             <el-table-column width="64" align="center">
               <template #default="scope">
-                <el-button link type="danger" @click="form.fields.splice(scope.$index, 1)">删除</el-button>
+                <el-button link type="danger" @click="form.fields.splice(scope.$index, 1)">{{ t('common.remove') }}</el-button>
               </template>
             </el-table-column>
           </el-table>
           <el-button class="add-field" :icon="Plus" @click="form.fields.push({ name: '', required: false, example: '' })">
-            增加字段
+            {{ t('scenarioForm.addField') }}
           </el-button>
         </div>
       </el-form-item>
     </el-form>
 
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+      <el-button @click="visible = false">{{ t('common.cancel') }}</el-button>
+      <el-button type="primary" :loading="saving" @click="save">{{ t('common.savePlain') }}</el-button>
     </template>
   </el-dialog>
 </template>
@@ -93,9 +93,11 @@ import { ElMessage } from 'element-plus';
 import { api } from '../api';
 import { buildScenarioDirectoryTree } from '../scenario-menu-tree';
 import { usePlatformStore } from '../stores/platform';
+import { useI18n } from '../i18n';
 
 const emit = defineEmits(['saved']);
 const store = usePlatformStore();
+const { t } = useI18n();
 const visible = ref(false);
 const editing = ref(false);
 const saving = ref(false);
@@ -112,18 +114,18 @@ const form = reactive({
 });
 const directoryTree = computed(() => buildScenarioDirectoryTree(store.scenarios));
 const directoryTreeProps = { value: 'directory', label: 'directory', children: 'children' };
-const rules = {
+const rules = computed(() => ({
   directory: [
-    { required: true, message: '请选择或输入所属目录', trigger: ['change', 'blur'] },
+    { required: true, message: t('scenarioForm.validationDirectory'), trigger: ['change', 'blur'] },
     { validator: validateDirectory, trigger: ['change', 'blur'] }
   ],
-  name: [{ required: true, message: '请输入用例名称', trigger: 'blur' }],
+  name: [{ required: true, message: t('scenarioForm.validationName'), trigger: 'blur' }],
   key: [
-    { required: true, message: '请输入用例 key', trigger: 'blur' },
-    { pattern: /^[a-z0-9]+(?:-+[a-z0-9]+)*$/, message: '仅支持小写字母、数字和连字符，且不能以连字符开头或结尾', trigger: 'blur' }
+    { required: true, message: t('scenarioForm.validationKey'), trigger: 'blur' },
+    { pattern: /^[a-z0-9]+(?:-+[a-z0-9]+)*$/, message: t('scenarioForm.validationKeyPattern'), trigger: 'blur' }
   ],
-  priority: [{ required: true, message: '请选择优先级', trigger: 'change' }]
-};
+  priority: [{ required: true, message: t('scenarioForm.validationPriority'), trigger: 'change' }]
+}));
 
 function normalizeDirectory(value) {
   return String(value || '')
@@ -135,7 +137,7 @@ function normalizeDirectory(value) {
 
 function validateDirectory(_rule, value, callback) {
   const parts = String(value || '').split('/').map((item) => item.trim());
-  if (parts.some((item) => !item || item === '.' || item === '..')) callback(new Error('目录层级不能为空，且不能使用 . 或 ..'));
+  if (parts.some((item) => !item || item === '.' || item === '..')) callback(new Error(t('scenarioForm.invalidDirectoryParts')));
   else callback();
 }
 
@@ -164,7 +166,7 @@ async function save() {
     .map((item) => ({ ...item, name: item.name.trim() }))
     .filter((item) => item.name);
   if (new Set(fields.map((item) => item.name)).size !== fields.length) {
-    ElMessage.warning('字段名称不能重复');
+    ElMessage.warning(t('scenarioForm.duplicateField'));
     return;
   }
   const directory = normalizeDirectory(form.directory);
@@ -192,7 +194,7 @@ async function save() {
     });
     visible.value = false;
     emit('saved', result);
-    ElMessage.success(editing.value ? '用例信息已更新' : '用例已创建');
+    ElMessage.success(editing.value ? t('scenarioForm.updated') : t('scenarioForm.created'));
   } catch (error) {
     ElMessage.error(error.message);
   } finally {

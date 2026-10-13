@@ -2,11 +2,11 @@
   <div v-if="desktop" class="project-switcher">
     <el-popover v-model:visible="open" placement="bottom-start" :width="400" trigger="click">
       <template #reference>
-        <button class="project-trigger" type="button" :aria-expanded="open" aria-label="切换项目">
+        <button class="project-trigger" type="button" :aria-expanded="open" :aria-label="t('projects.switchAria')">
           <el-icon><FolderOpened /></el-icon>
           <span>
-            <small>当前项目</small>
-            <strong>{{ current?.name || store.project?.name || '加载中' }}</strong>
+            <small>{{ t('projects.current') }}</small>
+            <strong>{{ current?.name || store.project?.name || t('projects.loading') }}</strong>
           </span>
           <el-icon class="project-chevron"><ArrowDown /></el-icon>
         </button>
@@ -14,8 +14,8 @@
 
       <div class="project-panel" v-loading="loading">
         <div class="project-panel-title">
-          <strong>项目</strong>
-          <button v-if="current" type="button" class="project-reveal" @click="revealCurrent">打开目录</button>
+          <strong>{{ t('projects.title') }}</strong>
+          <button v-if="current" type="button" class="project-reveal" @click="revealCurrent">{{ t('projects.openDirectory') }}</button>
         </div>
         <div class="project-list">
           <div
@@ -38,7 +38,7 @@
               v-else
               type="button"
               class="project-remove"
-              aria-label="移除项目"
+              :aria-label="t('projects.removeAria')"
               @click.stop="openRemove(project)"
             >
               <el-icon><Delete /></el-icon>
@@ -46,58 +46,58 @@
           </div>
         </div>
         <div class="project-panel-actions">
-          <el-button :icon="Plus" @click="openCreate">新建项目</el-button>
-          <el-button :icon="FolderAdd" @click="registerProject">打开已有项目</el-button>
-          <el-button :icon="Upload" :loading="importing" @click="importProject">导入项目</el-button>
-          <el-button :icon="Download" :loading="exporting" :disabled="!current" @click="exportProject">导出项目</el-button>
+          <el-button :icon="Plus" @click="openCreate">{{ t('projects.create') }}</el-button>
+          <el-button :icon="FolderAdd" @click="registerProject">{{ t('projects.openExisting') }}</el-button>
+          <el-button :icon="Upload" :loading="importing" @click="importProject">{{ t('projects.import') }}</el-button>
+          <el-button :icon="Download" :loading="exporting" :disabled="!current" @click="exportProject">{{ t('projects.export') }}</el-button>
         </div>
       </div>
     </el-popover>
 
-    <el-dialog v-model="createVisible" title="新建本地项目" width="540px" append-to-body>
+    <el-dialog v-model="createVisible" :title="t('projects.createTitle')" width="540px" append-to-body>
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
-        <el-form-item label="项目名称" prop="name">
+        <el-form-item :label="t('projects.name')" prop="name">
           <el-input v-model="form.name" maxlength="40" show-word-limit @input="refreshSuggestion" />
         </el-form-item>
-        <el-form-item label="保存位置">
-          <p class="create-hint">默认保存在安装目录下的 <code>projects</code> 文件夹，也可指定其它空目录。</p>
-          <el-input v-model="form.rootPath" readonly :placeholder="suggestedRoot || '安装目录/projects/项目名称'">
+        <el-form-item :label="t('projects.saveLocation')">
+          <p class="create-hint">{{ t('projects.saveHint') }}</p>
+          <el-input v-model="form.rootPath" readonly :placeholder="suggestedRoot || t('projects.pathPlaceholder')">
             <template #append>
-              <el-button :icon="FolderOpened" @click="chooseDirectory">指定目录</el-button>
+              <el-button :icon="FolderOpened" @click="chooseDirectory">{{ t('projects.chooseDirectory') }}</el-button>
             </template>
           </el-input>
-          <el-button v-if="form.rootPath" class="clear-path" link type="primary" @click="form.rootPath = ''">改回默认位置</el-button>
+          <el-button v-if="form.rootPath" class="clear-path" link type="primary" @click="form.rootPath = ''">{{ t('projects.resetDefaultPath') }}</el-button>
         </el-form-item>
-        <el-form-item label="项目说明">
+        <el-form-item :label="t('projects.description')">
           <el-input v-model="form.description" type="textarea" :rows="2" maxlength="120" show-word-limit />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="createProject">创建并切换</el-button>
+        <el-button @click="createVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="creating" @click="createProject">{{ t('projects.createAndSwitch') }}</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="removeVisible" title="移除项目" width="480px" append-to-body>
-      <p>将「{{ removing?.name }}」从客户端列表移除。</p>
+    <el-dialog v-model="removeVisible" :title="t('projects.removeTitle')" width="480px" append-to-body>
+      <p>{{ t('projects.removeText', { name: removing?.name }) }}</p>
       <p class="remove-path">{{ removing?.rootPath }}</p>
       <el-alert
         v-if="projects.length === 1"
-        title="这是当前唯一项目，请先新建或打开另一个项目后再移除。"
+        :title="t('projects.onlyProjectWarning')"
         type="warning"
         show-icon
         :closable="false"
       />
-      <el-checkbox v-else v-model="deleteFiles">同时删除项目目录中的全部数据（不可恢复）</el-checkbox>
+      <el-checkbox v-else v-model="deleteFiles">{{ t('projects.deleteFilesAlso') }}</el-checkbox>
       <template #footer>
-        <el-button @click="removeVisible = false">取消</el-button>
+        <el-button @click="removeVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button
           :type="deleteFiles ? 'danger' : 'primary'"
           :loading="removingNow"
           :disabled="projects.length === 1"
           @click="confirmRemove"
         >
-          {{ deleteFiles ? '删除目录并移除' : '仅从列表移除' }}
+          {{ deleteFiles ? t('projects.removeWithFiles') : t('projects.removeFromList') }}
         </el-button>
       </template>
     </el-dialog>
@@ -105,16 +105,18 @@
 
   <div v-else class="browser-project">
     <el-icon><FolderOpened /></el-icon>
-    <span>{{ store.project?.name || '默认项目' }}</span>
+    <span>{{ store.project?.name || t('projects.defaultProject') }}</span>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { ArrowDown, Delete, Download, Folder, FolderAdd, FolderOpened, Plus, Select, Upload } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { usePlatformStore } from '../stores/platform';
+import { useI18n } from '../i18n';
 
+const { t } = useI18n();
 const store = usePlatformStore();
 const desktop = Boolean(window.autotestDesktop);
 const open = ref(false);
@@ -132,9 +134,16 @@ const current = ref(null);
 const suggestedRoot = ref('');
 const formRef = ref();
 const form = reactive({ name: '', description: '', rootPath: '' });
-const rules = {
-  name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }]
-};
+const rules = computed(() => ({
+  name: [{
+    required: true,
+    validator: (_rule, value, callback) => {
+      if (!String(value || '').trim()) callback(new Error(t('projects.nameRequired')));
+      else callback();
+    },
+    trigger: 'blur'
+  }]
+}));
 
 onMounted(() => {
   if (desktop) loadProjects();
@@ -148,7 +157,7 @@ async function loadProjects() {
       window.autotestDesktop.currentProject()
     ]);
   } catch (error) {
-    ElMessage.error(error.message || '项目列表加载失败');
+    ElMessage.error(error.message || t('projects.listFailed'));
   } finally {
     loading.value = false;
   }
@@ -164,14 +173,14 @@ async function switchProject(project) {
     await window.autotestDesktop.switchProject(project.id);
   } catch (error) {
     loading.value = false;
-    ElMessage.error(error.message || '项目切换失败');
+    ElMessage.error(error.message || t('projects.switchFailed'));
   }
 }
 
 async function refreshSuggestion() {
   if (!window.autotestDesktop?.suggestProjectRoot) return;
   try {
-    const suggestion = await window.autotestDesktop.suggestProjectRoot({ name: form.name || '新项目' });
+    const suggestion = await window.autotestDesktop.suggestProjectRoot({ name: form.name || t('projects.newProjectName') });
     suggestedRoot.value = suggestion?.rootPath || '';
   } catch {
     suggestedRoot.value = '';
@@ -187,8 +196,8 @@ async function openCreate() {
 
 async function chooseDirectory() {
   const rootPath = await window.autotestDesktop.chooseProjectDirectory({
-    title: '选择新项目目录',
-    buttonLabel: '选择目录',
+    title: t('projects.chooseDirTitle'),
+    buttonLabel: t('projects.chooseDirButton'),
     defaultPath: form.rootPath || suggestedRoot.value
   });
   if (rootPath) form.rootPath = rootPath;
@@ -206,7 +215,7 @@ async function createProject() {
     });
   } catch (error) {
     creating.value = false;
-    ElMessage.error(error.message || '项目创建失败');
+    ElMessage.error(error.message || t('projects.createFailed'));
   }
 }
 
@@ -215,7 +224,7 @@ async function registerProject() {
   try {
     await window.autotestDesktop.registerProject({ activate: true });
   } catch (error) {
-    ElMessage.error(error.message || '项目打开失败');
+    ElMessage.error(error.message || t('projects.openFailed'));
   }
 }
 
@@ -223,7 +232,7 @@ async function revealCurrent() {
   try {
     await window.autotestDesktop.revealProject(current.value.id);
   } catch (error) {
-    ElMessage.error(error.message || '无法打开项目目录');
+    ElMessage.error(error.message || t('projects.revealFailed'));
   }
 }
 
@@ -232,9 +241,9 @@ async function exportProject() {
   exporting.value = true;
   try {
     const result = await window.autotestDesktop.exportProject();
-    if (result?.filePath) ElMessage.success(`项目已导出：${result.filePath}`);
+    if (result?.filePath) ElMessage.success(t('projects.exported', { path: result.filePath }));
   } catch (error) {
-    ElMessage.error(error.message || '项目导出失败');
+    ElMessage.error(error.message || t('projects.exportFailed'));
   } finally {
     exporting.value = false;
   }
@@ -245,9 +254,9 @@ async function importProject() {
   importing.value = true;
   try {
     const result = await window.autotestDesktop.importProject({ activate: true });
-    if (result?.name) ElMessage.success(`已导入并打开项目：${result.name}`);
+    if (result?.name) ElMessage.success(t('projects.imported', { name: result.name }));
   } catch (error) {
-    ElMessage.error(error.message || '项目导入失败');
+    ElMessage.error(error.message || t('projects.importFailed'));
   } finally {
     importing.value = false;
   }
@@ -269,10 +278,10 @@ async function confirmRemove() {
       deleteFiles: deleteFiles.value
     });
     removeVisible.value = false;
-    ElMessage.success(result?.filesDeleted ? '项目目录已删除，并已从列表移除' : '已从列表移除，项目目录仍保留');
+    ElMessage.success(result?.filesDeleted ? t('projects.removedWithFiles') : t('projects.removedKeepFiles'));
     await loadProjects();
   } catch (error) {
-    ElMessage.error(error.message || '移除项目失败');
+    ElMessage.error(error.message || t('projects.removeFailed'));
   } finally {
     removingNow.value = false;
   }

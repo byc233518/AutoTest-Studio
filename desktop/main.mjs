@@ -28,7 +28,9 @@ export const DESKTOP_CHANNELS = Object.freeze({
   importProject: 'autotest:projects:import',
   openExternal: 'autotest:shell:open-external',
   getTheme: 'autotest:preferences:get-theme',
-  setTheme: 'autotest:preferences:set-theme'
+  setTheme: 'autotest:preferences:set-theme',
+  getLocale: 'autotest:preferences:get-locale',
+  setLocale: 'autotest:preferences:set-locale'
 });
 
 export function resolveDesktopPaths(options = {}) {
@@ -332,21 +334,38 @@ export class DesktopHost {
       return true;
     });
     this.handle(DESKTOP_CHANNELS.getTheme, async () => {
-      try {
-        const preferences = JSON.parse(await readFile(this.preferencesFile, 'utf8'));
-        return ['light', 'dark', 'system'].includes(preferences.theme) ? preferences.theme : 'system';
-      } catch {
-        return 'system';
-      }
+      const preferences = await this.readPreferences();
+      return ['light', 'dark', 'system'].includes(preferences.theme) ? preferences.theme : 'system';
     });
     this.handle(DESKTOP_CHANNELS.setTheme, async (theme) => {
       if (!['light', 'dark', 'system'].includes(theme)) throw new Error('主题设置无效');
-      await mkdir(path.dirname(this.preferencesFile), { recursive: true });
-      let preferences = {};
-      try { preferences = JSON.parse(await readFile(this.preferencesFile, 'utf8')); } catch {}
-      await writeFile(this.preferencesFile, `${JSON.stringify({ ...preferences, theme }, null, 2)}\n`, 'utf8');
+      const preferences = await this.readPreferences();
+      await this.writePreferences({ ...preferences, theme });
       return theme;
     });
+    this.handle(DESKTOP_CHANNELS.getLocale, async () => {
+      const preferences = await this.readPreferences();
+      return ['zh-CN', 'en-US'].includes(preferences.locale) ? preferences.locale : 'zh-CN';
+    });
+    this.handle(DESKTOP_CHANNELS.setLocale, async (locale) => {
+      if (!['zh-CN', 'en-US'].includes(locale)) throw new Error('语言设置无效');
+      const preferences = await this.readPreferences();
+      await this.writePreferences({ ...preferences, locale });
+      return locale;
+    });
+  }
+
+  async readPreferences() {
+    try {
+      return JSON.parse(await readFile(this.preferencesFile, 'utf8'));
+    } catch {
+      return {};
+    }
+  }
+
+  async writePreferences(preferences) {
+    await mkdir(path.dirname(this.preferencesFile), { recursive: true });
+    await writeFile(this.preferencesFile, `${JSON.stringify(preferences, null, 2)}\n`, 'utf8');
   }
 
   async chooseProjectDirectory(options = {}) {

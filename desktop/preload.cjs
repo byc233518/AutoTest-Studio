@@ -14,7 +14,9 @@ const channels = Object.freeze({
   importProject: 'autotest:projects:import',
   openExternal: 'autotest:shell:open-external',
   getTheme: 'autotest:preferences:get-theme',
-  setTheme: 'autotest:preferences:set-theme'
+  setTheme: 'autotest:preferences:set-theme',
+  getLocale: 'autotest:preferences:get-locale',
+  setLocale: 'autotest:preferences:set-locale'
 });
 
 const desktopApi = Object.freeze({
@@ -32,7 +34,9 @@ const desktopApi = Object.freeze({
   importProject: (input) => ipcRenderer.invoke(channels.importProject, input),
   openExternal: (url) => ipcRenderer.invoke(channels.openExternal, url),
   getTheme: () => ipcRenderer.invoke(channels.getTheme),
-  setTheme: (theme) => ipcRenderer.invoke(channels.setTheme, theme)
+  setTheme: (theme) => ipcRenderer.invoke(channels.setTheme, theme),
+  getLocale: () => ipcRenderer.invoke(channels.getLocale),
+  setLocale: (locale) => ipcRenderer.invoke(channels.setLocale, locale)
 });
 
 contextBridge.exposeInMainWorld('autotestDesktop', desktopApi);

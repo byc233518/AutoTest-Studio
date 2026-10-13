@@ -43,9 +43,11 @@ npm.cmd run desktop:package
 
 前端产物写入 `web-dist/`。桌面与 `npm start` 均优先托管该目录；旧 `web/` 仅作未构建时的兼容回退。
 
-## 主题
+## 主题与语言
 
-Element Plus 主色为 `#765ee8`，侧边栏为深色导航。主题变量见 `frontend/src/styles.css`；通用设置中可切换浅色 / 深色 / 跟随系统。
+- 主色：`#167d79`（见 `frontend/src/styles.css`）
+- 主题：浅色 / 深色 / 跟随系统；登录页与顶栏可切换，偏好写入 `localStorage`，桌面端同步到 `preferences.json`
+- 语言：初期支持 `zh-CN` / `en-US`；文案在 `frontend/src/i18n/locales/`，通过 `useI18n()` 的 `t()` 使用；Element Plus 语言随界面语言切换
 
 ## 主要页面与组件
 

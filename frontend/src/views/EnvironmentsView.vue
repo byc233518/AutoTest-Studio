@@ -1,86 +1,86 @@
 <template>
-  <section class="environment-page" aria-label="环境管理">
+  <section class="environment-page" :aria-label="t('environments.pageAria')">
     <header class="environment-toolbar">
-      <div><h2>环境管理</h2><span>维护被测系统、测试账号与环境变量</span></div>
-      <el-button :icon="Plus" :disabled="busy" @click="createEnvironment">新增环境</el-button>
+      <div><h2>{{ t('environments.title') }}</h2><span>{{ t('environments.subtitle') }}</span></div>
+      <el-button :icon="Plus" :disabled="busy" @click="createEnvironment">{{ t('environments.create') }}</el-button>
     </header>
 
     <div class="environment-layout">
-      <aside class="environment-list" aria-label="环境列表">
+      <aside class="environment-list" :aria-label="t('environments.listAria')">
         <div class="list-search">
-          <el-input v-model="search" :prefix-icon="Search" clearable placeholder="搜索名称、标识或地址" aria-label="搜索环境" />
-          <span class="list-count">{{ store.environments.length }} 个环境</span>
+          <el-input v-model="search" :prefix-icon="Search" clearable :placeholder="t('environments.searchPlaceholder')" :aria-label="t('environments.searchAria')" />
+          <span class="list-count">{{ t('environments.count', { count: store.environments.length }) }}</span>
         </div>
         <div class="environment-items">
           <button v-for="environment in filteredEnvironments" :key="environment.id" type="button"
             :class="['environment-item', { selected: !creating && selectedId === environment.id }]"
             :aria-pressed="!creating && selectedId === environment.id" :disabled="busy" @click="selectEnvironment(environment)">
-            <span class="environment-name"><strong>{{ environment.name }}</strong><el-tag v-if="environment.isDefault" size="small" effect="plain">默认</el-tag></span>
+            <span class="environment-name"><strong>{{ environment.name }}</strong><el-tag v-if="environment.isDefault" size="small" effect="plain">{{ t('common.default') }}</el-tag></span>
             <span class="environment-key">{{ environment.key }}</span>
             <span class="environment-url" :title="environment.baseUrl">{{ environment.baseUrl }}</span>
           </button>
-          <el-empty v-if="!filteredEnvironments.length" :image-size="56" :description="search ? '没有匹配的环境' : '暂无环境'" />
+          <el-empty v-if="!filteredEnvironments.length" :image-size="56" :description="search ? t('environments.noMatch') : t('environments.empty')" />
         </div>
       </aside>
 
-      <section class="environment-editor" aria-label="环境配置">
+      <section class="environment-editor" :aria-label="t('environments.editorAria')">
         <template v-if="selectedId || creating">
           <header class="editor-header">
-            <div><h3>{{ creating ? '新增环境' : selectedEnvironment?.name || '编辑环境' }}</h3><span v-if="dirty" class="unsaved">有未保存的修改</span></div>
+            <div><h3>{{ creating ? t('environments.createTitle') : selectedEnvironment?.name || t('environments.editTitle') }}</h3><span v-if="dirty" class="unsaved">{{ t('environments.unsaved') }}</span></div>
             <el-button v-if="!creating" type="danger" plain :disabled="busy || selectedEnvironment?.isDefault" :loading="deleting"
-              :title="selectedEnvironment?.isDefault ? '请先将其他环境设为默认后再删除' : '删除当前环境'" @click="removeEnvironment">删除环境</el-button>
+              :title="selectedEnvironment?.isDefault ? t('environments.deleteDisabledHint') : t('environments.deleteHint')" @click="removeEnvironment">{{ t('environments.delete') }}</el-button>
           </header>
 
           <div class="editor-content">
             <el-alert v-if="error" class="editor-alert" :title="error" type="error" show-icon :closable="false" />
             <el-form ref="formRef" :model="form" :rules="rules" :disabled="busy" label-position="top" @submit.prevent="save">
-              <div class="section-heading"><h4>连接与账号</h4><span>执行测试时使用当前环境配置</span></div>
+              <div class="section-heading"><h4>{{ t('environments.connection') }}</h4><span>{{ t('environments.connectionHint') }}</span></div>
               <div class="environment-fields">
-                <el-form-item label="环境名称" prop="name"><el-input v-model="form.name" placeholder="例如：集成测试环境" maxlength="100" /></el-form-item>
-                <el-form-item label="环境标识" prop="key"><el-input v-model="form.key" placeholder="例如：test" /></el-form-item>
-                <el-form-item label="被测系统地址" prop="baseUrl" class="full-width"><el-input v-model="form.baseUrl" placeholder="http://localhost:8080" /></el-form-item>
-                <el-form-item label="测试账号" prop="username"><el-input v-model="form.username" autocomplete="username" /></el-form-item>
-                <el-form-item :label="creating ? '测试密码' : '更新密码'" prop="password">
-                  <el-input v-model="form.password" type="password" show-password autocomplete="new-password" :placeholder="creating ? '请输入测试账号密码' : '留空保留已保存密码'" />
-                  <div v-if="!creating" class="field-help">留空不会修改已保存密码</div>
+                <el-form-item :label="t('environments.name')" prop="name"><el-input v-model="form.name" :placeholder="t('environments.namePlaceholder')" maxlength="100" /></el-form-item>
+                <el-form-item :label="t('environments.key')" prop="key"><el-input v-model="form.key" :placeholder="t('environments.keyPlaceholder')" /></el-form-item>
+                <el-form-item :label="t('environments.baseUrl')" prop="baseUrl" class="full-width"><el-input v-model="form.baseUrl" placeholder="http://localhost:8080" /></el-form-item>
+                <el-form-item :label="t('environments.username')" prop="username"><el-input v-model="form.username" autocomplete="username" /></el-form-item>
+                <el-form-item :label="creating ? t('environments.password') : t('environments.updatePassword')" prop="password">
+                  <el-input v-model="form.password" type="password" show-password autocomplete="new-password" :placeholder="creating ? t('environments.passwordPlaceholderCreate') : t('environments.passwordPlaceholderUpdate')" />
+                  <div v-if="!creating" class="field-help">{{ t('environments.passwordHelp') }}</div>
                 </el-form-item>
-                <el-form-item label="默认环境" prop="isDefault"><el-switch v-model="form.isDefault" active-text="新建执行时默认选用" /></el-form-item>
-                <el-form-item label="显示顺序" prop="sort"><el-input-number v-model="form.sort" :min="0" :precision="0" controls-position="right" /></el-form-item>
+                <el-form-item :label="t('environments.isDefault')" prop="isDefault"><el-switch v-model="form.isDefault" :active-text="t('environments.defaultActive')" /></el-form-item>
+                <el-form-item :label="t('environments.sort')" prop="sort"><el-input-number v-model="form.sort" :min="0" :precision="0" controls-position="right" /></el-form-item>
               </div>
 
               <div class="section-heading variables-heading">
-                <div><h4>全局变量 <span class="variable-count">{{ form.variables.length }}</span></h4><span>供当前环境的测试用例和测试计划使用</span></div>
-                <el-button :icon="Plus" @click="addVariable">添加变量</el-button>
+                <div><h4>{{ t('environments.variables') }} <span class="variable-count">{{ form.variables.length }}</span></h4><span>{{ t('environments.variablesHint') }}</span></div>
+                <el-button :icon="Plus" @click="addVariable">{{ t('environments.addVariable') }}</el-button>
               </div>
               <el-alert v-if="variableLoadError" class="editor-alert" type="error" show-icon :closable="false">
                 <template #title>{{ variableLoadError }}</template>
-                <el-button link type="danger" :disabled="busy" @click="resetInvalidVariables">清空并重新维护变量</el-button>
+                <el-button link type="danger" :disabled="busy" @click="resetInvalidVariables">{{ t('environments.resetVariables') }}</el-button>
               </el-alert>
-              <el-table :data="form.variables" border size="small" class="variables-table" row-key="id" empty-text="暂无变量，点击“添加变量”开始维护">
+              <el-table :data="form.variables" border size="small" class="variables-table" row-key="id" :empty-text="t('environments.variablesEmpty')">
                 <el-table-column type="index" label="#" width="48" />
-                <el-table-column label="变量名" min-width="180">
+                <el-table-column :label="t('environments.varName')" min-width="180">
                   <template #default="{ row, $index }">
                     <el-form-item :error="variableErrors[row.id] || ''" class="variable-field">
-                      <el-input v-model="row.key" :aria-label="`第 ${$index + 1} 行变量名`" placeholder="例如：warehouseCode" @blur="validateVariables" @input="clearVariableError(row.id)" />
+                      <el-input v-model="row.key" :aria-label="t('environments.varNameAria', { index: $index + 1 })" :placeholder="t('environments.varNamePlaceholder')" @blur="validateVariables" @input="clearVariableError(row.id)" />
                     </el-form-item>
                   </template>
                 </el-table-column>
-                <el-table-column label="变量值" min-width="240">
-                  <template #default="{ row, $index }"><el-input v-model="row.value" :aria-label="`第 ${$index + 1} 行变量值`" placeholder="输入变量值，允许留空" /></template>
+                <el-table-column :label="t('environments.varValue')" min-width="240">
+                  <template #default="{ row, $index }"><el-input v-model="row.value" :aria-label="t('environments.varValueAria', { index: $index + 1 })" :placeholder="t('environments.varValuePlaceholder')" /></template>
                 </el-table-column>
-                <el-table-column label="操作" width="74" align="center">
-                  <template #default="{ row, $index }"><el-button link type="danger" :aria-label="`删除第 ${$index + 1} 行变量`" @click="removeVariable(row.id)">删除</el-button></template>
+                <el-table-column :label="t('common.actions')" width="74" align="center">
+                  <template #default="{ row, $index }"><el-button link type="danger" :aria-label="t('environments.varDeleteAria', { index: $index + 1 })" @click="removeVariable(row.id)">{{ t('common.delete') }}</el-button></template>
                 </el-table-column>
               </el-table>
             </el-form>
           </div>
 
           <footer class="editor-footer">
-            <span class="save-hint">{{ creating ? '保存后可用于录制和执行测试' : selectedEnvironment?.isDefault ? '当前为默认执行环境' : '修改仅在保存后生效' }}</span>
-            <div><el-button :disabled="busy" @click="discardChanges">{{ creating ? '取消' : '还原修改' }}</el-button><el-button type="primary" :disabled="busy || Boolean(variableLoadError)" :loading="saving" @click="save">保存环境</el-button></div>
+            <span class="save-hint">{{ creating ? t('environments.saveHintCreate') : selectedEnvironment?.isDefault ? t('environments.saveHintDefault') : t('environments.saveHintEdit') }}</span>
+            <div><el-button :disabled="busy" @click="discardChanges">{{ creating ? t('environments.discardCreate') : t('environments.discardEdit') }}</el-button><el-button type="primary" :disabled="busy || Boolean(variableLoadError)" :loading="saving" @click="save">{{ t('environments.save') }}</el-button></div>
           </footer>
         </template>
-        <el-empty v-else description="选择一个环境，或新增环境" />
+        <el-empty v-else :description="t('environments.pickOrCreate')" />
       </section>
     </div>
   </section>
@@ -92,7 +92,9 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Search } from '@element-plus/icons-vue';
 import { api } from '../api';
 import { usePlatformStore } from '../stores/platform';
+import { useI18n } from '../i18n';
 
+const { t } = useI18n();
 const store = usePlatformStore();
 const search = ref('');
 const selectedId = ref('');
@@ -114,19 +116,19 @@ const filteredEnvironments = computed(() => {
   const query = search.value.trim().toLowerCase();
   return store.environments.filter(item => !query || [item.name, item.key, item.baseUrl].some(value => String(value || '').toLowerCase().includes(query)));
 });
-const rules = {
-  name: [{ required: true, whitespace: true, message: '请填写环境名称', trigger: 'blur' }],
-  key: [{ required: true, whitespace: true, message: '请填写环境标识', trigger: 'blur' }],
-  username: [{ required: true, whitespace: true, message: '请填写测试账号', trigger: 'blur' }],
+const rules = computed(() => ({
+  name: [{ required: true, whitespace: true, message: t('environments.nameRequired'), trigger: 'blur' }],
+  key: [{ required: true, whitespace: true, message: t('environments.keyRequired'), trigger: 'blur' }],
+  username: [{ required: true, whitespace: true, message: t('environments.usernameRequired'), trigger: 'blur' }],
   baseUrl: [{ validator: (_rule, value, callback) => {
     try {
       const url = new URL(String(value).trim());
       if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
       callback();
-    } catch { callback(new Error('请输入完整的 HTTP 或 HTTPS 地址')); }
+    } catch { callback(new Error(t('environments.urlInvalid'))); }
   }, trigger: 'blur' }],
-  password: [{ validator: (_rule, value, callback) => callback(creating.value && !value ? new Error('请填写测试密码') : undefined), trigger: 'blur' }]
-};
+  password: [{ validator: (_rule, value, callback) => callback(creating.value && !value ? new Error(t('environments.passwordRequired')) : undefined), trigger: 'blur' }]
+}));
 
 function readVariables(environment) {
   let values = environment.variables ?? environment.variablesJson ?? environment.variables_json ?? [];
@@ -134,7 +136,7 @@ function readVariables(environment) {
   if (values === null) values = [];
   if (!Array.isArray(values) && typeof values === 'object') values = Object.entries(values).map(([key, value]) => ({ key, value }));
   if (!Array.isArray(values) || values.some(item => !item || typeof item !== 'object' || !Object.hasOwn(item, 'key'))) {
-    throw new Error('已保存的变量格式无法读取，请检查原数据或重新维护变量');
+    throw new Error(t('environments.variablesCorrupt'));
   }
   return values.map(item => ({ id: ++nextVariableId, key: String(item.key ?? ''), value: typeof item.value === 'object' && item.value !== null ? JSON.stringify(item.value) : String(item.value ?? '') }));
 }
@@ -145,7 +147,7 @@ function fillForm(environment = {}) {
   variableLoadError.value = '';
   let variables = [];
   try { variables = readVariables(environment); }
-  catch { variableLoadError.value = '已保存的变量格式无法读取，请检查原数据或重新维护变量'; }
+  catch { variableLoadError.value = t('environments.variablesCorrupt'); }
   Object.assign(form, {
     name: environment.name || '', key: environment.key || '', baseUrl: environment.baseUrl || '',
     username: environment.username || '', password: '', isDefault: Boolean(environment.isDefault),
@@ -168,7 +170,7 @@ watch(() => store.environments, environments => {
 async function canDiscard() {
   if (!dirty.value) return true;
   try {
-    await ElMessageBox.confirm('当前环境有未保存的修改，确定放弃这些修改吗？', '未保存的修改', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑', type: 'warning' });
+    await ElMessageBox.confirm(t('environments.unsavedConfirm'), t('environments.unsavedTitle'), { confirmButtonText: t('environments.discardConfirm'), cancelButtonText: t('environments.continueEdit'), type: 'warning' });
     return true;
   } catch { return false; }
 }
@@ -209,10 +211,10 @@ function validateVariables() {
   const keys = new Map();
   for (const item of form.variables) {
     const key = item.key.trim();
-    if (!key) errors[item.id] = '请填写变量名';
+    if (!key) errors[item.id] = t('environments.varKeyRequired');
     else if (keys.has(key)) {
-      errors[item.id] = '变量名重复';
-      errors[keys.get(key)] = '变量名重复';
+      errors[item.id] = t('environments.varKeyDuplicate');
+      errors[keys.get(key)] = t('environments.varKeyDuplicate');
     } else keys.set(key, item.id);
   }
   variableErrors.value = errors;
@@ -221,11 +223,11 @@ function validateVariables() {
 
 async function resetInvalidVariables() {
   try {
-    await ElMessageBox.confirm('保存环境后将覆盖原有变量，确定清空并重新维护吗？', '重新维护变量', { confirmButtonText: '清空变量', cancelButtonText: '取消', type: 'warning' });
+    await ElMessageBox.confirm(t('environments.resetVariablesConfirm'), t('environments.resetVariablesTitle'), { confirmButtonText: t('environments.clearVariables'), cancelButtonText: t('common.cancel'), type: 'warning' });
     form.variables = [];
     variableLoadError.value = '';
     savedSnapshot.value = 'invalid-variables';
-  } catch { /* 保留原始变量配置。 */ }
+  } catch { /* keep original variable config */ }
 }
 
 async function save() {
@@ -234,7 +236,7 @@ async function save() {
   const variablesValid = validateVariables();
   const formValid = await formRef.value?.validate().catch(() => false);
   if (!variablesValid || !formValid) {
-    error.value = '请检查标记的字段后再保存';
+    error.value = t('environments.fixFields');
     saving.value = false;
     return;
   }
@@ -251,9 +253,9 @@ async function save() {
     if (index < 0) store.environments = [...store.environments, saved];
     else store.environments = store.environments.map(item => item.id === saved.id ? saved : item);
     activate(saved);
-    ElMessage.success('环境已保存');
-    await refreshEnvironments('环境已保存，但刷新列表失败');
-  } catch (cause) { error.value = cause.message || '保存失败，请重试'; }
+    ElMessage.success(t('environments.saved'));
+    await refreshEnvironments(t('environments.savedRefreshFailed'));
+  } catch (cause) { error.value = cause.message || t('environments.saveFailed'); }
   finally { saving.value = false; }
 }
 
@@ -261,14 +263,14 @@ async function refreshEnvironments(message) {
   try {
     const result = await api('/api/environments');
     store.environments = result.environments;
-  } catch (cause) { error.value = `${message}：${cause.message || '请稍后重新进入页面'}`; }
+  } catch (cause) { error.value = `${message}：${cause.message || t('environments.refreshFailedSuffix')}`; }
 }
 
 async function removeEnvironment() {
   const environment = selectedEnvironment.value;
   if (busy.value || !environment || environment.isDefault) return;
   try {
-    await ElMessageBox.confirm(`确定删除环境“${environment.name}”吗？`, '删除环境', { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' });
+    await ElMessageBox.confirm(t('environments.deleteConfirm', { name: environment.name }), t('environments.deleteTitle'), { confirmButtonText: t('common.delete'), cancelButtonText: t('common.cancel'), type: 'warning' });
   } catch { return; }
   deleting.value = true;
   error.value = '';
@@ -276,9 +278,9 @@ async function removeEnvironment() {
     await api(`/api/environments/${encodeURIComponent(environment.id)}`, { method: 'DELETE' });
     store.environments = store.environments.filter(item => item.id !== environment.id);
     activate(store.environments.find(item => item.isDefault) || store.environments[0]);
-    ElMessage.success('环境已删除');
-    await refreshEnvironments('环境已删除，但刷新列表失败');
-  } catch (cause) { error.value = cause.message || '删除失败，请重试'; }
+    ElMessage.success(t('environments.deleted'));
+    await refreshEnvironments(t('environments.deletedRefreshFailed'));
+  } catch (cause) { error.value = cause.message || t('environments.deleteFailed'); }
   finally { deleting.value = false; }
 }
 </script>

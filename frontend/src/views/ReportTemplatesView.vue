@@ -4,18 +4,18 @@
       <template #header>
         <div class="card-header">
           <div>
-            <h2>报告模板</h2>
-            <span class="muted">维护报告模块、是否附带截图与输出格式，并可预览效果</span>
+            <h2>{{ t('reportTemplates.title') }}</h2>
+            <span class="muted">{{ t('reportTemplates.subtitle') }}</span>
           </div>
           <div class="header-actions">
-            <el-button :icon="Plus" @click="createTemplate">新建模板</el-button>
-            <el-button type="primary" :loading="saving" @click="save">保存设置</el-button>
+            <el-button :icon="Plus" @click="createTemplate">{{ t('reportTemplates.create') }}</el-button>
+            <el-button type="primary" :loading="saving" @click="save">{{ t('reportTemplates.save') }}</el-button>
           </div>
         </div>
       </template>
 
       <div v-loading="loading" class="templates-layout">
-        <aside class="template-list" aria-label="报告模板列表">
+        <aside class="template-list" :aria-label="t('reportTemplates.listAria')">
           <button
             v-for="item in templates"
             :key="item.id"
@@ -28,33 +28,33 @@
               <strong>{{ item.name }}</strong>
               <span>{{ formatLabel(item.outputFormat) }} · {{ moduleSummary(item) }}</span>
             </div>
-            <el-tag v-if="item.id === activeTemplateId" size="small" type="success" effect="plain">当前启用</el-tag>
+            <el-tag v-if="item.id === activeTemplateId" size="small" type="success" effect="plain">{{ t('reportTemplates.active') }}</el-tag>
           </button>
         </aside>
 
-        <section v-if="selected" class="template-editor" aria-label="模板编辑">
+        <section v-if="selected" class="template-editor" :aria-label="t('reportTemplates.editorAria')">
           <el-form :model="selected" label-position="top" class="editor-form">
             <div class="form-grid">
-              <el-form-item label="模板名称" required>
-                <el-input v-model="selected.name" maxlength="40" placeholder="例如：标准报告" />
+              <el-form-item :label="t('reportTemplates.name')" required>
+                <el-input v-model="selected.name" maxlength="40" :placeholder="t('reportTemplates.namePlaceholder')" />
               </el-form-item>
-              <el-form-item label="输出格式" required>
+              <el-form-item :label="t('reportTemplates.outputFormat')" required>
                 <el-segmented v-model="selected.outputFormat" :options="formatSegmentOptions" />
               </el-form-item>
             </div>
 
-            <el-form-item label="模板说明">
+            <el-form-item :label="t('reportTemplates.description')">
               <el-input
                 v-model="selected.description"
                 type="textarea"
                 :rows="2"
                 maxlength="160"
                 show-word-limit
-                placeholder="说明该模板适用的场景"
+                :placeholder="t('reportTemplates.descriptionPlaceholder')"
               />
             </el-form-item>
 
-            <el-form-item label="包含模块">
+            <el-form-item :label="t('reportTemplates.modules')">
               <el-checkbox-group v-model="selected.modules" class="module-group">
                 <el-checkbox
                   v-for="option in moduleOptions"
@@ -66,14 +66,14 @@
               </el-checkbox-group>
             </el-form-item>
 
-            <el-form-item label="截图附件">
-              <el-switch v-model="selected.includeImages" active-text="报告中包含执行截图" />
+            <el-form-item :label="t('reportTemplates.screenshots')">
+              <el-switch v-model="selected.includeImages" :active-text="t('reportTemplates.includeScreenshots')" />
             </el-form-item>
 
             <div class="editor-actions">
-              <el-button type="primary" plain :loading="previewing" @click="previewSelected">预览模板</el-button>
+              <el-button type="primary" plain :loading="previewing" @click="previewSelected">{{ t('reportTemplates.preview') }}</el-button>
               <el-button type="success" plain :disabled="selected.id === activeTemplateId" @click="activateSelected">
-                设为当前启用
+                {{ t('reportTemplates.setActive') }}
               </el-button>
               <el-button
                 type="danger"
@@ -81,26 +81,26 @@
                 :disabled="templates.length <= 1"
                 @click="removeSelected"
               >
-                删除模板
+                {{ t('reportTemplates.delete') }}
               </el-button>
             </div>
           </el-form>
 
           <div class="preview-panel">
             <div class="preview-heading">
-              <strong>预览</strong>
+              <strong>{{ t('reportTemplates.previewHeading') }}</strong>
               <span>{{ previewMeta }}</span>
             </div>
             <div v-loading="previewing" class="preview-frame">
               <iframe
                 v-if="previewHtml"
                 class="preview-iframe"
-                title="报告模板预览"
+                :title="t('reportTemplates.previewTitle')"
                 sandbox=""
                 :srcdoc="previewHtml"
               />
               <pre v-else-if="previewText" class="preview-markdown">{{ previewText }}</pre>
-              <el-empty v-else description="点击“预览模板”查看效果" :image-size="72" />
+              <el-empty v-else :description="t('reportTemplates.previewEmpty')" :image-size="72" />
             </div>
           </div>
         </section>
@@ -114,7 +114,9 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus } from '@element-plus/icons-vue';
 import { api } from '../api';
+import { useI18n } from '../i18n';
 
+const { t } = useI18n();
 const loading = ref(false);
 const saving = ref(false);
 const previewing = ref(false);
@@ -133,9 +135,9 @@ const formatSegmentOptions = computed(() => formatOptions.value.map((item) => ({
   value: item.value
 })));
 const previewMeta = computed(() => {
-  if (!previewFormat.value) return '使用示例数据渲染';
+  if (!previewFormat.value) return t('reportTemplates.sampleRender');
   const label = formatLabel(previewFormat.value);
-  return `示例数据 · ${label}`;
+  return t('reportTemplates.sampleWithFormat', { format: label });
 });
 
 onMounted(load);
@@ -147,7 +149,7 @@ async function load() {
     applyPayload(payload);
     await previewSelected();
   } catch (error) {
-    ElMessage.error(error.message || '报告模板加载失败');
+    ElMessage.error(error.message || t('reportTemplates.loadFailed'));
   } finally {
     loading.value = false;
   }
@@ -172,7 +174,7 @@ function formatLabel(format) {
 
 function moduleSummary(item) {
   const count = (item.modules || []).length + (item.includeImages && !(item.modules || []).includes('images') ? 1 : 0);
-  return `${count} 个模块`;
+  return t('reportTemplates.moduleCount', { count });
 }
 
 function selectTemplate(id) {
@@ -186,7 +188,7 @@ function createTemplate() {
   const id = `tpl-${Date.now().toString(36)}`;
   const created = reactive({
     id,
-    name: '新建报告模板',
+    name: t('reportTemplates.newName'),
     description: '',
     outputFormat: 'html',
     includeImages: false,
@@ -201,16 +203,16 @@ function createTemplate() {
 function activateSelected() {
   if (!selected.value) return;
   activeTemplateId.value = selected.value.id;
-  ElMessage.success(`已切换为「${selected.value.name}」，保存后生效`);
+  ElMessage.success(t('reportTemplates.activated', { name: selected.value.name }));
 }
 
 async function removeSelected() {
   if (!selected.value || templates.value.length <= 1) return;
   try {
-    await ElMessageBox.confirm(`确定删除模板“${selected.value.name}”吗？`, '删除报告模板', {
+    await ElMessageBox.confirm(t('reportTemplates.deleteConfirm', { name: selected.value.name }), t('reportTemplates.deleteTitle'), {
       type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消'
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel')
     });
     const removingId = selected.value.id;
     templates.value = templates.value.filter((item) => item.id !== removingId);
@@ -242,7 +244,7 @@ async function previewSelected() {
       previewHtml.value = result.content || '';
     }
   } catch (error) {
-    ElMessage.error(error.message || '预览失败');
+    ElMessage.error(error.message || t('reportTemplates.previewFailed'));
   } finally {
     previewing.value = false;
   }
@@ -250,7 +252,7 @@ async function previewSelected() {
 
 async function save() {
   if (!templates.value.length) {
-    ElMessage.warning('至少保留一个报告模板');
+    ElMessage.warning(t('reportTemplates.keepOne'));
     return;
   }
   saving.value = true;
@@ -263,10 +265,10 @@ async function save() {
       })
     });
     applyPayload(payload);
-    ElMessage.success('报告模板已保存');
+    ElMessage.success(t('reportTemplates.saved'));
     await previewSelected();
   } catch (error) {
-    ElMessage.error(error.message || '报告模板保存失败');
+    ElMessage.error(error.message || t('reportTemplates.saveFailed'));
   } finally {
     saving.value = false;
   }

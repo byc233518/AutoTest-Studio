@@ -1,61 +1,109 @@
 <template>
   <div class="login-page">
-    <section class="login-visual" aria-label="AutoTest Studio 介绍">
+    <div class="login-preference-bar">
+      <PreferenceControls />
+    </div>
+
+    <section class="login-visual" :aria-label="t('login.visualAria')">
       <div class="login-visual-brand">
         <span class="login-brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span>
         <div>
           <h1>AutoTest Studio</h1>
-          <p>面向任意 Web 系统的自动化测试工作台</p>
+          <p>{{ t('login.tagline') }}</p>
         </div>
       </div>
 
       <div class="login-capabilities">
         <article>
-          <span class="capability-tag">用例</span>
-          <h3>场景管理</h3>
-          <small>脚本、数据集、环境与依赖统一沉淀，支持录制与版本归档</small>
+          <span class="capability-tag">{{ t('login.capabilities.caseTag') }}</span>
+          <h3>{{ t('login.capabilities.caseTitle') }}</h3>
+          <small>{{ t('login.capabilities.caseDesc') }}</small>
         </article>
         <article>
-          <span class="capability-tag">执行</span>
-          <h3>测试执行</h3>
-          <small>无头 / 有头 / UI 模式，多环境切换，按 scriptEntry 精确跑 Playwright</small>
+          <span class="capability-tag">{{ t('login.capabilities.runTag') }}</span>
+          <h3>{{ t('login.capabilities.runTitle') }}</h3>
+          <small>{{ t('login.capabilities.runDesc') }}</small>
         </article>
         <article>
-          <span class="capability-tag">过程</span>
-          <h3>过程记录</h3>
-          <small>步骤轨迹、过程截图、录像回放与失败上下文一站留存</small>
+          <span class="capability-tag">{{ t('login.capabilities.processTag') }}</span>
+          <h3>{{ t('login.capabilities.processTitle') }}</h3>
+          <small>{{ t('login.capabilities.processDesc') }}</small>
         </article>
         <article>
-          <span class="capability-tag">报告</span>
-          <h3>测试报告</h3>
-          <small>计划汇总与单次结果，Markdown / HTML / Word，模板可配置</small>
+          <span class="capability-tag">{{ t('login.capabilities.reportTag') }}</span>
+          <h3>{{ t('login.capabilities.reportTitle') }}</h3>
+          <small>{{ t('login.capabilities.reportDesc') }}</small>
         </article>
       </div>
     </section>
 
-    <section class="login-panel-shell" aria-label="登录">
+    <section class="login-panel-shell" :aria-label="t('login.panelAria')">
       <el-card class="login-card">
-        <h2>欢迎回来</h2><p>登录后开始执行自动化测试</p>
+        <h2>{{ t('login.welcome') }}</h2>
+        <p>{{ t('login.subtitle') }}</p>
         <el-form :model="form" @submit.prevent="submit">
-          <el-form-item label="账号"><el-input v-model="form.username" size="large" /></el-form-item>
-          <el-form-item label="密码"><el-input v-model="form.password" type="password" show-password size="large" /></el-form-item>
+          <el-form-item :label="t('login.username')"><el-input v-model="form.username" size="large" /></el-form-item>
+          <el-form-item :label="t('login.password')"><el-input v-model="form.password" type="password" show-password size="large" /></el-form-item>
           <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
-          <el-button type="primary" size="large" native-type="submit" :loading="loading" class="login-button">登录平台</el-button>
+          <el-button type="primary" size="large" native-type="submit" :loading="loading" class="login-button">{{ t('login.submit') }}</el-button>
         </el-form>
-        <el-divider>开发测试账号</el-divider>
+        <el-divider>{{ t('login.demoAccounts') }}</el-divider>
         <div class="test-accounts">
-          <button v-for="account in accounts" :key="account.username" type="button" :class="{active:form.username===account.username}" @click="selectAccount(account)">
-            <span><strong>{{account.role}}</strong><small>{{account.description}}</small></span><code>{{account.username}}</code>
+          <button
+            v-for="account in accounts"
+            :key="account.username"
+            type="button"
+            :class="{ active: form.username === account.username }"
+            @click="selectAccount(account)"
+          >
+            <span>
+              <strong>{{ t('login.demoRole') }}</strong>
+              <small>{{ t('login.demoDescription') }}</small>
+            </span>
+            <code>{{ account.username }}</code>
           </button>
         </div>
-        <p class="temporary-note">临时显示，正式部署前可通过前端配置隐藏。</p>
+        <p class="temporary-note">{{ t('login.temporaryNote') }}</p>
       </el-card>
     </section>
   </div>
 </template>
+
 <script setup>
-import { reactive, ref } from 'vue';import { usePlatformStore } from '../stores/platform';
-const store=usePlatformStore(),loading=ref(false),error=ref('');
-const accounts=[{role:'演示账号',description:'具备平台全部操作能力',username:'tester',password:'Tester123!'},{role:'演示账号',description:'具备平台全部操作能力',username:'maintainer',password:'Maintainer123!'},{role:'演示账号',description:'具备平台全部操作能力',username:'admin',password:'Admin123!'}];
-const form=reactive({username:accounts[0].username,password:accounts[0].password});function selectAccount(account){form.username=account.username;form.password=account.password;error.value=''}async function submit(){loading.value=true;error.value='';try{await store.login(form)}catch(e){error.value=e.message}finally{loading.value=false}}
+import { reactive, ref } from 'vue';
+import { usePlatformStore } from '../stores/platform';
+import { useI18n } from '../i18n';
+import PreferenceControls from '../components/PreferenceControls.vue';
+
+const store = usePlatformStore();
+const { t } = useI18n();
+const loading = ref(false);
+const error = ref('');
+const accounts = [
+  { username: 'tester', password: 'Tester123!' },
+  { username: 'maintainer', password: 'Maintainer123!' },
+  { username: 'admin', password: 'Admin123!' }
+];
+const form = reactive({
+  username: accounts[0].username,
+  password: accounts[0].password
+});
+
+function selectAccount(account) {
+  form.username = account.username;
+  form.password = account.password;
+  error.value = '';
+}
+
+async function submit() {
+  loading.value = true;
+  error.value = '';
+  try {
+    await store.login(form);
+  } catch (e) {
+    error.value = e.message;
+  } finally {
+    loading.value = false;
+  }
+}
 </script>
